@@ -897,7 +897,6 @@ private:
     std::optional<uint32_t> m_version;
 
 public:
-    std::optional<CMutableTransaction> tx;
     // We use a vector of CExtPubKey in the event that there happens to be the same KeyOriginInfos for different CExtPubKeys
     // Note that this map swaps the key and values from the serialization
     std::map<KeyOriginInfo, std::set<CExtPubKey>> m_xpubs;
@@ -917,6 +916,8 @@ public:
     [[nodiscard]] bool Merge(const PartiallySignedTransaction& psbt);
     bool AddInput(const PSBTInput& psbtin);
     bool AddOutput(const PSBTOutput& psbtout);
+    std::optional<CMutableTransaction> GetUnsignedTx() const;
+    std::optional<Txid> GetUniqueID() const;
     explicit PartiallySignedTransaction(const CMutableTransaction& tx);
 
     template <typename Stream>
@@ -929,7 +930,7 @@ public:
         SerializeToVector(s, CompactSizeWriter(PSBT_GLOBAL_UNSIGNED_TX));
 
         // Write serialized tx to a stream
-        SerializeToVector(s, TX_NO_WITNESS(*tx));
+        SerializeToVector(s, TX_NO_WITNESS(*GetUnsignedTx()));
 
         // Write xpubs
         for (const auto& xpub_pair : m_xpubs) {
@@ -992,6 +993,7 @@ public:
 
         // Read global data
         bool found_sep = false;
+        std::optional<CMutableTransaction> tx;
         while(!s.empty()) {
             // Read
             std::vector<unsigned char> key;
@@ -1018,10 +1020,9 @@ public:
                 case PSBT_GLOBAL_UNSIGNED_TX:
                 {
                     ExpectedKeySize("Global Unsigned TX", key, 1);
-                    CMutableTransaction mtx;
                     // Set the stream to serialize with non-witness since this should always be non-witness
-                    UnserializeFromVector(s, TX_NO_WITNESS(mtx));
-                    tx = std::move(mtx);
+                    tx.emplace();
+                    UnserializeFromVector(s, TX_NO_WITNESS(*tx));
                     // Make sure that all scriptSigs and scriptWitnesses are empty
                     for (const CTxIn& txin : tx->vin) {
                         if (!txin.scriptSig.empty() || !txin.scriptWitness.IsNull()) {
