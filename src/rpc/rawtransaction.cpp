@@ -1736,7 +1736,7 @@ static RPCHelpMan utxoupdatepsbt()
 static RPCHelpMan joinpsbts()
 {
     return RPCHelpMan{"joinpsbts",
-            "\nJoins multiple distinct PSBTs with different inputs and outputs into one PSBT with inputs and outputs from all of the PSBTs\n"
+            "\nJoins multiple distinct version 0 PSBTs with different inputs and outputs into one version 0 PSBT with inputs and outputs from all of the PSBTs\n"
             "No input in any of the PSBTs can be in more than one of the PSBTs.\n",
             {
                 {"txs", RPCArg::Type::ARR, RPCArg::Optional::NO, "The base64 strings of partially signed transactions",
@@ -1767,8 +1767,11 @@ static RPCHelpMan joinpsbts()
         if (!psbt_res) {
             throw JSONRPCError(RPC_DESERIALIZATION_ERROR, strprintf("TX decode failed %s", util::ErrorString(psbt_res).original));
         }
-        const PartiallySignedTransaction& psbtx = *psbt_res;
-        psbtxs.push_back(psbtx);
+        psbtxs.push_back(*psbt_res);
+        const PartiallySignedTransaction& psbtx = psbtxs.back();
+        if (psbtx.GetVersion() != 0) {
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "joinpsbts only operates on version 0 PSBTs");
+        }
         // Choose the highest version number
         if (psbtx.tx_version > best_version) {
             best_version = psbtx.tx_version;
