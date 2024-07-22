@@ -199,6 +199,9 @@ static inline void ExpectedKeySize(const std::string& key_name, const std::vecto
 /** A structure for PSBTs which contain per-input information */
 class PSBTInput
 {
+private:
+    uint32_t m_psbt_version;
+
 public:
     CTransactionRef non_witness_utxo;
     CTxOut witness_utxo;
@@ -229,7 +232,12 @@ public:
     void FillSignatureData(SignatureData& sigdata) const;
     void FromSignatureData(const SignatureData& sigdata);
     void Merge(const PSBTInput& input);
-    PSBTInput() = default;
+    uint32_t GetVersion() const { return m_psbt_version; }
+    explicit PSBTInput(uint32_t psbt_version)
+        : m_psbt_version(psbt_version)
+    {
+        assert(m_psbt_version == 0);
+    }
 
     template <typename Stream>
     inline void Serialize(Stream& s) const {
@@ -639,6 +647,9 @@ public:
 /** A structure for PSBTs which contains per output information */
 class PSBTOutput
 {
+private:
+    uint32_t m_psbt_version;
+
 public:
     CScript redeem_script;
     CScript witness_script;
@@ -653,7 +664,12 @@ public:
     void FillSignatureData(SignatureData& sigdata) const;
     void FromSignatureData(const SignatureData& sigdata);
     void Merge(const PSBTOutput& output);
-    PSBTOutput() = default;
+    uint32_t GetVersion() const { return m_psbt_version; }
+    explicit PSBTOutput(uint32_t psbt_version)
+        : m_psbt_version(psbt_version)
+    {
+        assert(m_psbt_version == 0);
+    }
 
     template <typename Stream>
     inline void Serialize(Stream& s) const {
@@ -855,6 +871,9 @@ public:
 /** A version of CTransaction with the PSBT format*/
 class PartiallySignedTransaction
 {
+private:
+    std::optional<uint32_t> m_version;
+
 public:
     std::optional<CMutableTransaction> tx;
     // We use a vector of CExtPubKey in the event that there happens to be the same KeyOriginInfos for different CExtPubKeys
@@ -863,7 +882,6 @@ public:
     std::vector<PSBTInput> inputs;
     std::vector<PSBTOutput> outputs;
     std::map<std::vector<unsigned char>, std::vector<unsigned char>> unknown;
-    std::optional<uint32_t> m_version;
     std::set<PSBTProprietary> m_proprietary;
 
     bool IsNull() const;
@@ -1062,10 +1080,12 @@ public:
             throw std::ios_base::failure("No unsigned transaction was provided");
         }
 
+        const uint32_t psbt_ver = GetVersion();
+
         // Read input data
         unsigned int i = 0;
         while (!s.empty() && i < tx->vin.size()) {
-            PSBTInput input;
+            PSBTInput input(psbt_ver);
             s >> input;
             inputs.push_back(input);
 
@@ -1088,7 +1108,7 @@ public:
         // Read output data
         i = 0;
         while (!s.empty() && i < tx->vout.size()) {
-            PSBTOutput output;
+            PSBTOutput output(psbt_ver);
             s >> output;
             outputs.push_back(output);
             ++i;
