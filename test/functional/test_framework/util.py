@@ -651,3 +651,10 @@ def is_dir_writable(dir_path: pathlib.Path) -> bool:
         return True
     except OSError:
         return False
+
+
+def sync_txindex(test_framework, node):
+    test_framework.log.debug("Waiting for node txindex to sync")
+    sync_start = int(time.time())
+    test_framework.wait_until(lambda: node.getindexinfo("txindex")["txindex"]["synced"])
+    test_framework.log.debug(f"Synced in {time.time() - sync_start} seconds")
