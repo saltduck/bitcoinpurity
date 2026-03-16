@@ -146,13 +146,13 @@ void PSBTOperationsDialog::saveTransaction() {
     QString selected_filter;
     QString filename_suggestion = "";
     bool first = true;
-    for (const CTxOut& out : m_transaction_data->tx->vout) {
+    for (const PSBTOutput& out : m_transaction_data->outputs) {
         if (!first) {
             filename_suggestion.append("-");
         }
         CTxDestination address;
-        ExtractDestination(out.scriptPubKey, address);
-        QString amount = BitcoinUnits::format(unit, out.nValue, /*plussign=*/false, BitcoinUnits::SeparatorStyle::NEVER);
+        ExtractDestination(out.script, address);
+        QString amount = BitcoinUnits::format(unit, out.amount, /*plussign=*/false, BitcoinUnits::SeparatorStyle::NEVER);
         if (unit != BitcoinUnits::Unit::BTC) amount += BitcoinUnits::shortName(unit);  // NOTE: no space
         QString address_str = QString::fromStdString(EncodeDestination(address));
         filename_suggestion.append(address_str + "-" + amount);
@@ -183,15 +183,15 @@ QString PSBTOperationsDialog::renderTransaction(const PartiallySignedTransaction
     QString tx_description;
     QLatin1String bullet_point(" * ");
     CAmount totalAmount = 0;
-    for (const CTxOut& out : psbtx.tx->vout) {
+    for (const PSBTOutput& out : psbtx.outputs) {
         CTxDestination address;
-        ExtractDestination(out.scriptPubKey, address);
-        totalAmount += out.nValue;
+        ExtractDestination(out.script, address);
+        totalAmount += out.amount;
         tx_description.append(bullet_point).append(tr("Sends %1 to %2")
-            .arg(BitcoinUnits::formatHtmlWithUnit(font_for_money_BTC, BitcoinUnit::BTC, out.nValue))
+            .arg(BitcoinUnits::formatHtmlWithUnit(font_for_money_BTC, BitcoinUnit::BTC, out.amount))
             .arg(QString::fromStdString(EncodeDestination(address))));
         // Check if the address is one of ours
-        if (m_wallet_model != nullptr && m_wallet_model->wallet().txoutIsMine(out)) tx_description.append(" (" + tr("own address") + ")");
+        if (m_wallet_model != nullptr && m_wallet_model->wallet().txoutIsMine(CTxOut(out.amount, out.script))) tx_description.append(" (" + tr("own address") + ")");
         tx_description.append("<br>");
     }
 
