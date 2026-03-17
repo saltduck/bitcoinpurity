@@ -13,6 +13,8 @@
 
 PartiallySignedTransaction::PartiallySignedTransaction(const CMutableTransaction& tx) : tx(tx)
 {
+    tx_version = tx.version;
+    fallback_locktime = tx.nLockTime;
     inputs.reserve(tx.vin.size());
     for (const CTxIn& input : tx.vin) {
         inputs.emplace_back(GetVersion(), input.prevout.hash, input.prevout.n, input.nSequence);
