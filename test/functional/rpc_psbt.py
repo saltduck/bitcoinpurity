@@ -306,6 +306,21 @@ class PSBTTest(BitcoinTestFramework):
         changepos = psbtx["changepos"]
         assert_equal(decoded_psbt["tx"]["vout"][changepos]["scriptPubKey"]["type"], expected_type)
 
+    def test_psbt_roundtrip(self):
+        self.log.info("Test that PSBTs roundtrip when RPC does nothing")
+        utxo = self.nodes[0].listunspent()[0]
+        psbt = self.nodes[0].walletcreatefundedpsbt(inputs=[utxo], outputs=[{self.nodes[0].getnewaddress(): utxo["amount"] / 2}])["psbt"]
+
+        rt_psbts = [
+            self.nodes[0].combinepsbt([psbt, psbt]),
+            self.nodes[0].finalizepsbt(psbt)["psbt"],
+            self.nodes[0].utxoupdatepsbt(psbt),
+            self.nodes[0].descriptorprocesspsbt(psbt, [])["psbt"],
+            self.nodes[0].walletprocesspsbt(psbt, sign=False)["psbt"],
+        ]
+        for p in rt_psbts:
+            assert_equal(psbt, p)
+
     def run_test(self):
 
         self.log.info("Test that PSBT can have user-provided UTXOs filled and signed")
@@ -1225,6 +1240,8 @@ class PSBTTest(BitcoinTestFramework):
 
         if self.options.descriptors:
             self.test_addresstype_legacy_with_no_legacy_change()
+
+        self.test_psbt_roundtrip()
 
 
 if __name__ == '__main__':
