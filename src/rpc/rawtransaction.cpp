@@ -6,6 +6,7 @@
 #include <base58.h>
 #include <chain.h>
 #include <coins.h>
+#include <common/types.h>
 #include <consensus/amount.h>
 #include <consensus/validation.h>
 #include <core_io.h>
@@ -244,7 +245,11 @@ PartiallySignedTransaction ProcessPSBT(const std::string& psbt_string, const std
         }
     }
 
-    const PrecomputedTransactionData& txdata = PrecomputePSBTData(psbtx);
+    std::optional<PrecomputedTransactionData> txdata_res = PrecomputePSBTData(psbtx);
+    if (!txdata_res) {
+        throw JSONRPCPSBTError(common::PSBTError::INVALID_TX);
+    }
+    const PrecomputedTransactionData& txdata = *txdata_res;
 
     for (unsigned int i = 0; i < psbtx.inputs.size(); ++i) {
         if (PSBTInputSigned(psbtx.inputs.at(i))) {
