@@ -151,9 +151,6 @@ void DeserializeHDKeypaths(Stream& s, const std::vector<unsigned char>& key, std
     if (!pubkey.IsFullyValid()) {
        throw std::ios_base::failure("Invalid pubkey");
     }
-    if (hd_keypaths.count(pubkey) > 0) {
-        throw std::ios_base::failure("Duplicate Key, pubkey derivation path already provided");
-    }
 
     KeyOriginInfo keypath;
     DeserializeHDKeypath(s, keypath);
@@ -190,6 +187,12 @@ void SerializeHDKeypaths(Stream& s, const std::map<CPubKey, KeyOriginInfo>& hd_k
         }
         SerializeToVector(s, type, Span{keypath_pair.first});
         SerializeHDKeypath(s, keypath_pair.second);
+    }
+}
+
+static inline void ExpectedKeySize(const std::string& key_name, const std::vector<unsigned char>& key, uint64_t expected_size) {
+    if (key.size() != expected_size) {
+        throw std::ios_base::failure(tfm::format("Size of key was not %d for the type %s", expected_size, key_name));
     }
 }
 
@@ -385,6 +388,11 @@ struct PSBTInput
                 break;
             }
 
+            // Duplicate keys are not permitted
+            if (!key_lookup.emplace(key).second) {
+                throw std::ios_base::failure(tfm::format("Duplicate Key, input key \"%s\" already provided", HexStr(key)));
+            }
+
             // Type is compact size uint at beginning of key
             SpanReader skey{key};
             uint64_t type = ReadCompactSize(skey);
@@ -393,21 +401,13 @@ struct PSBTInput
             switch(type) {
                 case PSBT_IN_NON_WITNESS_UTXO:
                 {
-                    if (!key_lookup.emplace(key).second) {
-                        throw std::ios_base::failure("Duplicate Key, input non-witness utxo already provided");
-                    } else if (key.size() != 1) {
-                        throw std::ios_base::failure("Non-witness utxo key is more than one byte type");
-                    }
+                    ExpectedKeySize("Input Non-witness UTXO", key, 1);
                     // Set the stream to unserialize with witness since this is always a valid network transaction
                     UnserializeFromVector(s, TX_WITH_WITNESS(non_witness_utxo));
                     break;
                 }
                 case PSBT_IN_WITNESS_UTXO:
-                    if (!key_lookup.emplace(key).second) {
-                        throw std::ios_base::failure("Duplicate Key, input witness utxo already provided");
-                    } else if (key.size() != 1) {
-                        throw std::ios_base::failure("Witness utxo key is more than one byte type");
-                    }
+                    ExpectedKeySize("Input Witness UTXO", key, 1);
                     UnserializeFromVector(s, witness_utxo);
                     break;
                 case PSBT_IN_PARTIAL_SIG:
@@ -421,9 +421,6 @@ struct PSBTInput
                     if (!pubkey.IsFullyValid()) {
                        throw std::ios_base::failure("Invalid pubkey");
                     }
-                    if (partial_sigs.count(pubkey.GetID()) > 0) {
-                        throw std::ios_base::failure("Duplicate Key, input partial signature for pubkey already provided");
-                    }
 
                     // Read in the signature from value
                     std::vector<unsigned char> sig;
@@ -434,32 +431,20 @@ struct PSBTInput
                     break;
                 }
                 case PSBT_IN_SIGHASH:
-                    if (!key_lookup.emplace(key).second) {
-                        throw std::ios_base::failure("Duplicate Key, input sighash type already provided");
-                    } else if (key.size() != 1) {
-                        throw std::ios_base::failure("Sighash type key is more than one byte type");
-                    }
+                    ExpectedKeySize("Input Sighash Type", key, 1);
                     int sighash;
                     UnserializeFromVector(s, sighash);
                     sighash_type = sighash;
                     break;
                 case PSBT_IN_REDEEMSCRIPT:
                 {
-                    if (!key_lookup.emplace(key).second) {
-                        throw std::ios_base::failure("Duplicate Key, input redeemScript already provided");
-                    } else if (key.size() != 1) {
-                        throw std::ios_base::failure("Input redeemScript key is more than one byte type");
-                    }
+                    ExpectedKeySize("Input redeemScript", key, 1);
                     s >> redeem_script;
                     break;
                 }
                 case PSBT_IN_WITNESSSCRIPT:
                 {
-                    if (!key_lookup.emplace(key).second) {
-                        throw std::ios_base::failure("Duplicate Key, input witnessScript already provided");
-                    } else if (key.size() != 1) {
-                        throw std::ios_base::failure("Input witnessScript key is more than one byte type");
-                    }
+                    ExpectedKeySize("Input witnessScript", key, 1);
                     s >> witness_script;
                     break;
                 }
@@ -470,36 +455,22 @@ struct PSBTInput
                 }
                 case PSBT_IN_SCRIPTSIG:
                 {
-                    if (!key_lookup.emplace(key).second) {
-                        throw std::ios_base::failure("Duplicate Key, input final scriptSig already provided");
-                    } else if (key.size() != 1) {
-                        throw std::ios_base::failure("Final scriptSig key is more than one byte type");
-                    }
+                    ExpectedKeySize("Input Final scriptSig", key, 1);
                     s >> final_script_sig;
                     break;
                 }
                 case PSBT_IN_SCRIPTWITNESS:
                 {
-                    if (!key_lookup.emplace(key).second) {
-                        throw std::ios_base::failure("Duplicate Key, input final scriptWitness already provided");
-                    } else if (key.size() != 1) {
-                        throw std::ios_base::failure("Final scriptWitness key is more than one byte type");
-                    }
+                    ExpectedKeySize("Input Final scriptWitness", key, 1);
                     UnserializeFromVector(s, final_script_witness.stack);
                     break;
                 }
                 case PSBT_IN_RIPEMD160:
                 {
-                    // Make sure that the key is the size of a ripemd160 hash + 1
-                    if (key.size() != CRIPEMD160::OUTPUT_SIZE + 1) {
-                        throw std::ios_base::failure("Size of key was not the expected size for the type ripemd160 preimage");
-                    }
+                    ExpectedKeySize("Input RIPEMD160 Preimage", key, CRIPEMD160::OUTPUT_SIZE + 1);
                     // Read in the hash from key
                     std::vector<unsigned char> hash_vec(key.begin() + 1, key.end());
                     uint160 hash(hash_vec);
-                    if (ripemd160_preimages.count(hash) > 0) {
-                        throw std::ios_base::failure("Duplicate Key, input ripemd160 preimage already provided");
-                    }
 
                     // Read in the preimage from value
                     std::vector<unsigned char> preimage;
@@ -511,16 +482,10 @@ struct PSBTInput
                 }
                 case PSBT_IN_SHA256:
                 {
-                    // Make sure that the key is the size of a sha256 hash + 1
-                    if (key.size() != CSHA256::OUTPUT_SIZE + 1) {
-                        throw std::ios_base::failure("Size of key was not the expected size for the type sha256 preimage");
-                    }
+                    ExpectedKeySize("Input SHA256 Preimage", key, CSHA256::OUTPUT_SIZE + 1);
                     // Read in the hash from key
                     std::vector<unsigned char> hash_vec(key.begin() + 1, key.end());
                     uint256 hash(hash_vec);
-                    if (sha256_preimages.count(hash) > 0) {
-                        throw std::ios_base::failure("Duplicate Key, input sha256 preimage already provided");
-                    }
 
                     // Read in the preimage from value
                     std::vector<unsigned char> preimage;
@@ -532,16 +497,10 @@ struct PSBTInput
                 }
                 case PSBT_IN_HASH160:
                 {
-                    // Make sure that the key is the size of a hash160 hash + 1
-                    if (key.size() != CHash160::OUTPUT_SIZE + 1) {
-                        throw std::ios_base::failure("Size of key was not the expected size for the type hash160 preimage");
-                    }
+                    ExpectedKeySize("Input Hash160 Preimage", key, CHash160::OUTPUT_SIZE + 1);
                     // Read in the hash from key
                     std::vector<unsigned char> hash_vec(key.begin() + 1, key.end());
                     uint160 hash(hash_vec);
-                    if (hash160_preimages.count(hash) > 0) {
-                        throw std::ios_base::failure("Duplicate Key, input hash160 preimage already provided");
-                    }
 
                     // Read in the preimage from value
                     std::vector<unsigned char> preimage;
@@ -553,16 +512,10 @@ struct PSBTInput
                 }
                 case PSBT_IN_HASH256:
                 {
-                    // Make sure that the key is the size of a hash256 hash + 1
-                    if (key.size() != CHash256::OUTPUT_SIZE + 1) {
-                        throw std::ios_base::failure("Size of key was not the expected size for the type hash256 preimage");
-                    }
+                    ExpectedKeySize("Input Hash256 Preimage", key, CHash256::OUTPUT_SIZE + 1);
                     // Read in the hash from key
                     std::vector<unsigned char> hash_vec(key.begin() + 1, key.end());
                     uint256 hash(hash_vec);
-                    if (hash256_preimages.count(hash) > 0) {
-                        throw std::ios_base::failure("Duplicate Key, input hash256 preimage already provided");
-                    }
 
                     // Read in the preimage from value
                     std::vector<unsigned char> preimage;
@@ -574,11 +527,7 @@ struct PSBTInput
                 }
                 case PSBT_IN_TAP_KEY_SIG:
                 {
-                    if (!key_lookup.emplace(key).second) {
-                        throw std::ios_base::failure("Duplicate Key, input Taproot key signature already provided");
-                    } else if (key.size() != 1) {
-                        throw std::ios_base::failure("Input Taproot key signature key is more than one byte type");
-                    }
+                    ExpectedKeySize("Input Taproot Key Path Signature", key, 1);
                     s >> m_tap_key_sig;
                     if (m_tap_key_sig.size() < 64) {
                         throw std::ios_base::failure("Input Taproot key path signature is shorter than 64 bytes");
@@ -589,11 +538,7 @@ struct PSBTInput
                 }
                 case PSBT_IN_TAP_SCRIPT_SIG:
                 {
-                    if (!key_lookup.emplace(key).second) {
-                        throw std::ios_base::failure("Duplicate Key, input Taproot script signature already provided");
-                    } else if (key.size() != 65) {
-                        throw std::ios_base::failure("Input Taproot script signature key is not 65 bytes");
-                    }
+                    ExpectedKeySize("Input Taproot Script Path Signature", key, 65);
                     SpanReader s_key{Span{key}.subspan(1)};
                     XOnlyPubKey xonly;
                     uint256 hash;
@@ -611,10 +556,8 @@ struct PSBTInput
                 }
                 case PSBT_IN_TAP_LEAF_SCRIPT:
                 {
-                    if (!key_lookup.emplace(key).second) {
-                        throw std::ios_base::failure("Duplicate Key, input Taproot leaf script already provided");
-                    } else if (key.size() < 34) {
-                        throw std::ios_base::failure("Taproot leaf script key is not at least 34 bytes");
+                    if (key.size() < 34) {
+                        throw std::ios_base::failure("Input Taproot leaf script key is not at least 34 bytes");
                     } else if ((key.size() - 2) % 32 != 0) {
                         throw std::ios_base::failure("Input Taproot leaf script key's control block size is not valid");
                     }
@@ -631,11 +574,7 @@ struct PSBTInput
                 }
                 case PSBT_IN_TAP_BIP32_DERIVATION:
                 {
-                    if (!key_lookup.emplace(key).second) {
-                        throw std::ios_base::failure("Duplicate Key, input Taproot BIP32 keypath already provided");
-                    } else if (key.size() != 33) {
-                        throw std::ios_base::failure("Input Taproot BIP32 keypath key is not at 33 bytes");
-                    }
+                    ExpectedKeySize("Input Taproot BIP32 Keypath", key, 33);
                     SpanReader s_key{Span{key}.subspan(1)};
                     XOnlyPubKey xonly;
                     s_key >> xonly;
@@ -654,21 +593,13 @@ struct PSBTInput
                 }
                 case PSBT_IN_TAP_INTERNAL_KEY:
                 {
-                    if (!key_lookup.emplace(key).second) {
-                        throw std::ios_base::failure("Duplicate Key, input Taproot internal key already provided");
-                    } else if (key.size() != 1) {
-                        throw std::ios_base::failure("Input Taproot internal key key is more than one byte type");
-                    }
+                    ExpectedKeySize("Input Taproot Internal Key", key, 1);
                     UnserializeFromVector(s, m_tap_internal_key);
                     break;
                 }
                 case PSBT_IN_TAP_MERKLE_ROOT:
                 {
-                    if (!key_lookup.emplace(key).second) {
-                        throw std::ios_base::failure("Duplicate Key, input Taproot merkle root already provided");
-                    } else if (key.size() != 1) {
-                        throw std::ios_base::failure("Input Taproot merkle root key is more than one byte type");
-                    }
+                    ExpectedKeySize("Input Taproot Merkle Root", key, 1);
                     UnserializeFromVector(s, m_tap_merkle_root);
                     break;
                 }
@@ -679,18 +610,12 @@ struct PSBTInput
                     this_prop.subtype = ReadCompactSize(skey);
                     this_prop.key = key;
 
-                    if (m_proprietary.count(this_prop) > 0) {
-                        throw std::ios_base::failure("Duplicate Key, proprietary key already found");
-                    }
                     s >> this_prop.value;
                     m_proprietary.insert(this_prop);
                     break;
                 }
                 // Unknown stuff
                 default:
-                    if (unknown.count(key) > 0) {
-                        throw std::ios_base::failure("Duplicate Key, key for unknown value already provided");
-                    }
                     // Read in the value
                     std::vector<unsigned char> val_bytes;
                     s >> val_bytes;
@@ -810,6 +735,11 @@ struct PSBTOutput
                 break;
             }
 
+            // Duplicate keys are not permitted
+            if (!key_lookup.emplace(key).second) {
+                throw std::ios_base::failure(tfm::format("Duplicate Key, output key \"%s\" already provided", HexStr(key)));
+            }
+
             // Type is compact size uint at beginning of key
             SpanReader skey{key};
             uint64_t type = ReadCompactSize(skey);
@@ -818,21 +748,13 @@ struct PSBTOutput
             switch(type) {
                 case PSBT_OUT_REDEEMSCRIPT:
                 {
-                    if (!key_lookup.emplace(key).second) {
-                        throw std::ios_base::failure("Duplicate Key, output redeemScript already provided");
-                    } else if (key.size() != 1) {
-                        throw std::ios_base::failure("Output redeemScript key is more than one byte type");
-                    }
+                    ExpectedKeySize("Output redeemScript", key, 1);
                     s >> redeem_script;
                     break;
                 }
                 case PSBT_OUT_WITNESSSCRIPT:
                 {
-                    if (!key_lookup.emplace(key).second) {
-                        throw std::ios_base::failure("Duplicate Key, output witnessScript already provided");
-                    } else if (key.size() != 1) {
-                        throw std::ios_base::failure("Output witnessScript key is more than one byte type");
-                    }
+                    ExpectedKeySize("Output witnessScript", key, 1);
                     s >> witness_script;
                     break;
                 }
@@ -843,21 +765,13 @@ struct PSBTOutput
                 }
                 case PSBT_OUT_TAP_INTERNAL_KEY:
                 {
-                    if (!key_lookup.emplace(key).second) {
-                        throw std::ios_base::failure("Duplicate Key, output Taproot internal key already provided");
-                    } else if (key.size() != 1) {
-                        throw std::ios_base::failure("Output Taproot internal key key is more than one byte type");
-                    }
+                    ExpectedKeySize("Output Taproot Internal Key", key, 1);
                     UnserializeFromVector(s, m_tap_internal_key);
                     break;
                 }
                 case PSBT_OUT_TAP_TREE:
                 {
-                    if (!key_lookup.emplace(key).second) {
-                        throw std::ios_base::failure("Duplicate Key, output Taproot tree already provided");
-                    } else if (key.size() != 1) {
-                        throw std::ios_base::failure("Output Taproot tree key is more than one byte type");
-                    }
+                    ExpectedKeySize("Output Taproot Tree Key", key, 1);
                     std::vector<unsigned char> tree_v;
                     s >> tree_v;
                     SpanReader s_tree{tree_v};
@@ -888,11 +802,7 @@ struct PSBTOutput
                 }
                 case PSBT_OUT_TAP_BIP32_DERIVATION:
                 {
-                    if (!key_lookup.emplace(key).second) {
-                        throw std::ios_base::failure("Duplicate Key, output Taproot BIP32 keypath already provided");
-                    } else if (key.size() != 33) {
-                        throw std::ios_base::failure("Output Taproot BIP32 keypath key is not at 33 bytes");
-                    }
+                    ExpectedKeySize("Output Taproot BIP32 Keypath", key, 33);
                     XOnlyPubKey xonly(uint256(Span<uint8_t>(key).last(32)));
                     std::set<uint256> leaf_hashes;
                     uint64_t value_len = ReadCompactSize(s);
@@ -914,18 +824,12 @@ struct PSBTOutput
                     this_prop.subtype = ReadCompactSize(skey);
                     this_prop.key = key;
 
-                    if (m_proprietary.count(this_prop) > 0) {
-                        throw std::ios_base::failure("Duplicate Key, proprietary key already found");
-                    }
                     s >> this_prop.value;
                     m_proprietary.insert(this_prop);
                     break;
                 }
                 // Unknown stuff
                 default: {
-                    if (unknown.count(key) > 0) {
-                        throw std::ios_base::failure("Duplicate Key, key for unknown value already provided");
-                    }
                     // Read in the value
                     std::vector<unsigned char> val_bytes;
                     s >> val_bytes;
@@ -1063,6 +967,11 @@ struct PartiallySignedTransaction
                 break;
             }
 
+            // Duplicate keys are not permitted
+            if (!key_lookup.emplace(key).second) {
+                throw std::ios_base::failure(tfm::format("Duplicate Key, global key \"%s\" already provided", HexStr(key)));
+            }
+
             // Type is compact size uint at beginning of key
             SpanReader skey{key};
             uint64_t type = ReadCompactSize(skey);
@@ -1071,11 +980,7 @@ struct PartiallySignedTransaction
             switch(type) {
                 case PSBT_GLOBAL_UNSIGNED_TX:
                 {
-                    if (!key_lookup.emplace(key).second) {
-                        throw std::ios_base::failure("Duplicate Key, unsigned tx already provided");
-                    } else if (key.size() != 1) {
-                        throw std::ios_base::failure("Global unsigned tx key is more than one byte type");
-                    }
+                    ExpectedKeySize("Global Unsigned TX", key, 1);
                     CMutableTransaction mtx;
                     // Set the stream to serialize with non-witness since this should always be non-witness
                     UnserializeFromVector(s, TX_NO_WITNESS(mtx));
@@ -1090,17 +995,12 @@ struct PartiallySignedTransaction
                 }
                 case PSBT_GLOBAL_XPUB:
                 {
-                    if (key.size() != BIP32_EXTKEY_WITH_VERSION_SIZE + 1) {
-                        throw std::ios_base::failure("Size of key was not the expected size for the type global xpub");
-                    }
+                    ExpectedKeySize("Global XPUB", key, BIP32_EXTKEY_WITH_VERSION_SIZE + 1);
                     // Read in the xpub from key
                     CExtPubKey xpub;
                     xpub.DecodeWithVersion(&key.data()[1]);
                     if (!xpub.pubkey.IsFullyValid()) {
                        throw std::ios_base::failure("Invalid pubkey");
-                    }
-                    if (global_xpubs.count(xpub) > 0) {
-                       throw std::ios_base::failure("Duplicate key, global xpub already provided");
                     }
                     global_xpubs.insert(xpub);
                     // Read in the keypath from stream
@@ -1120,11 +1020,7 @@ struct PartiallySignedTransaction
                 }
                 case PSBT_GLOBAL_VERSION:
                 {
-                    if (m_version) {
-                        throw std::ios_base::failure("Duplicate Key, version already provided");
-                    } else if (key.size() != 1) {
-                        throw std::ios_base::failure("Global version key is more than one byte type");
-                    }
+                    ExpectedKeySize("Global PSBT Version", key, 1);
                     uint32_t v;
                     UnserializeFromVector(s, v);
                     m_version = v;
@@ -1140,18 +1036,12 @@ struct PartiallySignedTransaction
                     this_prop.subtype = ReadCompactSize(skey);
                     this_prop.key = key;
 
-                    if (m_proprietary.count(this_prop) > 0) {
-                        throw std::ios_base::failure("Duplicate Key, proprietary key already found");
-                    }
                     s >> this_prop.value;
                     m_proprietary.insert(this_prop);
                     break;
                 }
                 // Unknown stuff
                 default: {
-                    if (unknown.count(key) > 0) {
-                        throw std::ios_base::failure("Duplicate Key, key for unknown value already provided");
-                    }
                     // Read in the value
                     std::vector<unsigned char> val_bytes;
                     s >> val_bytes;
