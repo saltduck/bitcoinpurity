@@ -576,8 +576,7 @@ void UpdatePSBTOutput(const SigningProvider& provider, PartiallySignedTransactio
     if (!unsigned_tx) {
         return;
     }
-    CMutableTransaction& tx = *unsigned_tx;
-    const CTxOut& out = tx.vout.at(index);
+    const CTxOut& out = unsigned_tx->vout.at(index);
     PSBTOutput& psbt_out = psbt.outputs.at(index);
 
     // Fill a SignatureData with output info
@@ -587,6 +586,8 @@ void UpdatePSBTOutput(const SigningProvider& provider, PartiallySignedTransactio
     // Construct a would-be spend of this output, to update sigdata with.
     // Note that ProduceSignature is used to fill in metadata (not actual signatures),
     // so provider does not need to provide any private keys (it can be a HidingSigningProvider).
+    CMutableTransaction tx{};
+    tx.vin.emplace_back();
     MutableTransactionSignatureCreator creator(tx, /*input_idx=*/0, out.nValue, SIGHASH_ALL);
     ProduceSignature(provider, creator, out.scriptPubKey, sigdata);
 
