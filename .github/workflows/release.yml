@@ -279,6 +279,7 @@ jobs:
   # macOS Intel x86_64
   # ============================================================
   macos-x86_64:
+    if: false
     name: macOS Intel
     runs-on: macos-13
     timeout-minutes: 120
@@ -411,7 +412,27 @@ jobs:
           sed -i \
             '1s/^/set(ENV{CMAKE_POLICY_VERSION_MINIMUM} 3.5)\n/' \
             "${VCPKG_INSTALLATION_ROOT}/scripts/ports.cmake"
+      
+      - name: Install rsvg-convert
+        shell: pwsh
+        run: |
+          choco install msys2 -y --no-progress
 
+          C:\tools\msys64\usr\bin\bash.exe -lc "
+            pacman -Sy --noconfirm &&
+            pacman -S --noconfirm mingw-w64-x86_64-librsvg
+          "
+
+          "C:\tools\msys64\mingw64\bin" | Out-File `
+            -FilePath $env:GITHUB_PATH `
+            -Encoding utf8 `
+            -Append
+      
+      - name: Verify rsvg-convert
+        shell: pwsh
+        run: |
+          rsvg-convert --version      
+      
       - name: Configure
         shell: pwsh
         run: |
@@ -491,7 +512,6 @@ jobs:
     needs:
       - linux-x86_64
       - linux-arm64
-      - macos-x86_64
       - macos-arm64
       - windows-x86_64
 
