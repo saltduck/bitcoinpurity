@@ -384,18 +384,20 @@ jobs:
           $vswherePath = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
           $installationPath = & $vswherePath -latest -property installationPath
 
-          & "${env:COMSPEC}" /s /c "`"$installationPath\Common7\Tools\vsdevcmd.bat`" -arch=x64 -no_logo && set" |
-            ForEach-Object {
-              $name, $value = $_ -split '=', 2
+          $cmd = "`"$installationPath\Common7\Tools\VsDevCmd.bat`" -arch=x64 -no_logo && set"
 
-              if ($name -and $value) {
-                "$name=$value" | Out-File \
-                  -FilePath $env:GITHUB_ENV \
-                  -Encoding utf8 \
-                  -Append
-              }
+          cmd.exe /s /c $cmd | ForEach-Object {
+            if ($_ -match '^(.*?)=(.*)$') {
+              $name = $matches[1]
+              $value = $matches[2]
+
+              "$name=$value" | Out-File `
+                -FilePath $env:GITHUB_ENV `
+                -Encoding utf8 `
+                -Append
             }
-
+          }
+          
       - name: Configure vcpkg
         shell: bash
         run: |
