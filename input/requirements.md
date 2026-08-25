@@ -44,6 +44,22 @@ provenance baseline. Do not silently update it.
   field must update a running subsystem immediately. Existing configuration-
   file and command-line precedence remains authoritative.
 
+## Qt DATUM status window
+
+- With `BUILD_DATUM=ON`, the `Window` menu includes a `DATUM` item that opens
+  one reusable, non-modal, read-only status window. The item and window are
+  absent from `BUILD_DATUM=OFF` builds.
+- The visible window refreshes once per second and stops polling while hidden.
+  It shows runtime/listener/authentication and actual port-mapping state,
+  mining totals and estimated hashrate, the current template/job, connected
+  worker details, and block-submit/last-error diagnostics.
+- Worker names, remote IP addresses, and miner user agents are local-GUI-only.
+  They must never be returned by `getdatuminfo`.
+- Session share and block counters reset when DATUM starts, persist when a
+  miner disconnects, and are not persisted across DATUM or node restarts.
+- The window contains no configuration, start/stop, or difficulty controls;
+  those remain in Settings and the existing RPC surface.
+
 ## Runtime contract
 
 When `datum=1`, support these settings:
@@ -122,8 +138,9 @@ precedence chain.
 
 ## Non-goals
 
-- DATUM Prime, OCEAN pooled mining, accounting, payouts, dashboard/API, Stratum
-  V2, vardiff, or a public coordinator.
+- DATUM Prime, OCEAN pooled mining, accounting, payouts, Web dashboard/public
+  management API, Stratum V2, vardiff, or a public coordinator. The local Qt
+  status window and non-secret aggregate status RPC are explicitly in scope.
 - Direct access to `CBlockTemplate`, `ChainstateManager`, or consensus internals.
 - Changes to ASERT, difficulty adjustment, validation, chain selection,
   subsidy, P2P, mempool policy, address consensus, or any other consensus rule.

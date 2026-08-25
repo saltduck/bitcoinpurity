@@ -66,6 +66,17 @@
 
 T_DATUM_SOCKET_APP *global_stratum_app = NULL;
 static pthread_mutex_t stratum_app_lock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t session_stats_lock = PTHREAD_MUTEX_INITIALIZER;
+static uint64_t disconnected_accepted_shares;
+static uint64_t disconnected_rejected_shares;
+static uint64_t disconnected_last_share_time_ms;
+static char last_rejected_share_reason[64];
+static uint64_t last_rejected_share_time_ms;
+static uint64_t rejected_unknown_work;
+static uint64_t rejected_high_hash;
+static uint64_t rejected_stale;
+static uint64_t rejected_duplicate;
+static uint64_t rejected_other;
 
 int stratum_job_next = 0;
 T_DATUM_STRATUM_JOB stratum_job_list[MAX_STRATUM_JOBS];
@@ -491,6 +502,128 @@ void datum_stratum_v1_get_stats(uint32_t *clients, uint32_t *authorized_clients,
 	pthread_rwlock_unlock(&stratum_global_job_ptr_lock);
 }
 
+static double datum_miner_est_th_sec(const T_DATUM_MINER_DATA *m, uint64_t now_ms)
+{
+	const unsigned char index = atomic_load_explicit(&m->stats.active_index, memory_order_relaxed) ? 0 : 1;
+	const uint64_t elapsed_ms = atomic_load_explicit(&m->stats.last_swap_ms, memory_order_relaxed);
+	const uint64_t swap_ms = atomic_load_explicit(&m->stats.last_swap_tsms, memory_order_relaxed);
+	const uint64_t accepted_diff = atomic_load_explicit(&m->stats.diff_accepted[index], memory_order_relaxed);
+	if (!elapsed_ms || !accepted_diff || now_ms - swap_ms >= 180000) return 0.0;
+	return ((double)accepted_diff / ((double)elapsed_ms / 1000.0)) * 0.004294967296;
+}
+
+void datum_stratum_v1_reset_session_stats(void)
+{
+	pthread_mutex_lock(&session_stats_lock);
+	disconnected_accepted_shares = 0;
+	disconnected_rejected_shares = 0;
+	disconnected_last_share_time_ms = 0;
+	last_rejected_share_reason[0] = '\0';
+	last_rejected_share_time_ms = 0;
+	rejected_unknown_work = 0;
+	rejected_high_hash = 0;
+	rejected_stale = 0;
+	rejected_duplicate = 0;
+	rejected_other = 0;
+	pthread_mutex_unlock(&session_stats_lock);
+}
+
+void datum_stratum_v1_get_extended_stats(datum_embedded_stats *stats)
+{
+	if (!stats) return;
+	const uint64_t now_ms = current_time_millis();
+	pthread_mutex_lock(&session_stats_lock);
+	stats->session_accepted_shares = disconnected_accepted_shares;
+	stats->session_rejected_shares = disconnected_rejected_shares;
+	stats->last_share_time_ms = disconnected_last_share_time_ms;
+	stats->last_rejected_share_time_ms = last_rejected_share_time_ms;
+	stats->rejected_unknown_work = rejected_unknown_work;
+	stats->rejected_high_hash = rejected_high_hash;
+	stats->rejected_stale = rejected_stale;
+	stats->rejected_duplicate = rejected_duplicate;
+	stats->rejected_other = rejected_other;
+	strncpy(stats->last_rejected_share_reason, last_rejected_share_reason, sizeof(stats->last_rejected_share_reason) - 1);
+
+	pthread_mutex_lock(&stratum_app_lock);
+	T_DATUM_SOCKET_APP *app = global_stratum_app;
+	if (app) {
+		for (int tid = 0; tid < app->max_threads; ++tid) {
+			pthread_mutex_lock(&app->datum_threads[tid].thread_data_lock);
+			for (int cid = 0; cid < app->max_clients_thread; ++cid) {
+				if (app->datum_threads[tid].client_data[cid].fd <= 0) continue;
+				T_DATUM_MINER_DATA *m = app->datum_threads[tid].client_data[cid].app_client_data;
+				++stats->clients;
+				if (atomic_load_explicit(&m->subscribed, memory_order_relaxed)) ++stats->subscribed_clients;
+				if (atomic_load_explicit(&m->authorized, memory_order_relaxed)) ++stats->authorized_clients;
+				const uint64_t accepted = atomic_load_explicit(&m->share_count_accepted, memory_order_relaxed);
+				const uint64_t rejected = atomic_load_explicit(&m->share_count_rejected, memory_order_relaxed);
+				stats->accepted_shares += accepted;
+				stats->rejected_shares += rejected;
+				stats->session_accepted_shares += accepted;
+				stats->session_rejected_shares += rejected;
+				const uint64_t last_share = atomic_load_explicit(&m->stats.last_share_tsms, memory_order_relaxed);
+				if (last_share > stats->last_share_time_ms) stats->last_share_time_ms = last_share;
+				stats->estimated_hashrate_ths += datum_miner_est_th_sec(m, now_ms);
+			}
+			pthread_mutex_unlock(&app->datum_threads[tid].thread_data_lock);
+		}
+	}
+	pthread_mutex_unlock(&stratum_app_lock);
+	pthread_mutex_unlock(&session_stats_lock);
+
+	pthread_rwlock_rdlock(&stratum_global_job_ptr_lock);
+	if (global_latest_stratum_job_index >= 0 && global_cur_stratum_jobs[global_latest_stratum_job_index]) {
+		const T_DATUM_STRATUM_JOB *job = global_cur_stratum_jobs[global_latest_stratum_job_index];
+		stats->current_height = job->height;
+		stats->job_created_ms = job->tsms;
+		stats->nbits = job->nbits_uint;
+		stats->coinbase_value = job->coinbase_value;
+		strncpy(stats->job_id, job->job_id, sizeof(stats->job_id) - 1);
+		if (job->block_template) {
+			strncpy(stats->previous_block_hash, job->block_template->previousblockhash, sizeof(stats->previous_block_hash) - 1);
+			stats->transaction_count = job->block_template->txn_count;
+			stats->template_size = job->block_template->txn_total_size;
+			stats->template_weight = job->block_template->txn_total_weight;
+		}
+	}
+	pthread_rwlock_unlock(&stratum_global_job_ptr_lock);
+}
+
+uint32_t datum_stratum_v1_get_miner_stats(datum_embedded_miner_stats *miners, uint32_t capacity)
+{
+	if (!miners || !capacity) return 0;
+	uint32_t count = 0;
+	const uint64_t now_ms = current_time_millis();
+	pthread_mutex_lock(&stratum_app_lock);
+	T_DATUM_SOCKET_APP *app = global_stratum_app;
+	if (app) {
+		for (int tid = 0; tid < app->max_threads && count < capacity; ++tid) {
+			pthread_mutex_lock(&app->datum_threads[tid].thread_data_lock);
+			for (int cid = 0; cid < app->max_clients_thread && count < capacity; ++cid) {
+				T_DATUM_CLIENT_DATA *client = &app->datum_threads[tid].client_data[cid];
+				if (client->fd <= 0) continue;
+				T_DATUM_MINER_DATA *m = client->app_client_data;
+				datum_embedded_miner_stats *out = &miners[count++];
+				memset(out, 0, sizeof(*out));
+				strncpy(out->worker, m->last_auth_username, sizeof(out->worker) - 1);
+				strncpy(out->remote_host, client->rem_host, sizeof(out->remote_host) - 1);
+				strncpy(out->user_agent, m->useragent, sizeof(out->user_agent) - 1);
+				out->subscribed = atomic_load_explicit(&m->subscribed, memory_order_relaxed);
+				out->authorized = atomic_load_explicit(&m->authorized, memory_order_relaxed);
+				out->connected_since_ms = m->connect_tsms;
+				out->current_difficulty = m->current_diff;
+				out->estimated_hashrate_ths = datum_miner_est_th_sec(m, now_ms);
+				out->accepted_shares = atomic_load_explicit(&m->share_count_accepted, memory_order_relaxed);
+				out->rejected_shares = atomic_load_explicit(&m->share_count_rejected, memory_order_relaxed);
+				out->last_share_time_ms = atomic_load_explicit(&m->stats.last_share_tsms, memory_order_relaxed);
+			}
+			pthread_mutex_unlock(&app->datum_threads[tid].thread_data_lock);
+		}
+	}
+	pthread_mutex_unlock(&stratum_app_lock);
+	return count;
+}
+
 // TODO: Make this more accurate by tracking work over a longer period of time per user
 double datum_stratum_v1_est_total_th_sec(void) {
 	double hr;
@@ -532,6 +665,13 @@ double datum_stratum_v1_est_total_th_sec(void) {
 }
 
 void datum_stratum_v1_socket_thread_client_closed(T_DATUM_CLIENT_DATA *c, const char *msg) {
+	T_DATUM_MINER_DATA * const m = c->app_client_data;
+	pthread_mutex_lock(&session_stats_lock);
+	disconnected_accepted_shares += atomic_load_explicit(&m->share_count_accepted, memory_order_relaxed);
+	disconnected_rejected_shares += atomic_load_explicit(&m->share_count_rejected, memory_order_relaxed);
+	const uint64_t last_share = atomic_load_explicit(&m->stats.last_share_tsms, memory_order_relaxed);
+	if (last_share > disconnected_last_share_time_ms) disconnected_last_share_time_ms = last_share;
+	pthread_mutex_unlock(&session_stats_lock);
 	DLOG_DEBUG("Stratum client connection closed. (%s)", msg);
 }
 
@@ -929,6 +1069,16 @@ void send_error_to_client(T_DATUM_CLIENT_DATA *c, uint64_t id, char *e) {
 
 static inline void log_rejected_share(T_DATUM_CLIENT_DATA *c, const char *reason) {
 	T_DATUM_MINER_DATA * const m = c->app_client_data;
+	pthread_mutex_lock(&session_stats_lock);
+	strncpy(last_rejected_share_reason, reason, sizeof(last_rejected_share_reason) - 1);
+	last_rejected_share_reason[sizeof(last_rejected_share_reason) - 1] = '\0';
+	last_rejected_share_time_ms = current_time_millis();
+	if (!strcmp(reason, "unknown-work")) ++rejected_unknown_work;
+	else if (!strcmp(reason, "high-hash") || !strcmp(reason, "H-not-zero")) ++rejected_high_hash;
+	else if (!strcmp(reason, "stale-work") || !strcmp(reason, "stale-prevblk")) ++rejected_stale;
+	else if (!strcmp(reason, "duplicate")) ++rejected_duplicate;
+	else ++rejected_other;
+	pthread_mutex_unlock(&session_stats_lock);
 	if ((m->share_count_rejected == 0) || ((m->share_count_rejected & 1023) == 0)) {
 		DLOG_INFO("Stratum share rejected: worker=%s reason=%s rejected=%"PRIu64,
 			m->last_auth_username[0] ? m->last_auth_username : "unknown",
@@ -1507,6 +1657,7 @@ int client_mining_submit(T_DATUM_CLIENT_DATA *c, uint64_t id, json_t *params_obj
 		DLOG_WARN("************************************************************************************************");
 		DLOG_WARN("******** BLOCK FOUND - %s ********",new_notify_blockhash);
 		DLOG_WARN("************************************************************************************************");
+		datum_embedded_record_block_candidate((const char *)new_notify_blockhash);
 		
 		i = assembleBlockAndSubmit(block_header, full_cb_txn, cb->coinb1_len+12+cb->coinb2_len, job, m->sdata, new_notify_blockhash, empty_work);
 		if (i) {
@@ -2536,13 +2687,16 @@ int assembleBlockAndSubmit(uint8_t *block_header, uint8_t *coinbase_txn, size_t 
 	if (!r) {
 		// oddly, this means success here.
 		DLOG_INFO("Block %s submitted to upstream node successfully!",block_hash_hex);
+		datum_embedded_record_block_result(block_hash_hex, true, "accepted");
 		ret = 1;
 	} else {
 		s = json_dumps(r, JSON_ENCODE_ANY);
 		if (!s) {
 			DLOG_WARN("Upstream node rejected our block! (unknown)");
+			datum_embedded_record_block_result(block_hash_hex, false, "rejected: unknown");
 		} else {
 			DLOG_WARN("Upstream node rejected our block! (%s)",s);
+			datum_embedded_record_block_result(block_hash_hex, false, "rejected by upstream node");
 			free(s);
 		}
 		json_decref(r);

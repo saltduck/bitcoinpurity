@@ -40,11 +40,14 @@ extern "C" {
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <cmath>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <thread>
+#include <utility>
 
 namespace mining {
 namespace {
@@ -64,10 +67,42 @@ struct DatumRuntimeState {
     uint16_t port{DEFAULT_DATUM_PORT};
     uint64_t share_difficulty{DEFAULT_DATUM_DIFFICULTY};
     bool upnp{DEFAULT_DATUM_UPNP};
+    bool auth_required{DEFAULT_DATUM_AUTH};
+    std::string payout_address;
     node::NodeContext* node{nullptr};
 };
 
 DatumRuntimeState g_datum_state;
+std::mutex g_datum_state_mutex;
+
+struct DatumMappingState {
+    bool requested{false};
+    bool active{false};
+    std::string protocol;
+    std::string external;
+    uint32_t lifetime{0};
+    uint64_t updated_ms{0};
+    std::string error;
+};
+
+DatumMappingState g_datum_mapping;
+std::mutex g_datum_mapping_mutex;
+
+uint64_t NowMillis()
+{
+    return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+}
+
+void SetDatumMapping(bool active, std::string protocol = {}, std::string external = {}, uint32_t lifetime = 0, std::string error = {})
+{
+    std::lock_guard lock{g_datum_mapping_mutex};
+    g_datum_mapping.active = active;
+    g_datum_mapping.protocol = std::move(protocol);
+    g_datum_mapping.external = std::move(external);
+    g_datum_mapping.lifetime = lifetime;
+    g_datum_mapping.updated_ms = NowMillis();
+    g_datum_mapping.error = std::move(error);
+}
 
 class DatumValidationInterface final : public CValidationInterface
 {
@@ -101,12 +136,14 @@ std::optional<MappingResult> ProcessDatumPcpOrNatpmp(const uint16_t port, const 
 {
     const auto gateway{QueryDefaultGateway(NET_IPV4)};
     if (!gateway) {
+        SetDatumMapping(false, {}, {}, 0, "could not determine the IPv4 default gateway");
         LogPrintf("[datum] PCP/NAT-PMP could not determine the IPv4 default gateway\n");
         return std::nullopt;
     }
 
     const auto bind_address{LookupHost("0.0.0.0", /*fAllowLookup=*/false)};
     if (!bind_address) {
+        SetDatumMapping(false, {}, {}, 0, "could not prepare the IPv4 bind address");
         LogPrintf("[datum] PCP/NAT-PMP could not prepare the IPv4 bind address\n");
         return std::nullopt;
     }
@@ -119,6 +156,7 @@ std::optional<MappingResult> ProcessDatumPcpOrNatpmp(const uint16_t port, const 
     if (const auto* mapping = std::get_if<MappingResult>(&result)) return *mapping;
 
     if (const auto* error = std::get_if<MappingError>(&result)) {
+        SetDatumMapping(false, {}, {}, 0, DatumMappingErrorName(*error));
         LogPrintf("[datum] PCP/NAT-PMP mapping failed: %s (%d)\n", DatumMappingErrorName(*error), static_cast<int>(*error));
     }
     return std::nullopt;
@@ -136,6 +174,8 @@ bool ProcessDatumPcpOrNatpmpLoop(const uint16_t port)
 
         LogPrintf("[datum] mapped Stratum TCP port via %s: %s\n",
                   mapping->version == 0 ? "NAT-PMP" : "PCP", mapping->ToString());
+        SetDatumMapping(true, mapping->version == 0 ? "NAT-PMP" : "PCP",
+                        mapping->external.ToStringAddrPort(), mapping->lifetime);
         if (mapping->lifetime < 30) {
             LogPrintf("[datum] PCP/NAT-PMP returned an impossibly short mapping lifetime of %u seconds\n", mapping->lifetime);
             return false;
@@ -155,6 +195,7 @@ bool ProcessDatumUpnp(const uint16_t port)
     int error{0};
     UPNPDev* devlist{upnpDiscover(2000, nullptr, nullptr, 0, 0, 2, &error)};
     if (!devlist) {
+        SetDatumMapping(false, "UPnP", {}, 0, strprintf("discovery found no devices (error %d)", error));
         LogPrintf("[datum] UPnP discovery found no devices (error %d)\n", error);
         return false;
     }
@@ -168,6 +209,7 @@ bool ProcessDatumUpnp(const uint16_t port)
     const int valid_igd{UPNP_GetValidIGD(devlist, &urls, &data, lanaddr, sizeof(lanaddr), nullptr, 0)};
 #endif
     if (valid_igd != 1) {
+        SetDatumMapping(false, "UPnP", {}, 0, "no valid IGD found");
         LogPrintf("[datum] no valid UPnP IGD found\n");
         freeUPNPDevlist(devlist);
         if (valid_igd != 0) FreeUPNPUrls(&urls);
@@ -181,11 +223,19 @@ bool ProcessDatumUpnp(const uint16_t port)
                                               port_string.c_str(), port_string.c_str(), lanaddr,
                                               CLIENT_NAME " DATUM Stratum", "TCP", nullptr, "0")};
         if (result != UPNPCOMMAND_SUCCESS) {
+            SetDatumMapping(false, "UPnP", {}, 0, strupnperror(result));
             LogPrintf("[datum] UPnP AddPortMapping(%s, %s, %s) failed with code %d (%s)\n",
                       port_string, port_string, lanaddr, result, strupnperror(result));
             break;
         }
         mapped = true;
+        char external_ip[64]{};
+        const int external_result{UPNP_GetExternalIPAddress(urls.controlURL, data.first.servicetype, external_ip)};
+        const std::string external{external_result == UPNPCOMMAND_SUCCESS && external_ip[0]
+            ? strprintf("%s:%u", external_ip, port)
+            : strprintf("port %u", port)};
+        SetDatumMapping(true, "UPnP", external, 0,
+                        external_result == UPNPCOMMAND_SUCCESS ? "" : "mapped, but external address query failed");
         LogPrintf("[datum] UPnP mapped Stratum TCP port %s\n", port_string);
     } while (g_datum_upnp_interrupt.sleep_for(DATUM_UPNP_REANNOUNCE_PERIOD));
 
@@ -214,6 +264,12 @@ void ThreadDatumUpnp(const uint16_t port)
 void StartDatumUpnp(const uint16_t port)
 {
     if (g_datum_upnp_thread.joinable()) return;
+    {
+        std::lock_guard lock{g_datum_mapping_mutex};
+        g_datum_mapping = {};
+        g_datum_mapping.requested = true;
+        g_datum_mapping.updated_ms = NowMillis();
+    }
     g_datum_upnp_interrupt.reset();
     g_datum_upnp_thread = std::thread(&util::TraceThread, "datum-upnp", [port] { ThreadDatumUpnp(port); });
 }
@@ -223,10 +279,24 @@ void StopDatumUpnp()
     g_datum_upnp_interrupt();
     if (g_datum_upnp_thread.joinable()) g_datum_upnp_thread.join();
     g_datum_upnp_interrupt.reset();
+    std::lock_guard lock{g_datum_mapping_mutex};
+    g_datum_mapping = {};
+    g_datum_mapping.updated_ms = NowMillis();
 }
 #else
-void StartDatumUpnp(uint16_t) {}
-void StopDatumUpnp() {}
+void StartDatumUpnp(uint16_t)
+{
+    std::lock_guard lock{g_datum_mapping_mutex};
+    g_datum_mapping.requested = true;
+    g_datum_mapping.error = "UPnP support is not compiled in";
+    g_datum_mapping.updated_ms = NowMillis();
+}
+void StopDatumUpnp()
+{
+    std::lock_guard lock{g_datum_mapping_mutex};
+    g_datum_mapping = {};
+    g_datum_mapping.updated_ms = NowMillis();
+}
 #endif // USE_UPNP
 
 bool IsLoopbackRpcUrl(const std::string& url)
@@ -422,18 +492,27 @@ bool StartDatum(node::NodeContext& node, bilingual_str& error)
         .coinbase_tag = coinbase_tag.c_str(),
     };
     std::array<char, 512> c_error{};
-    g_datum_state.node = &node;
+    {
+        std::lock_guard lock{g_datum_state_mutex};
+        g_datum_state.node = &node;
+    }
     if (datum_embedded_start(&config, c_error.data(), c_error.size()) != 0) {
+        std::lock_guard lock{g_datum_state_mutex};
         g_datum_state.node = nullptr;
         error = Untranslated(strprintf("Unable to start embedded DATUM: %s", c_error.data()));
         return false;
     }
 
-    g_datum_state.enabled = true;
-    g_datum_state.listen = listen;
-    g_datum_state.port = config.listen_port;
-    g_datum_state.share_difficulty = config.share_difficulty;
-    g_datum_state.upnp = datum_upnp;
+    {
+        std::lock_guard lock{g_datum_state_mutex};
+        g_datum_state.enabled = true;
+        g_datum_state.listen = listen;
+        g_datum_state.port = config.listen_port;
+        g_datum_state.share_difficulty = config.share_difficulty;
+        g_datum_state.upnp = datum_upnp;
+        g_datum_state.auth_required = config.auth_required;
+        g_datum_state.payout_address = address;
+    }
     g_datum_validation = std::make_unique<DatumValidationInterface>();
     Assert(node.validation_signals)->RegisterValidationInterface(g_datum_validation.get());
     if (datum_upnp && !config.auth_required) {
@@ -454,35 +533,192 @@ void InterruptDatum()
 
 void StopDatum(node::NodeContext* node)
 {
-    if (!g_datum_state.enabled) return;
-    node::NodeContext* context{node ? node : g_datum_state.node};
+    DatumRuntimeState runtime;
+    {
+        std::lock_guard lock{g_datum_state_mutex};
+        runtime = g_datum_state;
+    }
+    if (!runtime.enabled) return;
+    node::NodeContext* context{node ? node : runtime.node};
     if (context && context->validation_signals && g_datum_validation) {
         context->validation_signals->UnregisterValidationInterface(g_datum_validation.get());
     }
     g_datum_validation.reset();
     StopDatumUpnp();
     datum_embedded_stop();
-    g_datum_state = {};
+    {
+        std::lock_guard lock{g_datum_state_mutex};
+        g_datum_state = {};
+    }
     LogInfo("[datum] subsystem stopped");
+}
+
+double DifficultyFromCompact(uint32_t bits)
+{
+    if ((bits & 0x00ffffff) == 0) return 0;
+    int shift{static_cast<int>((bits >> 24) & 0xff)};
+    double difficulty{static_cast<double>(0x0000ffff) / static_cast<double>(bits & 0x00ffffff)};
+    while (shift < 29) { difficulty *= 256.0; ++shift; }
+    while (shift > 29) { difficulty /= 256.0; --shift; }
+    return difficulty;
+}
+
+DatumStatusSnapshot GetDatumStatusSnapshot(bool include_miners)
+{
+    DatumRuntimeState runtime;
+    DatumMappingState mapping;
+    {
+        std::lock_guard lock{g_datum_state_mutex};
+        runtime = g_datum_state;
+    }
+    {
+        std::lock_guard lock{g_datum_mapping_mutex};
+        mapping = g_datum_mapping;
+    }
+    datum_embedded_stats stats{};
+    datum_embedded_get_stats(&stats);
+    DatumStatusSnapshot result;
+    result.enabled = runtime.enabled;
+    result.running = stats.running;
+    result.status = !runtime.enabled ? "Disabled" : stats.stopping ? "Stopping" : !stats.running || stats.current_height == 0 ? "Starting" : stats.last_template_update_ms && !stats.last_template_success ? "Error" : "Running";
+    result.auth_required = runtime.auth_required;
+    result.listen = runtime.listen;
+    result.port = runtime.port;
+    result.payout_address = runtime.payout_address;
+    result.session_started_ms = stats.session_started_ms;
+    result.mapping_requested = runtime.upnp || mapping.requested;
+    result.mapping_active = mapping.active;
+    result.mapping_protocol = mapping.protocol;
+    result.mapping_external = mapping.external;
+    result.mapping_lifetime = mapping.lifetime;
+    result.mapping_updated_ms = mapping.updated_ms;
+    result.mapping_error = mapping.error;
+    result.share_difficulty = stats.running ? datum_embedded_get_share_difficulty() : runtime.share_difficulty;
+    result.clients = stats.clients;
+    result.subscribed_clients = stats.subscribed_clients;
+    result.authorized_clients = stats.authorized_clients;
+    result.accepted_shares = stats.accepted_shares;
+    result.rejected_shares = stats.rejected_shares;
+    result.session_accepted_shares = stats.session_accepted_shares;
+    result.session_rejected_shares = stats.session_rejected_shares;
+    result.last_share_time_ms = stats.last_share_time_ms;
+    result.estimated_hashrate_ths = stats.estimated_hashrate_ths;
+    result.current_height = stats.current_height;
+    result.job_id = stats.job_id;
+    result.job_created_ms = stats.job_created_ms;
+    result.previous_block_hash = stats.previous_block_hash;
+    result.nbits = stats.nbits;
+    result.network_difficulty = DifficultyFromCompact(stats.nbits);
+    result.transaction_count = stats.transaction_count;
+    result.template_size = stats.template_size;
+    result.template_weight = stats.template_weight;
+    result.coinbase_value = stats.coinbase_value;
+    result.last_template_update_ms = stats.last_template_update_ms;
+    result.last_template_success = stats.last_template_success;
+    result.last_template_error = stats.last_template_error;
+    result.block_candidates = stats.block_candidates;
+    result.block_submissions_accepted = stats.block_submissions_accepted;
+    result.block_submissions_rejected = stats.block_submissions_rejected;
+    result.last_block_time_ms = stats.last_block_time_ms;
+    result.last_block_hash = stats.last_block_hash;
+    result.last_block_result = stats.last_block_result;
+    result.last_rejected_share_time_ms = stats.last_rejected_share_time_ms;
+    result.last_rejected_share_reason = stats.last_rejected_share_reason;
+    result.rejected_unknown_work = stats.rejected_unknown_work;
+    result.rejected_high_hash = stats.rejected_high_hash;
+    result.rejected_stale = stats.rejected_stale;
+    result.rejected_duplicate = stats.rejected_duplicate;
+    result.rejected_other = stats.rejected_other;
+    if (include_miners && stats.clients > 0) {
+        std::vector<datum_embedded_miner_stats> miners(stats.clients);
+        miners.resize(datum_embedded_get_miner_stats(miners.data(), miners.size()));
+        result.miners.reserve(miners.size());
+        for (const auto& miner : miners) {
+            result.miners.push_back({
+                .worker = miner.worker,
+                .remote_host = miner.remote_host,
+                .user_agent = miner.user_agent,
+                .subscribed = miner.subscribed,
+                .authorized = miner.authorized,
+                .connected_since_ms = miner.connected_since_ms,
+                .current_difficulty = miner.current_difficulty,
+                .estimated_hashrate_ths = miner.estimated_hashrate_ths,
+                .accepted_shares = miner.accepted_shares,
+                .rejected_shares = miner.rejected_shares,
+                .last_share_time_ms = miner.last_share_time_ms,
+            });
+        }
+    }
+    return result;
 }
 
 UniValue GetDatumInfo()
 {
-    datum_embedded_stats stats{};
-    datum_embedded_get_stats(&stats);
+    const DatumStatusSnapshot snapshot{GetDatumStatusSnapshot(/*include_miners=*/false)};
     UniValue result{UniValue::VOBJ};
-    result.pushKV("enabled", g_datum_state.enabled);
-    result.pushKV("running", stats.running);
-    result.pushKV("listen", g_datum_state.listen);
-    result.pushKV("port", g_datum_state.port);
-    result.pushKV("upnp", g_datum_state.upnp);
-    result.pushKV("clients", stats.clients);
-    result.pushKV("authorized_clients", stats.authorized_clients);
-    const uint64_t share_difficulty{stats.running ? datum_embedded_get_share_difficulty() : g_datum_state.share_difficulty};
-    result.pushKV("share_difficulty", share_difficulty);
-    result.pushKV("accepted_shares", stats.accepted_shares);
-    result.pushKV("rejected_shares", stats.rejected_shares);
-    result.pushKV("current_height", stats.current_height);
+    result.pushKV("enabled", snapshot.enabled);
+    result.pushKV("running", snapshot.running);
+    result.pushKV("status", snapshot.status);
+    result.pushKV("listen", snapshot.listen);
+    result.pushKV("port", snapshot.port);
+    result.pushKV("upnp", snapshot.mapping_requested);
+    result.pushKV("auth_required", snapshot.auth_required);
+    result.pushKV("clients", snapshot.clients);
+    result.pushKV("subscribed_clients", snapshot.subscribed_clients);
+    result.pushKV("authorized_clients", snapshot.authorized_clients);
+    result.pushKV("share_difficulty", snapshot.share_difficulty);
+    result.pushKV("accepted_shares", snapshot.accepted_shares);
+    result.pushKV("rejected_shares", snapshot.rejected_shares);
+    result.pushKV("session_accepted_shares", snapshot.session_accepted_shares);
+    result.pushKV("session_rejected_shares", snapshot.session_rejected_shares);
+    result.pushKV("session_started", snapshot.session_started_ms / 1000);
+    result.pushKV("last_share_time", snapshot.last_share_time_ms / 1000);
+    result.pushKV("estimated_hashrate_ths", snapshot.estimated_hashrate_ths);
+    result.pushKV("current_height", snapshot.current_height);
+
+    UniValue mapping{UniValue::VOBJ};
+    mapping.pushKV("requested", snapshot.mapping_requested);
+    mapping.pushKV("active", snapshot.mapping_active);
+    mapping.pushKV("protocol", snapshot.mapping_protocol);
+    mapping.pushKV("external", snapshot.mapping_external);
+    mapping.pushKV("lifetime", snapshot.mapping_lifetime);
+    mapping.pushKV("updated", snapshot.mapping_updated_ms / 1000);
+    mapping.pushKV("error", snapshot.mapping_error);
+    result.pushKV("port_mapping", std::move(mapping));
+
+    UniValue job{UniValue::VOBJ};
+    job.pushKV("id", snapshot.job_id);
+    job.pushKV("height", snapshot.current_height);
+    job.pushKV("created", snapshot.job_created_ms / 1000);
+    job.pushKV("previous_block_hash", snapshot.previous_block_hash);
+    job.pushKV("nbits", strprintf("%08x", snapshot.nbits));
+    job.pushKV("network_difficulty", snapshot.network_difficulty);
+    job.pushKV("transactions", snapshot.transaction_count);
+    job.pushKV("size", snapshot.template_size);
+    job.pushKV("weight", snapshot.template_weight);
+    job.pushKV("coinbase_value", snapshot.coinbase_value);
+    job.pushKV("last_template_update", snapshot.last_template_update_ms / 1000);
+    job.pushKV("last_template_success", snapshot.last_template_success);
+    job.pushKV("last_template_error", snapshot.last_template_error);
+    result.pushKV("current_job", std::move(job));
+
+    UniValue blocks{UniValue::VOBJ};
+    blocks.pushKV("candidates", snapshot.block_candidates);
+    blocks.pushKV("accepted", snapshot.block_submissions_accepted);
+    blocks.pushKV("rejected", snapshot.block_submissions_rejected);
+    blocks.pushKV("last_time", snapshot.last_block_time_ms / 1000);
+    blocks.pushKV("last_hash", snapshot.last_block_hash);
+    blocks.pushKV("last_result", snapshot.last_block_result);
+    blocks.pushKV("last_share_rejection_time", snapshot.last_rejected_share_time_ms / 1000);
+    blocks.pushKV("last_share_rejection_reason", snapshot.last_rejected_share_reason);
+    UniValue rejection_counts{UniValue::VOBJ};
+    rejection_counts.pushKV("unknown_work", snapshot.rejected_unknown_work);
+    rejection_counts.pushKV("high_hash", snapshot.rejected_high_hash);
+    rejection_counts.pushKV("stale", snapshot.rejected_stale);
+    rejection_counts.pushKV("duplicate", snapshot.rejected_duplicate);
+    rejection_counts.pushKV("other", snapshot.rejected_other);
+    blocks.pushKV("share_rejections", std::move(rejection_counts));
+    result.pushKV("block_submission", std::move(blocks));
     return result;
 }
 
@@ -496,6 +732,10 @@ bool SetDatumDifficulty(const int64_t difficulty, std::string& error)
     if (datum_embedded_update_share_difficulty(static_cast<uint64_t>(difficulty), c_error.data(), c_error.size()) != 0) {
         error = c_error.data();
         return false;
+    }
+    {
+        std::lock_guard lock{g_datum_state_mutex};
+        g_datum_state.share_difficulty = difficulty;
     }
     LogInfo("[datum] share difficulty updated at runtime to %d", static_cast<int>(difficulty));
     return true;

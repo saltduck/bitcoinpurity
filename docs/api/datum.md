@@ -96,26 +96,80 @@ configured DATUM TCP port is requested.
 
 ## `getdatuminfo`
 
-The optional read-only RPC returns non-secret state when compiled:
+The optional read-only RPC returns non-secret aggregate state when compiled.
+Existing fields retain their meaning; `accepted_shares` and `rejected_shares`
+still describe currently connected clients. Session counters do not decrease
+when a miner disconnects and reset on the next DATUM start.
 
 ```json
 {
   "enabled": true,
   "running": true,
+  "status": "Running",
   "listen": "127.0.0.1",
   "port": 23334,
   "upnp": false,
+  "auth_required": true,
   "clients": 1,
+  "subscribed_clients": 1,
   "authorized_clients": 1,
   "share_difficulty": 1024,
   "accepted_shares": 123,
   "rejected_shares": 1,
-  "current_height": 961637
+  "session_accepted_shares": 123,
+  "session_rejected_shares": 1,
+  "session_started": 1787620000,
+  "last_share_time": 1787620100,
+  "estimated_hashrate_ths": 0.42,
+  "current_height": 961637,
+  "port_mapping": {
+    "requested": false,
+    "active": false,
+    "protocol": "",
+    "external": "",
+    "lifetime": 0,
+    "updated": 0,
+    "error": ""
+  },
+  "current_job": {
+    "id": "6a8d24fc0fc0d002",
+    "height": 961637,
+    "created": 1787620100,
+    "previous_block_hash": "...",
+    "nbits": "180ffff0",
+    "network_difficulty": 1.0,
+    "transactions": 1000,
+    "size": 500000,
+    "weight": 2000000,
+    "coinbase_value": 312500000,
+    "last_template_update": 1787620100,
+    "last_template_success": true,
+    "last_template_error": ""
+  },
+  "block_submission": {
+    "candidates": 0,
+    "accepted": 0,
+    "rejected": 0,
+    "last_time": 0,
+    "last_hash": "",
+    "last_result": "",
+    "last_share_rejection_time": 0,
+    "last_share_rejection_reason": "",
+    "share_rejections": {
+      "unknown_work": 0,
+      "high_hash": 0,
+      "stale": 0,
+      "duplicate": 0,
+      "other": 0
+    }
+  }
 }
 ```
 
-Share counters aggregate currently connected clients. The RPC never returns
-Stratum or RPC credentials.
+Timestamps are Unix seconds; zero means no event. Estimated hashrate is derived
+from recently accepted share difficulty and is not an exact device reading.
+The RPC never returns worker names, remote IPs, miner user agents, Stratum
+credentials, or RPC credentials.
 
 ## `setdatumdiff`
 

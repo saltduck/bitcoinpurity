@@ -39,6 +39,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdatomic.h>
+#include "datum_embedded.h"
 #include "datum_thread.h"
 
 #ifndef T_DATUM_CLIENT_DATA
@@ -290,6 +291,9 @@ void datum_stratum_v1_socket_thread_client_new(T_DATUM_CLIENT_DATA *c);
 int datum_stratum_v1_global_subscriber_count(void);
 void datum_stratum_v1_get_stats(uint32_t *clients, uint32_t *authorized_clients,
 	uint64_t *accepted_shares, uint64_t *rejected_shares, uint64_t *current_height);
+void datum_stratum_v1_get_extended_stats(datum_embedded_stats *stats);
+uint32_t datum_stratum_v1_get_miner_stats(datum_embedded_miner_stats *miners, uint32_t capacity);
+void datum_stratum_v1_reset_session_stats(void);
 double datum_stratum_v1_est_total_th_sec(void);
 void datum_stratum_v1_shutdown_all(void);
 

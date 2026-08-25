@@ -38,6 +38,13 @@ restart is required for configuration changes other than the runtime share-
 difficulty update. The Qt share-difficulty field uses the same runtime update
 path as the `setdatumdiff` RPC when DATUM is running.
 
+The `Window` menu also provides a read-only `DATUM` status window. It refreshes
+only while visible and shows runtime and actual port-mapping state, session
+share totals, estimated miner hashrate, current job/template data, connected
+workers, and block-submit diagnostics. Worker names, IP addresses, and user
+agents remain local to the GUI; the status RPC exposes aggregate data only.
+Session counters survive miner disconnects but reset on the next DATUM run.
+
 `datumupnp=1` is an explicit opt-in that maps only the configured DATUM TCP
 port, independently of the node's P2P `upnp` setting. It uses miniupnpc when
 an SSDP/IGD service is available and falls back to PCP/NAT-PMP, matching the

@@ -444,6 +444,7 @@ void *datum_gateway_template_thread(void *args) {
 		
 		if (!gbt) {
 			datum_blocktemplates_error = "Could not fetch new template!";
+			datum_embedded_record_template_result(false, datum_blocktemplates_error);
 			DLOG_ERROR("Could not fetch new template from %s!", datum_config.bitcoind_rpcurl);
 			for (int retry_wait = 0; retry_wait < 100 && !datum_embedded_should_stop(); ++retry_wait) usleep(10000);
 			continue;
@@ -451,6 +452,7 @@ void *datum_gateway_template_thread(void *args) {
 			res_val = json_object_get(gbt, "result");
 			if (!res_val) {
 				datum_blocktemplates_error = "Could not decode GBT result!";
+				datum_embedded_record_template_result(false, datum_blocktemplates_error);
 				DLOG_ERROR("%s", datum_blocktemplates_error);
 			} else {
 				DLOG_DEBUG("DEBUG: calling datum_gbt_parser (new=%d)", was_notified?1:0);
@@ -458,6 +460,7 @@ void *datum_gateway_template_thread(void *args) {
 				
 				if (t) {
 					datum_blocktemplates_error = NULL;
+					datum_embedded_record_template_result(true, NULL);
 					DLOG_DEBUG("height: %lu / value: %"PRIu64, (unsigned long)t->height, t->coinbasevalue);
 					DLOG_DEBUG("--- prevhash: %s", t->previousblockhash);
 					DLOG_DEBUG("--- txn_count: %u / sigops: %u / weight: %u / size: %u", t->txn_count, t->txn_total_sigops, t->txn_total_weight, t->txn_total_size);

@@ -8,6 +8,7 @@
 #include "datum_stratum.h"
 #include "datum_coinbaser.h"
 #include "datum_submitblock.h"
+#include "datum_time.h"
 #include "datum_utils.h"
 
 #include <curl/curl.h>
@@ -34,6 +35,17 @@ static bool g_stratum_started;
 static bool g_coinbaser_started;
 static bool g_curl_initialized;
 static bool g_net_initialized;
+static pthread_mutex_t g_status_lock = PTHREAD_MUTEX_INITIALIZER;
+static uint64_t g_session_started_ms;
+static uint64_t g_last_template_update_ms;
+static bool g_last_template_success;
+static char g_last_template_error[DATUM_STATUS_TEXT_SIZE];
+static uint64_t g_block_candidates;
+static uint64_t g_block_submissions_accepted;
+static uint64_t g_block_submissions_rejected;
+static uint64_t g_last_block_time_ms;
+static char g_last_block_hash[72];
+static char g_last_block_result[DATUM_STATUS_TEXT_SIZE];
 
 static bool copy_string(char* dst, size_t dst_size, const char* src,
     const char* name, char* error, size_t error_size)
@@ -128,6 +140,19 @@ int datum_embedded_start(const datum_embedded_config* config, char* error, size_
     }
     g_curl_initialized = true;
     datum_utils_init();
+    datum_stratum_v1_reset_session_stats();
+    pthread_mutex_lock(&g_status_lock);
+    g_session_started_ms = current_time_millis();
+    g_last_template_update_ms = 0;
+    g_last_template_success = false;
+    g_last_template_error[0] = '\0';
+    g_block_candidates = 0;
+    g_block_submissions_accepted = 0;
+    g_block_submissions_rejected = 0;
+    g_last_block_time_ms = 0;
+    g_last_block_hash[0] = '\0';
+    g_last_block_result[0] = '\0';
+    pthread_mutex_unlock(&g_status_lock);
     atomic_store_explicit(&g_stop, false, memory_order_release);
     atomic_store_explicit(&g_share_difficulty, config->share_difficulty, memory_order_release);
 
@@ -200,8 +225,55 @@ void datum_embedded_get_stats(datum_embedded_stats* stats)
     if (!stats) return;
     memset(stats, 0, sizeof(*stats));
     stats->running = atomic_load_explicit(&g_running, memory_order_acquire);
-    datum_stratum_v1_get_stats(&stats->clients, &stats->authorized_clients,
-        &stats->accepted_shares, &stats->rejected_shares, &stats->current_height);
+    stats->stopping = stats->running && datum_embedded_should_stop();
+    datum_stratum_v1_get_extended_stats(stats);
+    pthread_mutex_lock(&g_status_lock);
+    stats->session_started_ms = g_session_started_ms;
+    stats->last_template_update_ms = g_last_template_update_ms;
+    stats->last_template_success = g_last_template_success;
+    strncpy(stats->last_template_error, g_last_template_error, sizeof(stats->last_template_error) - 1);
+    stats->block_candidates = g_block_candidates;
+    stats->block_submissions_accepted = g_block_submissions_accepted;
+    stats->block_submissions_rejected = g_block_submissions_rejected;
+    stats->last_block_time_ms = g_last_block_time_ms;
+    strncpy(stats->last_block_hash, g_last_block_hash, sizeof(stats->last_block_hash) - 1);
+    strncpy(stats->last_block_result, g_last_block_result, sizeof(stats->last_block_result) - 1);
+    pthread_mutex_unlock(&g_status_lock);
+}
+
+uint32_t datum_embedded_get_miner_stats(datum_embedded_miner_stats* miners, uint32_t capacity)
+{
+    return datum_stratum_v1_get_miner_stats(miners, capacity);
+}
+
+void datum_embedded_record_template_result(bool success, const char* error)
+{
+    pthread_mutex_lock(&g_status_lock);
+    g_last_template_update_ms = current_time_millis();
+    g_last_template_success = success;
+    snprintf(g_last_template_error, sizeof(g_last_template_error), "%s", error ? error : "");
+    pthread_mutex_unlock(&g_status_lock);
+}
+
+void datum_embedded_record_block_candidate(const char* block_hash)
+{
+    pthread_mutex_lock(&g_status_lock);
+    ++g_block_candidates;
+    g_last_block_time_ms = current_time_millis();
+    snprintf(g_last_block_hash, sizeof(g_last_block_hash), "%s", block_hash ? block_hash : "");
+    snprintf(g_last_block_result, sizeof(g_last_block_result), "pending");
+    pthread_mutex_unlock(&g_status_lock);
+}
+
+void datum_embedded_record_block_result(const char* block_hash, bool accepted, const char* result)
+{
+    pthread_mutex_lock(&g_status_lock);
+    if (accepted) ++g_block_submissions_accepted;
+    else ++g_block_submissions_rejected;
+    g_last_block_time_ms = current_time_millis();
+    snprintf(g_last_block_hash, sizeof(g_last_block_hash), "%s", block_hash ? block_hash : "");
+    snprintf(g_last_block_result, sizeof(g_last_block_result), "%s", result ? result : (accepted ? "accepted" : "rejected"));
+    pthread_mutex_unlock(&g_status_lock);
 }
 
 uint64_t datum_embedded_get_share_difficulty(void)

@@ -7,3 +7,4 @@
 - [TASK-005: Qt Settings parity and DATUM tab](TASK-005.md)
 - [TASK-006: Runtime DATUM share-difficulty hot reload](TASK-006.md)
 - [TASK-007: DATUM UPnP mapping and authentication default](TASK-007.md)
+- [TASK-008: Qt DATUM mining status window](TASK-008.md)

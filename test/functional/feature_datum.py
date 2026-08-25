@@ -119,8 +119,17 @@ class DatumTest(BitcoinTestFramework):
         info = node.getdatuminfo()
         assert_equal(info["enabled"], True)
         assert_equal(info["running"], True)
+        assert_equal(info["status"], "Running")
         assert_equal(info["upnp"], False)
+        assert_equal(info["auth_required"], True)
         assert_equal(info["share_difficulty"], 1)
+        assert_equal(info["port_mapping"]["requested"], False)
+        assert_equal(info["port_mapping"]["active"], False)
+        assert_equal(info["current_job"]["height"], info["current_height"])
+        assert "block_submission" in info
+        serialized_info = json.dumps(info, default=str)
+        for private_field in ["worker", "remote_host", "user_agent", "datumpassword", "datumrpcpassword"]:
+            assert private_field not in serialized_info
 
         self.log.info("Enforce per-IP connection bounds and authentication timeout")
         clients = [self.connect() for _ in range(4)]
@@ -191,7 +200,13 @@ class DatumTest(BitcoinTestFramework):
                 client.send(request_id, "mining.submit", ["miner", "badjob", "0000000000000000", "00000000", "00000000"])
             responses = [client.receive() for _ in range(300)]
             assert any(response.get("error") and response["error"][1] == "rate-limit" for response in responses)
+        session_rejected = node.getdatuminfo()["session_rejected_shares"]
+        assert session_rejected > 0
         client.close()
+        self.wait_until(lambda: node.getdatuminfo()["clients"] == 0, timeout=5)
+        disconnected_info = node.getdatuminfo()
+        assert_equal(disconnected_info["rejected_shares"], 0)
+        assert disconnected_info["session_rejected_shares"] >= session_rejected
 
         self.log.info("Disconnect malformed JSON and oversized messages")
         for payload in [b"not-json\n", b"{" + b"a" * (16 * 1024) + b"\n"]:
