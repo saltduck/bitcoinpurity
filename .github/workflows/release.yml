@@ -41,6 +41,9 @@ jobs:
             pkgconf \
             python3 \
             libevent-dev \
+            libcurl4-openssl-dev \
+            libjansson-dev \
+            libsodium-dev \
             libboost-dev \
             libsqlite3-dev \
             libdb++-dev \
@@ -126,6 +129,9 @@ jobs:
             pkgconf \
             python3 \
             libevent-dev \
+            libcurl4-openssl-dev \
+            libjansson-dev \
+            libsodium-dev \
             libboost-dev \
             libsqlite3-dev \
             libdb++-dev \
@@ -217,6 +223,9 @@ jobs:
             gnu-getopt \
             boost \
             libevent \
+            curl \
+            jansson \
+            libsodium \
             miniupnpc \
             zeromq \
             qt@5 \
@@ -304,6 +313,9 @@ jobs:
             gnu-getopt \
             boost \
             libevent \
+            curl \
+            jansson \
+            libsodium \
             miniupnpc \
             zeromq \
             qt@5 \

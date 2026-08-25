@@ -99,6 +99,8 @@ cmake -B build --preset vs2022 -DVCPKG_MANIFEST_NO_DEFAULT_FEATURES=ON -DVCPKG_M
 ```
 
 Available features are listed in the [`vcpkg.json`](/vcpkg.json) file.
+The `datum` manifest feature is added automatically while `BUILD_DATUM=ON`.
+Use `-DBUILD_DATUM=OFF` to omit curl, jansson, and libsodium entirely.
 
 ### 8. Antivirus Software
 

@@ -48,7 +48,7 @@ See [dependencies.md](dependencies.md) for a complete overview.
 To install, run the following from your terminal:
 
 ``` bash
-brew install cmake boost pkgconf libevent
+brew install cmake boost pkgconf libevent curl jansson libsodium
 ```
 
 ### 4. Clone Bitcoin repository
