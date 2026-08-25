@@ -2309,7 +2309,7 @@ int datum_stratum_v1_socket_thread_client_cmd(T_DATUM_CLIENT_DATA *c, char *line
 				json_decref(j);
 				return i;
 			}
-			[[fallthrough]];
+			/* fallthrough */
 		}
 		default: {
 			send_error_to_client(c, id, "[-3,\"Method not found\",null]");
