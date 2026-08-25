@@ -85,6 +85,7 @@ jobs:
         shell: bash
         run: |
           VERSION="${GITHUB_REF_NAME:-manual}"
+          VERSION="${VERSION//\//-}"
           PACKAGE="bitcoin-purity-${VERSION}-x86_64-linux-gnu"
 
           mkdir -p "release/${PACKAGE}/bin"
@@ -173,6 +174,7 @@ jobs:
         shell: bash
         run: |
           VERSION="${GITHUB_REF_NAME:-manual}"
+          VERSION="${VERSION//\//-}"
           PACKAGE="bitcoin-purity-${VERSION}-aarch64-linux-gnu"
 
           mkdir -p "release/${PACKAGE}/bin"
@@ -261,6 +263,7 @@ jobs:
         shell: bash
         run: |
           VERSION="${GITHUB_REF_NAME:-manual}"
+          VERSION="${VERSION//\//-}"
           PACKAGE="bitcoin-purity-${VERSION}-arm64-apple-darwin"
 
           mkdir -p "release/${PACKAGE}/bin"
@@ -351,6 +354,7 @@ jobs:
         shell: bash
         run: |
           VERSION="${GITHUB_REF_NAME:-manual}"
+          VERSION="${VERSION//\//-}"
           PACKAGE="bitcoin-purity-${VERSION}-x86_64-apple-darwin"
 
           mkdir -p "release/${PACKAGE}/bin"
@@ -480,6 +484,8 @@ jobs:
           if ([string]::IsNullOrWhiteSpace($version)) {
               $version = "manual"
           }
+
+          $version = $version -replace '[\\/:*?"<>|]', '-'
 
           $package = "bitcoin-purity-$version-win64"
           $target = "release\$package\bin"
