@@ -723,13 +723,13 @@ uint64_t datum_siphash(const void *src, uint64_t sz, const unsigned char key[16]
 	m = (const uint8_t *)in;
 	
 	switch (sz) {
-		case 7: pt[6] = m[6]; [[fallthrough]];
-		case 6: pt[5] = m[5]; [[fallthrough]];
-		case 5: pt[4] = m[4]; [[fallthrough]];
-		case 4: pt[3] = m[3]; [[fallthrough]];
-		case 3: pt[2] = m[2]; [[fallthrough]];
-		case 2: pt[1] = m[1]; [[fallthrough]];
-		case 1: pt[0] = m[0]; [[fallthrough]];
+		case 7: pt[6] = m[6]; /* fallthrough */
+		case 6: pt[5] = m[5]; /* fallthrough */
+		case 5: pt[4] = m[4]; /* fallthrough */
+		case 4: pt[3] = m[3]; /* fallthrough */
+		case 3: pt[2] = m[2]; /* fallthrough */
+		case 2: pt[1] = m[1]; /* fallthrough */
+		case 1: pt[0] = m[0]; /* fallthrough */
 		default: break;
 	}
 	b |= t;
