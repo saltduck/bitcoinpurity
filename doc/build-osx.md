@@ -123,6 +123,13 @@ Skip if you do not need this functionality.
 brew install miniupnpc
 ```
 
+To compile UPnP port-mapping support, pass `-DWITH_MINIUPNPC=ON` when
+configuring CMake, for example:
+
+``` bash
+cmake -B build -DBUILD_GUI=ON -DWITH_MINIUPNPC=ON
+```
+
 ---
 
 #### ZMQ Dependencies
