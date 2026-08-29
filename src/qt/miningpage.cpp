@@ -1,24 +1,41 @@
 // Copyright (c) 2026 The Bitcoin Purity developers
 // Distributed under the MIT software license.
-#include <qt/datumwindow.h>
+#include <qt/miningpage.h>
 
 #include <mining/datum_bridge.h>
 
-#include <QCloseEvent>
+#include <QAbstractItemView>
 #include <QDateTime>
+#include <QFont>
 #include <QFormLayout>
+#include <QFrame>
+#include <QGridLayout>
 #include <QGroupBox>
 #include <QHeaderView>
 #include <QHideEvent>
+#include <QHBoxLayout>
 #include <QLabel>
-#include <QSettings>
+#include <QPainter>
+#include <QPainterPath>
+#include <QPair>
+#include <QScrollArea>
 #include <QShowEvent>
 #include <QTableWidget>
 #include <QTabWidget>
 #include <QTimer>
 #include <QVBoxLayout>
+#include <QVector>
+
+#include <algorithm>
+#include <cmath>
 
 namespace {
+constexpr uint64_t HOUR_MS{60 * 60 * 1000};
+constexpr uint64_t DAY_MS{24 * HOUR_MS};
+constexpr uint64_t SAMPLE_INTERVAL_MS{60 * 1000};
+constexpr int MAX_SAMPLES{1440};
+constexpr double HASHES_PER_DIFFICULTY{4294967296.0};
+
 QLabel* ValueLabel()
 {
     auto* label = new QLabel(QStringLiteral("—"));
@@ -53,10 +70,23 @@ QString AgeText(uint64_t milliseconds, uint64_t now)
 
 QString HashrateText(double ths)
 {
+    if (!std::isfinite(ths) || ths < 0) return QStringLiteral("—");
     if (ths >= 1000000) return QStringLiteral("%1 EH/s").arg(ths / 1000000, 0, 'f', 2);
     if (ths >= 1000) return QStringLiteral("%1 PH/s").arg(ths / 1000, 0, 'f', 2);
     if (ths >= 1) return QStringLiteral("%1 TH/s").arg(ths, 0, 'f', 2);
     return QStringLiteral("%1 GH/s").arg(ths * 1000, 0, 'f', 1);
+}
+
+QString ChanceText(double miner_ths, double network_difficulty)
+{
+    if (!std::isfinite(miner_ths) || !std::isfinite(network_difficulty) || miner_ths <= 0 || network_difficulty <= 0) {
+        return QStringLiteral("—");
+    }
+    const double network_ths = network_difficulty * HASHES_PER_DIFFICULTY / 600.0 / 1.0e12;
+    if (!std::isfinite(network_ths) || network_ths <= 0) return QStringLiteral("—");
+    const double percent = std::min(1.0, miner_ths / network_ths) * 100.0;
+    return percent >= 0.01 ? QStringLiteral("%1%").arg(percent, 0, 'f', 4)
+                           : QStringLiteral("%1%").arg(percent, 0, 'g', 3);
 }
 
 void AddRow(QFormLayout* form, const QString& name, QLabel*& value)
@@ -64,15 +94,130 @@ void AddRow(QFormLayout* form, const QString& name, QLabel*& value)
     value = ValueLabel();
     form->addRow(name, value);
 }
+
+QFrame* MetricCard(const QString& title, QLabel*& value, const QString& detail, QLabel** detail_label = nullptr)
+{
+    auto* card = new QFrame;
+    card->setFrameShape(QFrame::StyledPanel);
+    card->setMinimumHeight(62);
+    card->setMaximumHeight(72);
+    auto* layout = new QVBoxLayout(card);
+    layout->setContentsMargins(10, 5, 10, 5);
+    layout->setSpacing(0);
+    auto* heading = new QLabel(title);
+    QFont heading_font = heading->font();
+    heading_font.setPointSize(std::max(8, heading_font.pointSize() - 1));
+    heading->setFont(heading_font);
+    layout->addWidget(heading);
+    value = ValueLabel();
+    QFont value_font = value->font();
+    value_font.setPointSize(value_font.pointSize() + 5);
+    value->setFont(value_font);
+    layout->addWidget(value);
+    auto* description = new QLabel(detail);
+    QFont description_font = description->font();
+    description_font.setPointSize(std::max(8, description_font.pointSize() - 1));
+    description->setFont(description_font);
+    description->setWordWrap(true);
+    description->setProperty("secondary", true);
+    layout->addWidget(description);
+    if (detail_label) *detail_label = description;
+    return card;
+}
+
+void SetSummaryRow(QTableWidget* table, int row, const QString& metric, const QString& value, const QString& description)
+{
+    table->setItem(row, 0, new QTableWidgetItem(metric));
+    table->setItem(row, 1, new QTableWidgetItem(value));
+    table->setItem(row, 2, new QTableWidgetItem(description));
+}
 } // namespace
 
-DatumWindow::DatumWindow(QWidget* parent) : QWidget(parent, Qt::Window), m_timer(new QTimer(this))
+class HashrateGraphWidget final : public QWidget
 {
-    setObjectName(QStringLiteral("datumWindow"));
-    setWindowTitle(tr("DATUM Mining Status"));
-    setMinimumSize(900, 600);
-    resize(1100, 720);
+public:
+    explicit HashrateGraphWidget(QWidget* parent = nullptr) : QWidget(parent)
+    {
+        setMinimumHeight(104);
+        setMaximumHeight(126);
+        setObjectName(QStringLiteral("miningHashrateGraph"));
+    }
 
+    void appendSample(uint64_t timestamp, double hashrate)
+    {
+        if (!m_samples.empty() && timestamp < m_samples.back().first + SAMPLE_INTERVAL_MS) return;
+        m_samples.push_back({timestamp, std::max(0.0, hashrate)});
+        const uint64_t cutoff = timestamp > DAY_MS ? timestamp - DAY_MS : 0;
+        while (!m_samples.empty() && (m_samples.front().first < cutoff || static_cast<int>(m_samples.size()) > MAX_SAMPLES)) {
+            m_samples.remove(0);
+        }
+        update();
+    }
+
+protected:
+    void paintEvent(QPaintEvent*) override
+    {
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing);
+        painter.fillRect(rect(), palette().base());
+        QColor grid_color = palette().text().color();
+        grid_color.setAlpha(55);
+        painter.setPen(grid_color);
+        painter.drawRect(rect().adjusted(0, 0, -1, -1));
+
+        const QRectF plot = rect().adjusted(48, 10, -10, -23);
+        for (int i = 1; i < 4; ++i) {
+            const qreal x = plot.left() + plot.width() * i / 4.0;
+            painter.drawLine(QPointF(x, plot.top()), QPointF(x, plot.bottom()));
+        }
+        for (int i = 1; i < 3; ++i) {
+            const qreal y = plot.top() + plot.height() * i / 3.0;
+            painter.drawLine(QPointF(plot.left(), y), QPointF(plot.right(), y));
+        }
+        painter.drawLine(plot.bottomLeft(), plot.bottomRight());
+        painter.drawLine(plot.bottomLeft(), plot.topLeft());
+        painter.setPen(palette().text().color());
+        painter.drawText(QRectF(2, plot.top() - 2, 42, 18), Qt::AlignRight | Qt::AlignVCenter, tr("TH/s"));
+        painter.drawText(QRectF(plot.left(), plot.bottom() + 2, 50, 18), Qt::AlignLeft, tr("-24h"));
+        painter.drawText(QRectF(plot.right() - 50, plot.bottom() + 2, 50, 18), Qt::AlignRight, tr("Now"));
+
+        if (m_samples.empty()) {
+            painter.drawText(plot, Qt::AlignCenter, tr("Waiting for hashrate samples…"));
+            return;
+        }
+
+        double maximum{0};
+        for (const auto& sample : m_samples) maximum = std::max(maximum, sample.second);
+        maximum = std::max(1.0, maximum);
+        painter.drawText(QRectF(2, plot.top() + 16, 42, 18), Qt::AlignRight | Qt::AlignVCenter, QString::number(maximum, 'g', 3));
+
+        const uint64_t now = QDateTime::currentMSecsSinceEpoch();
+        const uint64_t start = now > DAY_MS ? now - DAY_MS : 0;
+        QPainterPath path;
+        bool first{true};
+        for (const auto& sample : m_samples) {
+            const double elapsed = sample.first > start ? static_cast<double>(sample.first - start) : 0.0;
+            const double x = plot.left() + std::min(1.0, elapsed / DAY_MS) * plot.width();
+            const double y = plot.bottom() - (sample.second / maximum) * plot.height();
+            if (first) {
+                path.moveTo(x, y);
+                first = false;
+            } else {
+                path.lineTo(x, y);
+            }
+        }
+        painter.setPen(QPen(palette().highlight().color(), 2));
+        painter.drawPath(path);
+        if (m_samples.size() == 1) painter.drawEllipse(path.currentPosition(), 2.5, 2.5);
+    }
+
+private:
+    QVector<QPair<uint64_t, double>> m_samples;
+};
+
+MiningPage::MiningPage(QWidget* parent) : QWidget(parent), m_timer(new QTimer(this))
+{
+    setObjectName(QStringLiteral("miningPage"));
     auto* layout = new QVBoxLayout(this);
     m_warning = new QLabel;
     m_warning->setWordWrap(true);
@@ -81,7 +226,77 @@ DatumWindow::DatumWindow(QWidget* parent) : QWidget(parent, Qt::Window), m_timer
     layout->addWidget(m_warning);
 
     auto* tabs = new QTabWidget;
+    tabs->setObjectName(QStringLiteral("miningDetailTabs"));
+    tabs->setDocumentMode(true);
     layout->addWidget(tabs);
+
+    auto* dashboard_scroll = new QScrollArea;
+    dashboard_scroll->setWidgetResizable(true);
+    dashboard_scroll->setFrameShape(QFrame::NoFrame);
+    dashboard_scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    auto* dashboard = new QWidget;
+    auto* dashboard_layout = new QVBoxLayout(dashboard);
+    dashboard_layout->setContentsMargins(8, 8, 8, 8);
+    dashboard_layout->setSpacing(7);
+    auto* title = new QLabel(tr("Bitcoin Purity Mining Console"));
+    title->setAlignment(Qt::AlignCenter);
+    QFont title_font = title->font();
+    title_font.setPointSize(title_font.pointSize() + 7);
+    title->setFont(title_font);
+    dashboard_layout->addWidget(title);
+    auto* status_line = new QHBoxLayout;
+    status_line->addStretch();
+    status_line->addWidget(new QLabel(tr("Runtime:")));
+    m_dashboard_status = ValueLabel();
+    m_dashboard_status->setWordWrap(false);
+    QFont status_font = m_dashboard_status->font();
+    status_font.setBold(true);
+    m_dashboard_status->setFont(status_font);
+    status_line->addWidget(m_dashboard_status);
+    dashboard_layout->addLayout(status_line);
+
+    auto* cards = new QGridLayout;
+    cards->setContentsMargins(0, 0, 0, 0);
+    cards->setHorizontalSpacing(8);
+    cards->setVerticalSpacing(6);
+    cards->addWidget(MetricCard(tr("Estimated Miner Hashrate"), m_dashboard_hashrate, tr("Estimated from accepted shares")), 0, 0);
+    cards->addWidget(MetricCard(tr("Chance per Block"), m_dashboard_chance, QString(), &m_dashboard_chance_detail), 0, 1);
+    cards->addWidget(MetricCard(tr("Current Block Number"), m_dashboard_height, tr("Current DATUM job height")), 1, 0);
+    cards->setColumnStretch(0, 1);
+    cards->setColumnStretch(1, 1);
+    dashboard_layout->addLayout(cards);
+
+    auto* graph_group = new QGroupBox(tr("Hashrate Trend over Time (Last 24h)"));
+    graph_group->setAlignment(Qt::AlignHCenter);
+    auto* graph_layout = new QVBoxLayout(graph_group);
+    graph_layout->setContentsMargins(8, 7, 8, 7);
+    m_graph = new HashrateGraphWidget;
+    graph_layout->addWidget(m_graph);
+    dashboard_layout->addWidget(graph_group);
+
+    auto* summary_group = new QGroupBox(tr("Share Performance Summary"));
+    summary_group->setAlignment(Qt::AlignHCenter);
+    auto* summary_layout = new QVBoxLayout(summary_group);
+    summary_layout->setContentsMargins(8, 7, 8, 7);
+    m_summary = new QTableWidget(5, 3);
+    m_summary->setObjectName(QStringLiteral("miningShareSummary"));
+    m_summary->setHorizontalHeaderLabels({tr("Metric"), tr("Value"), tr("Description")});
+    m_summary->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    m_summary->setSelectionMode(QAbstractItemView::NoSelection);
+    m_summary->setAlternatingRowColors(true);
+    m_summary->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    m_summary->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    m_summary->verticalHeader()->hide();
+    m_summary->verticalHeader()->setDefaultSectionSize(22);
+    m_summary->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
+    m_summary->horizontalHeader()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
+    m_summary->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Stretch);
+    m_summary->setFixedHeight(142);
+    summary_layout->addWidget(m_summary);
+    dashboard_layout->addWidget(summary_group);
+    dashboard_layout->addStretch();
+    dashboard_scroll->setWidget(dashboard);
+    tabs->addTab(dashboard_scroll, tr("Mining Dashboard"));
 
     auto* overview = new QWidget;
     auto* overview_layout = new QVBoxLayout(overview);
@@ -146,35 +361,43 @@ DatumWindow::DatumWindow(QWidget* parent) : QWidget(parent, Qt::Window), m_timer
 
     connect(m_timer, &QTimer::timeout, this, [this] { refresh(); });
     m_timer->setInterval(1000);
-
-    const QByteArray geometry{QSettings().value(QStringLiteral("DatumWindowGeometry")).toByteArray()};
-    if (!geometry.isEmpty()) restoreGeometry(geometry);
 }
 
-void DatumWindow::showEvent(QShowEvent* event)
+void MiningPage::showEvent(QShowEvent* event)
 {
     QWidget::showEvent(event);
     refresh();
     m_timer->start();
 }
 
-void DatumWindow::hideEvent(QHideEvent* event)
+void MiningPage::hideEvent(QHideEvent* event)
 {
     m_timer->stop();
     QWidget::hideEvent(event);
 }
 
-void DatumWindow::closeEvent(QCloseEvent* event)
-{
-    m_timer->stop();
-    QSettings().setValue(QStringLiteral("DatumWindowGeometry"), saveGeometry());
-    QWidget::closeEvent(event);
-}
-
-void DatumWindow::refresh()
+void MiningPage::refresh()
 {
     const mining::DatumStatusSnapshot status{mining::GetDatumStatusSnapshot()};
     const uint64_t now = QDateTime::currentMSecsSinceEpoch();
+    m_dashboard_status->setText(QString::fromStdString(status.status));
+    m_dashboard_hashrate->setText(status.running ? HashrateText(status.estimated_hashrate_ths) : QStringLiteral("—"));
+    m_dashboard_height->setText(status.current_height ? QString::number(status.current_height) : QStringLiteral("—"));
+    m_dashboard_chance->setText(ChanceText(status.estimated_hashrate_ths, status.network_difficulty));
+    const double network_ths = status.network_difficulty > 0 ? status.network_difficulty * HASHES_PER_DIFFICULTY / 600.0 / 1.0e12 : 0;
+    m_dashboard_chance_detail->setText(network_ths > 0 ? tr("Estimated network hashrate: %1").arg(HashrateText(network_ths)) : tr("Network difficulty unavailable"));
+    if (!m_last_sample_ms || now >= m_last_sample_ms + SAMPLE_INTERVAL_MS) {
+        m_graph->appendSample(now, status.running ? status.estimated_hashrate_ths : 0);
+        m_last_sample_ms = now;
+    }
+
+    const uint64_t other_rejections = status.rejected_unknown_work + status.rejected_high_hash + status.rejected_duplicate + status.rejected_other;
+    SetSummaryRow(m_summary, 0, tr("Accepted"), QString::number(status.session_accepted_shares), tr("Session accepted valid shares"));
+    SetSummaryRow(m_summary, 1, tr("Rejected"), QString::number(status.session_rejected_shares), tr("Session rejected shares"));
+    SetSummaryRow(m_summary, 2, tr("Stale / obsolete"), QString::number(status.rejected_stale), tr("Rejected stale work"));
+    SetSummaryRow(m_summary, 3, tr("Other rejections"), QString::number(other_rejections), tr("Unknown work, high hash, duplicate, and other"));
+    SetSummaryRow(m_summary, 4, tr("Block candidates"), tr("%1 accepted / %2 rejected").arg(status.block_submissions_accepted).arg(status.block_submissions_rejected), tr("%1 candidates submitted").arg(status.block_candidates));
+
     m_status->setText(QString::fromStdString(status.status));
     m_uptime->setText(status.running && status.session_started_ms ? DurationText(now - status.session_started_ms) : QStringLiteral("—"));
     m_listen->setText(QStringLiteral("%1:%2").arg(QString::fromStdString(status.listen)).arg(status.port));

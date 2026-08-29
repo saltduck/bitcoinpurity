@@ -38,6 +38,14 @@ when DATUM is running. It updates connected miners immediately and persists the
 selected `datumdiff` value for the next startup; other DATUM settings still
 require a restart.
 
+When compiled with `BUILD_DATUM=ON`, the Bitcoin-Qt main-window Mining page
+reads `DatumStatusSnapshot` directly. It does not add RPC fields or
+configuration controls, and no standalone DATUM status window is exposed. The
+dashboard derives an estimated chance per block from `estimated_hashrate_ths`
+and `network_difficulty`; unavailable inputs are displayed as unavailable. The
+24-hour graph is GUI-local, sampled while visible, bounded to 1,440 points, and
+never persisted or exposed by `getdatuminfo`.
+
 ### Minimal local configuration
 
 ```ini

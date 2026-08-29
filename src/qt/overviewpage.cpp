@@ -18,8 +18,10 @@
 
 #include <QAbstractItemDelegate>
 #include <QApplication>
+#include <QBoxLayout>
 #include <QDateTime>
 #include <QPainter>
+#include <QSizePolicy>
 #include <QStatusTipEvent>
 
 #include <algorithm>
@@ -173,6 +175,15 @@ void OverviewPage::handleTransactionClicked(const QModelIndex &index)
 {
     if(filter)
         Q_EMIT transactionClicked(filter->mapToSource(index));
+}
+
+void OverviewPage::setCompactMode(bool compact)
+{
+    ui->horizontalLayout->setDirection(compact ? QBoxLayout::TopToBottom : QBoxLayout::LeftToRight);
+    ui->listTransactions->setMinimumHeight(compact ? 170 : NUM_ITEMS * (DECORATION_SIZE + 2));
+    ui->verticalSpacer->changeSize(0, compact ? 0 : 40, QSizePolicy::Minimum, compact ? QSizePolicy::Fixed : QSizePolicy::Expanding);
+    ui->verticalSpacer_2->changeSize(0, compact ? 0 : 40, QSizePolicy::Minimum, compact ? QSizePolicy::Fixed : QSizePolicy::Expanding);
+    ui->topLayout->invalidate();
 }
 
 void OverviewPage::setPrivacy(bool privacy)

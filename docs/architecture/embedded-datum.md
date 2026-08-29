@@ -23,11 +23,27 @@ writes runtime values through `ArgsManager`; sensitive DATUM credentials remain
 out of `settings.json`.
 
 The C subsystem exposes a bounded status snapshot through `datum_embedded.h`.
-The C++ bridge converts it to a typed `DatumStatusSnapshot`; both the Qt DATUM
-window and `getdatuminfo` consume that snapshot so aggregate values use one
-source of truth. A separate bounded miner array is requested only by the local
-GUI. The GUI timer runs once per second while visible and never exposes miner
-identity through RPC.
+The C++ bridge converts it to a typed `DatumStatusSnapshot`; the Qt Mining page
+and `getdatuminfo` consume that snapshot so aggregate values use one source of
+truth. A separate bounded miner array is requested only by the local GUI. The
+GUI timer runs once per second while visible and never exposes miner identity
+through RPC.
+
+`WalletFrame` owns the wallet-independent Mining page and a horizontal Mining
+workspace. In Mining mode, the current `WalletView` is switched to a compact
+Overview presentation in the workspace's fixed-width wallet column, while the
+Mining page occupies the remaining width. Leaving Mining hides that column
+composition and restores the normal full-width wallet page. Each `WalletView`
+owns its two-tab Address Book page. `BitcoinGUI` owns the exclusive navigation
+actions and presents them in a fixed left toolbar. Mining status has no separate
+window lifecycle or geometry; it is reachable only from the main-window
+navigation.
+
+The Mining page samples the snapshot's estimated miner hashrate once per minute
+while visible. A bounded in-memory queue stores at most 1,440 timestamped
+samples and is discarded with the GUI. Chance per block is the estimated miner
+hashrate divided by the network hashrate inferred as
+`network_difficulty * 2^32 / 600`; invalid inputs produce no value.
 
 ## Ownership and lifecycle
 
