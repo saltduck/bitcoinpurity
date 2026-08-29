@@ -33,6 +33,9 @@ private:
     QLabel* m_auth;
     QLabel* m_mapping;
     QLabel* m_payout;
+    QLabel* m_configured_payout;
+    QLabel* m_coinbase_tag;
+    QLabel* m_configured_coinbase_tag;
     QLabel* m_difficulty;
     QLabel* m_clients;
     QLabel* m_hashrate;

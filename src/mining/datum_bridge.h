@@ -39,6 +39,9 @@ struct DatumStatusSnapshot {
     std::string listen{"127.0.0.1"};
     uint16_t port{23334};
     std::string payout_address;
+    std::string configured_payout_address;
+    std::string coinbase_tag;
+    std::string configured_coinbase_tag;
     uint64_t session_started_ms{0};
     bool mapping_requested{false};
     bool mapping_active{false};
@@ -94,6 +97,7 @@ void StopDatum(node::NodeContext* node = nullptr);
 DatumStatusSnapshot GetDatumStatusSnapshot(bool include_miners = true);
 UniValue GetDatumInfo();
 bool SetDatumDifficulty(int64_t difficulty, std::string& error);
+bool SetDatumPayoutAndCoinbase(const std::string& address, const std::string& coinbase_tag, std::string& error);
 
 } // namespace mining
 

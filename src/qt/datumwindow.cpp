@@ -92,7 +92,10 @@ DatumWindow::DatumWindow(QWidget* parent) : QWidget(parent, Qt::Window), m_timer
     AddRow(runtime, tr("Stratum listener"), m_listen);
     AddRow(runtime, tr("Authentication"), m_auth);
     AddRow(runtime, tr("Port mapping"), m_mapping);
-    AddRow(runtime, tr("Payout address"), m_payout);
+    AddRow(runtime, tr("Active payout address"), m_payout);
+    AddRow(runtime, tr("Configured payout address"), m_configured_payout);
+    AddRow(runtime, tr("Active Coinbase tag"), m_coinbase_tag);
+    AddRow(runtime, tr("Configured Coinbase tag"), m_configured_coinbase_tag);
     overview_layout->addWidget(runtime_group);
 
     auto* mining_group = new QGroupBox(tr("Mining Overview"));
@@ -186,6 +189,11 @@ void DatumWindow::refresh()
     if (!status.mapping_error.empty()) mapping += QStringLiteral(" · ") + QString::fromStdString(status.mapping_error);
     m_mapping->setText(mapping);
     m_payout->setText(status.payout_address.empty() ? QStringLiteral("—") : QString::fromStdString(status.payout_address));
+    QString configured_payout = status.configured_payout_address.empty() ? QStringLiteral("—") : QString::fromStdString(status.configured_payout_address);
+    m_configured_payout->setText(configured_payout);
+    m_coinbase_tag->setText(status.coinbase_tag.empty() ? QStringLiteral("—") : QString::fromStdString(status.coinbase_tag));
+    QString configured_coinbase_tag = status.configured_coinbase_tag.empty() ? QStringLiteral("—") : QString::fromStdString(status.configured_coinbase_tag);
+    m_configured_coinbase_tag->setText(configured_coinbase_tag);
 
     const bool public_listener = status.listen == "0.0.0.0" || status.listen == "::";
     if (status.enabled && public_listener && !status.auth_required) {

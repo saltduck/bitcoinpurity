@@ -34,8 +34,9 @@ saved credentials remain in the read/write config file rather than
 `settings.json`.
 
 The Qt Share difficulty field uses the same runtime update as `setdatumdiff`
-when DATUM is running. It updates connected miners immediately and persists the
-selected `datumdiff` value for the next startup; other DATUM settings still
+when DATUM is running. The payout address and Coinbase tag fields also update
+the running coinbase template immediately. All three values are persisted as
+`datumdiff`, `datumaddress`, and `datumcoinbasetag`; other DATUM settings still
 require a restart.
 
 ### Minimal local configuration

@@ -61,9 +61,12 @@ refresh.
 The `setdatumdiff` RPC and the Qt share-difficulty field write the new share
 difficulty to a C11 atomic runtime value. Each Stratum worker observes that
 value in its own event loop and sends the updated difficulty and a clean current
-job from the worker thread, avoiding cross-thread socket-buffer access. The
-selected `datumdiff` is persisted for startup, and the runtime value never
-changes the GBT network target.
+job from the worker thread, avoiding cross-thread socket-buffer access. The Qt
+payout address and Coinbase tag use a mutex-protected C runtime snapshot; the
+bridge swaps both values together and requests the same bounded template
+refresh, so new jobs use the new coinbase without restarting DATUM. The three
+values are persisted for the next startup, and none changes the GBT network
+target.
 
 ## Dependency direction
 

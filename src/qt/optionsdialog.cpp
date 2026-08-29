@@ -1381,12 +1381,19 @@ bool OptionsDialog::saveDatumSettings()
         return false;
     }
 
-    const UniValue datum_info{mining::GetDatumInfo()};
-    const bool datum_running{datum_info.exists("running") && datum_info["running"].get_bool()};
-    if (datum_running && datum_info["share_difficulty"].getInt<int64_t>() != requested_difficulty) {
+    const mining::DatumStatusSnapshot datum_status{mining::GetDatumStatusSnapshot(/*include_miners=*/false)};
+    const bool datum_running{datum_status.running};
+    if (datum_running && datum_status.share_difficulty != static_cast<uint64_t>(requested_difficulty)) {
         std::string error;
         if (!mining::SetDatumDifficulty(requested_difficulty, error)) {
             QMessageBox::critical(this, tr("DATUM share difficulty"), QString::fromStdString(error));
+            return false;
+        }
+    }
+    if (datum_running && enabled && (address != datum_status.payout_address || coinbase_tag != datum_status.coinbase_tag)) {
+        std::string error;
+        if (!mining::SetDatumPayoutAndCoinbase(address, coinbase_tag, error)) {
+            QMessageBox::critical(this, tr("DATUM payout settings"), QString::fromStdString(error));
             return false;
         }
     }
@@ -1428,8 +1435,6 @@ bool OptionsDialog::saveDatumSettings()
         password != gArgs.GetArg("-datumpassword", "") ||
         datumMaxClients->value() != gArgs.GetIntArg("-datummaxclients", 32) ||
         datumMaxPerIp->value() != gArgs.GetIntArg("-datummaxperip", 4) ||
-        address != gArgs.GetArg("-datumaddress", "") ||
-        coinbase_tag != gArgs.GetArg("-datumcoinbasetag", "Bitcoin Purity") ||
         rpc_url != gArgs.GetArg("-datumrpcurl", "") ||
         rpc_user != gArgs.GetArg("-datumrpcuser", "") ||
         rpc_password != gArgs.GetArg("-datumrpcpassword", "");
