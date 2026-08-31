@@ -69,6 +69,8 @@ static pthread_mutex_t stratum_app_lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_mutex_t session_stats_lock = PTHREAD_MUTEX_INITIALIZER;
 static uint64_t disconnected_accepted_shares;
 static uint64_t disconnected_rejected_shares;
+static atomic_uint_fast64_t session_accepted_difficulty;
+static atomic_uint_fast64_t session_best_share_difficulty;
 static uint64_t disconnected_last_share_time_ms;
 static char last_rejected_share_reason[64];
 static uint64_t last_rejected_share_time_ms;
@@ -517,6 +519,8 @@ void datum_stratum_v1_reset_session_stats(void)
 	pthread_mutex_lock(&session_stats_lock);
 	disconnected_accepted_shares = 0;
 	disconnected_rejected_shares = 0;
+	atomic_store_explicit(&session_accepted_difficulty, 0, memory_order_relaxed);
+	atomic_store_explicit(&session_best_share_difficulty, 0, memory_order_relaxed);
 	disconnected_last_share_time_ms = 0;
 	last_rejected_share_reason[0] = '\0';
 	last_rejected_share_time_ms = 0;
@@ -535,6 +539,8 @@ void datum_stratum_v1_get_extended_stats(datum_embedded_stats *stats)
 	pthread_mutex_lock(&session_stats_lock);
 	stats->session_accepted_shares = disconnected_accepted_shares;
 	stats->session_rejected_shares = disconnected_rejected_shares;
+	stats->session_accepted_difficulty = atomic_load_explicit(&session_accepted_difficulty, memory_order_relaxed);
+	stats->session_best_share_difficulty = atomic_load_explicit(&session_best_share_difficulty, memory_order_relaxed);
 	stats->last_share_time_ms = disconnected_last_share_time_ms;
 	stats->last_rejected_share_time_ms = last_rejected_share_time_ms;
 	stats->rejected_unknown_work = rejected_unknown_work;
@@ -1265,6 +1271,7 @@ void stratum_update_vardiff(T_DATUM_CLIENT_DATA *c, bool no_quick) {
 
 void stratum_update_miner_stats_accepted(T_DATUM_CLIENT_DATA *c, uint64_t diff_accepted) {
 	T_DATUM_MINER_DATA * const m = c->app_client_data;
+	atomic_fetch_add_explicit(&session_accepted_difficulty, diff_accepted, memory_order_relaxed);
 	
 	m->stats.diff_accepted[m->stats.active_index?1:0] += diff_accepted;
 	m->stats.last_share_tsms = m->sdata->loop_tsms;
@@ -1280,6 +1287,15 @@ void stratum_update_miner_stats_accepted(T_DATUM_CLIENT_DATA *c, uint64_t diff_a
 			m->stats.diff_accepted[1] = 0;
 		}
 	}
+}
+
+static void stratum_update_session_best_share(const unsigned char *share_hash)
+{
+	const long double achieved = get_approx_achieved_diff(share_hash);
+	if (achieved <= 0) return;
+	const uint64_t candidate = achieved >= (long double)UINT64_MAX ? UINT64_MAX : (uint64_t)achieved;
+	uint_fast64_t current = atomic_load_explicit(&session_best_share_difficulty, memory_order_relaxed);
+	while (candidate > current && !atomic_compare_exchange_weak_explicit(&session_best_share_difficulty, &current, candidate, memory_order_relaxed, memory_order_relaxed)) {}
 }
 
 // CAUTION: modname MUST be part of username_s following a tilde
@@ -1761,6 +1777,7 @@ int client_mining_submit(T_DATUM_CLIENT_DATA *c, uint64_t id, json_t *params_obj
 	m->share_count_since_snap++;
 	m->share_diff_since_snap += job_diff;
 	
+	stratum_update_session_best_share(share_hash);
 	stratum_update_miner_stats_accepted(c, job_diff);
 	stratum_update_vardiff(c,false);
 	

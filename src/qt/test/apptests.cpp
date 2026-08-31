@@ -16,6 +16,7 @@
 #include <validation.h>
 
 #include <QAction>
+#include <QLabel>
 #include <QLineEdit>
 #include <QRegularExpression>
 #include <QScopedPointer>
@@ -153,6 +154,14 @@ void AppTests::guiTests(BitcoinGUI* window)
     QCOMPARE(mining_wallet_overview->maximumWidth(), 290);
     QVERIFY(mining_page->findChild<QWidget*>(QStringLiteral("miningHashrateGraph")));
     QVERIFY(mining_page->findChild<QWidget*>(QStringLiteral("miningShareSummary")));
+    QCOMPARE(mining_page->findChild<QLabel*>(QStringLiteral("miningDashboardStatus"))->text(), QStringLiteral("Disabled"));
+    QCOMPARE(mining_page->findChild<QLabel*>(QStringLiteral("miningDashboardHashrate"))->text(), QStringLiteral("—"));
+    QCOMPARE(mining_page->findChild<QLabel*>(QStringLiteral("miningDashboardChance"))->text(), QStringLiteral("—"));
+    QCOMPARE(mining_page->findChild<QLabel*>(QStringLiteral("miningDashboardHeight"))->text(), QStringLiteral("—"));
+    QCOMPARE(mining_page->findChild<QLabel*>(QStringLiteral("miningJobHeight"))->text(), QStringLiteral("—"));
+    QCOMPARE(mining_page->findChild<QLabel*>(QStringLiteral("miningJobId"))->text(), QStringLiteral("—"));
+    QCOMPARE(mining_page->findChild<QLabel*>(QStringLiteral("miningJobNetworkDifficulty"))->text(), QStringLiteral("—"));
+    QCOMPARE(mining_page->findChild<QLabel*>(QStringLiteral("miningJobTemplate"))->text(), QStringLiteral("—"));
 
     navigation_actions.constFirst()->activate(QAction::Trigger);
     QVERIFY(navigation_actions.constFirst()->isChecked());

@@ -9,3 +9,5 @@
 - [TASK-007: DATUM UPnP mapping and authentication default](TASK-007.md)
 - [TASK-008: Qt DATUM mining status window (superseded)](TASK-008.md)
 - [TASK-009: Qt left navigation and mining dashboard](TASK-009.md)
+- [TASK-010: Mining dashboard data collection and calculations](TASK-010.md)
+- [TASK-011: Mining dashboard Best Share](TASK-011.md)

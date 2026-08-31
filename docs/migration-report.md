@@ -77,10 +77,17 @@ remain reachable from the Window menu. The Mining entry is conditional on
 `BUILD_DATUM` and reuses the existing bounded status snapshot; no persistent
 format, RPC, configuration, mining protocol, or consensus migration is needed.
 
-The hashrate trend is a bounded process-local GUI queue. It intentionally does
-not reuse or persist DATUM session counters, and is discarded on GUI restart.
+The hashrate trend is a bounded process-local GUI queue. DATUM now exposes an
+internal session cumulative accepted-difficulty counter so Qt can calculate
+aggregate hashrate from work deltas over a rolling five-minute window. The
+counter resets at DATUM startup, survives miner disconnect, is not persisted,
+and is not exposed by RPC. The GUI queue is discarded on GUI restart and uses
+gaps rather than synthetic zeros across hidden periods and DATUM sessions.
 The previous Window-menu DATUM status window is removed; the main-window Mining
 page is the only Qt presentation of DATUM status.
+The Mining summary additionally carries an internal session maximum of achieved
+accepted-share difficulty for Best Share. It has no RPC, persistence, protocol,
+configuration, or consensus migration impact.
 Mining mode reuses the current wallet's existing Overview page as a compact
 middle column beside the dashboard. No wallet model, transaction model, or
 balance state is duplicated, and leaving Mining restores the standard wallet

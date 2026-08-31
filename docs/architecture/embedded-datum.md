@@ -39,11 +39,25 @@ actions and presents them in a fixed left toolbar. Mining status has no separate
 window lifecycle or geometry; it is reachable only from the main-window
 navigation.
 
-The Mining page samples the snapshot's estimated miner hashrate once per minute
-while visible. A bounded in-memory queue stores at most 1,440 timestamped
-samples and is discarded with the GUI. Chance per block is the estimated miner
-hashrate divided by the network hashrate inferred as
-`network_difficulty * 2^32 / 600`; invalid inputs produce no value.
+The C status layer atomically accumulates the actual difficulty of every
+accepted share for the current DATUM session. The internal snapshot transports
+that cumulative value to Qt without adding an RPC field. While visible, the
+Mining page records one checkpoint per minute and estimates miner hashrate as
+`delta_accepted_difficulty * 2^32 / elapsed_seconds`, using up to five minutes
+of checkpoints. Hiding the page or changing DATUM sessions resets the rate
+baseline so hidden time is never included.
+
+A bounded in-memory queue stores at most 1,440 timestamped graph entries and is
+discarded with the GUI. Session changes and sampling pauses introduce graph
+gaps instead of synthetic zero samples. Chance per block is the GUI-derived
+miner hashrate divided by the network hashrate inferred as
+`network_difficulty * 2^32 / 600`; invalid or incomplete inputs produce no
+value.
+
+For each accepted share, the C status layer also calculates achieved difficulty
+from the submitted hash and atomically retains the session maximum. The internal
+snapshot exposes this Best Share value to Qt only; DATUM startup resets it and
+miner disconnects do not.
 
 ## Ownership and lifecycle
 
@@ -68,6 +82,10 @@ captured at disconnect under a snapshot lock. They reset at DATUM startup and
 do not require persistent storage. Current jobs and miners are copied under the
 existing bounded Stratum locks. Template and primary block-submit results are
 stored as sanitized fixed-size status records.
+Session accepted difficulty is an atomic cumulative work counter updated only
+after successful share validation. It resets with the other session statistics
+and therefore survives miner disconnect without additional per-miner lifetime
+state.
 
 An `UpdatedBlockTip` listener calls a C ABI refresh function. The function only
 sets the same bounded refresh state used by the baseline SIGUSR1 handler; the

@@ -59,11 +59,16 @@ provenance baseline. Do not silently update it.
   values derived from `DatumStatusSnapshot`: runtime state, estimated miner
   hashrate, current height, probability of the estimated miner hashrate finding
   one block, session share results, and block-candidate results.
-- The probability uses the estimated network hashrate implied by current
-  difficulty and a 600-second target interval. Missing or zero inputs render as
+- The dashboard derives aggregate miner hashrate from the change in cumulative
+  accepted share difficulty over actual elapsed time. It samples once per
+  minute while visible, uses up to five minutes of checkpoints, and requires at
+  least one complete minute plus accepted work before publishing an estimate.
+- The probability uses the GUI-derived miner hashrate and the estimated network
+  hashrate implied by current difficulty and a 600-second target interval.
+  Missing, zero, stopped, stale-session, or incomplete inputs render as
   unavailable rather than fabricated success or precision.
-- The dashboard samples estimated miner hashrate once per minute while visible,
-  retains at most 24 hours in memory, and does not persist samples across a GUI
+- The hashrate graph retains at most 24 hours in memory, preserves gaps between
+  hidden periods and DATUM sessions, and does not persist samples across a GUI
   restart. Overview, miner, job, and diagnostic details remain available.
 - Mining status is presented only in the Bitcoin-Qt main window. There is no
   standalone DATUM status window or Window-menu DATUM entry.
@@ -75,6 +80,12 @@ provenance baseline. Do not silently update it.
   They must never be returned by `getdatuminfo`.
 - Session share and block counters reset when DATUM starts, persist when a
   miner disconnects, and are not persisted across DATUM or node restarts.
+- Session accepted difficulty follows the same lifecycle, is transported only
+  through the internal DATUM status snapshot, and is not added to
+  `getdatuminfo`.
+- The Mining summary shows Best Share as the highest achieved difficulty among
+  accepted shares in the current DATUM session. It resets on DATUM startup,
+  survives miner disconnects, and remains internal to the Qt status snapshot.
 - The dashboard contains no configuration, start/stop, or difficulty controls;
   those remain in Settings and the existing RPC surface.
 
