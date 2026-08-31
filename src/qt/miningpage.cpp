@@ -186,10 +186,30 @@ QString MiningSummaryMetricText(int row)
 QString MiningBestShareText(uint64_t difficulty)
 {
     if (!difficulty) return QStringLiteral("—");
-    if (difficulty < 1000000) return QString::number(difficulty);
-    const int exponent = static_cast<int>(std::floor(std::log10(static_cast<double>(difficulty))));
-    const double mantissa = difficulty / std::pow(10.0, exponent);
-    return QStringLiteral("%1 × 10^%2").arg(mantissa, 0, 'g', 3).arg(exponent);
+    struct Unit {
+        uint64_t divisor;
+        const char* suffix;
+    };
+    const auto format_scaled = [](double value) {
+        const int decimals = value >= 100 ? 0 : value >= 10 ? 1 : 2;
+        QString text = QString::number(value, 'f', decimals);
+        while (text.endsWith(QLatin1Char('0'))) text.chop(1);
+        if (text.endsWith(QLatin1Char('.'))) text.chop(1);
+        return text;
+    };
+    static constexpr Unit units[]{{1000000000000000000ULL, "E"}, {1000000000000000ULL, "P"}, {1000000000000ULL, "T"}, {1000000000ULL, "G"}, {1000000ULL, "M"}};
+    for (size_t i = 0; i < sizeof(units) / sizeof(units[0]); ++i) {
+        double scaled = static_cast<double>(difficulty) / units[i].divisor;
+        if (scaled < 1) continue;
+        const int decimals = scaled >= 100 ? 0 : scaled >= 10 ? 1 : 2;
+        double rounded = std::round(scaled * std::pow(10.0, decimals)) / std::pow(10.0, decimals);
+        if (rounded >= 1000 && i > 0) {
+            scaled = static_cast<double>(difficulty) / units[i - 1].divisor;
+            return format_scaled(std::max(1.0, scaled)) + QLatin1String(units[i - 1].suffix);
+        }
+        return format_scaled(scaled) + QLatin1String(units[i].suffix);
+    }
+    return QString::number(difficulty);
 }
 
 MiningHashrateAxis MiningHashrateAxisFor(double maximum_ths)
@@ -263,7 +283,12 @@ MiningHashrateResult MiningHashrateTracker::update(uint64_t now_ms, bool enabled
         return m_result;
     }
 
-    if (now_ms - m_checkpoints.back().timestamp_ms < SAMPLE_INTERVAL_MS) return m_result;
+    if (now_ms - m_checkpoints.back().timestamp_ms < SAMPLE_INTERVAL_MS) {
+        if (accepted_difficulty > m_checkpoints.back().accepted_difficulty && !m_result.hashrate_ths) {
+            m_result.state = MiningHashrateState::CollectingBaseline;
+        }
+        return m_result;
+    }
     m_checkpoints.push_back({now_ms, accepted_difficulty});
     const uint64_t cutoff = now_ms > HASHRATE_WINDOW_MS ? now_ms - HASHRATE_WINDOW_MS : 0;
     while (m_checkpoints.size() > 1 && m_checkpoints.front().timestamp_ms < cutoff) m_checkpoints.remove(0);

@@ -1384,6 +1384,7 @@ int client_mining_submit(T_DATUM_CLIENT_DATA *c, uint64_t id, json_t *params_obj
 	bool quickdiff = false;
 	bool empty_work = false;
 	bool was_block = false;
+	bool block_submitted = false;
 	char new_notify_blockhash[65];
 	
 	// 0 = version 4 bytes
@@ -1675,8 +1676,8 @@ int client_mining_submit(T_DATUM_CLIENT_DATA *c, uint64_t id, json_t *params_obj
 		DLOG_WARN("************************************************************************************************");
 		datum_embedded_record_block_candidate((const char *)new_notify_blockhash);
 		
-		i = assembleBlockAndSubmit(block_header, full_cb_txn, cb->coinb1_len+12+cb->coinb2_len, job, m->sdata, new_notify_blockhash, empty_work);
-		if (i) {
+		block_submitted = assembleBlockAndSubmit(block_header, full_cb_txn, cb->coinb1_len+12+cb->coinb2_len, job, m->sdata, new_notify_blockhash, empty_work) != 0;
+		if (block_submitted) {
 			// successfully submitted
 			datum_blocktemplates_notifynew(new_notify_blockhash, job->height + 1);
 		}
@@ -1687,9 +1688,9 @@ int client_mining_submit(T_DATUM_CLIENT_DATA *c, uint64_t id, json_t *params_obj
 		}
 	}
 	
-	// we check this after checking if the share is a valid block because... well, we want to try and build on our own block even on the off chance it's late.
-	// we'll still reject the share, though, even if it's a block. *trollface*
-	if (job->is_stale_prevblock) {
+	// We check this after checking if the share is a valid block because we still want to submit a late block.
+	// A block accepted by the upstream node is valid accepted work even though publishing the next job marks this job stale.
+	if (job->is_stale_prevblock && !(was_block && block_submitted)) {
 		// share is from a stale job
 		send_rejected_stale_block(c, id);
 		m->share_count_rejected++;
@@ -2701,11 +2702,17 @@ int assembleBlockAndSubmit(uint8_t *block_header, uint8_t *coinbase_txn, size_t 
 	// make the call!
 	r = bitcoind_json_rpc_call(tcurl, &datum_config, submitblock_req);
 	curl_easy_cleanup(tcurl);
-	if (!r) {
+	bool already_known = false;
+	if (r && json_is_object(r)) {
+		const json_t * const result = json_object_get(r, "result");
+		already_known = result && json_is_string(result) && !strcmp(json_string_value(result), "duplicate");
+	}
+	if (!r || already_known) {
 		// oddly, this means success here.
-		DLOG_INFO("Block %s submitted to upstream node successfully!",block_hash_hex);
+		DLOG_INFO("Block %s submitted to upstream node successfully!", block_hash_hex);
 		datum_embedded_record_block_result(block_hash_hex, true, "accepted");
 		ret = 1;
+		if (r) json_decref(r);
 	} else {
 		s = json_dumps(r, JSON_ENCODE_ANY);
 		if (!s) {

@@ -32,6 +32,10 @@ void MiningPageTests::hashrateBaselineAndFormula()
     QVERIFY(result.hashrate_ths);
     const double expected{60 * HASHES_PER_DIFFICULTY / 60.0 / 1.0e12};
     QVERIFY(std::abs(*result.hashrate_ths - expected) < 1e-15);
+    const MiningHashrateResult held{tracker.update(MINUTE_MS + 30 * 1000, true, true, 1, 1, 120)};
+    CheckState(held, MiningHashrateState::Ready);
+    QVERIFY(held.hashrate_ths);
+    QCOMPARE(*held.hashrate_ths, *result.hashrate_ths);
 
     MiningHashrateTracker no_shares;
     no_shares.resume();
@@ -39,6 +43,9 @@ void MiningPageTests::hashrateBaselineAndFormula()
     const MiningHashrateResult empty{no_shares.update(61 * 1000, true, true, 2, 1, 0)};
     CheckState(empty, MiningHashrateState::NoAcceptedShares);
     QVERIFY(!empty.hashrate_ths);
+    const MiningHashrateResult new_share{no_shares.update(90 * 1000, true, true, 2, 1, 1)};
+    CheckState(new_share, MiningHashrateState::CollectingBaseline);
+    QVERIFY(!new_share.hashrate_ths);
 
     MiningHashrateTracker non_minute;
     non_minute.resume();
@@ -159,7 +166,11 @@ void MiningPageTests::bestShareFormatting()
 {
     QCOMPARE(MiningBestShareText(0), QStringLiteral("—"));
     QCOMPARE(MiningBestShareText(32768), QStringLiteral("32768"));
-    QCOMPARE(MiningBestShareText(876000000000000), QStringLiteral("8.76 × 10^14"));
+    QCOMPARE(MiningBestShareText(1000000), QStringLiteral("1M"));
+    QCOMPARE(MiningBestShareText(189000000), QStringLiteral("189M"));
+    QCOMPARE(MiningBestShareText(1234567), QStringLiteral("1.23M"));
+    QCOMPARE(MiningBestShareText(999500000), QStringLiteral("1G"));
+    QCOMPARE(MiningBestShareText(876000000000000), QStringLiteral("876T"));
 }
 
 void MiningPageTests::summaryLabelsDistinguishSharesAndBlocks()
