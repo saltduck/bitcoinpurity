@@ -6,6 +6,7 @@
 #ifdef ENABLE_DATUM
 
 #include <qt/datumcoinbasetag.h>
+#include <qt/datumcoinbasetag_words.h>
 
 #include <common/args.h>
 #include <mining/datum_bridge.h>
@@ -26,23 +27,8 @@
 namespace DatumCoinbaseTagUtil {
 namespace {
 
-constexpr std::array<const char*, 48> WOW_ADJECTIVES{
-    "Swift", "Mighty", "Silent", "Fierce", "Brave", "Grim", "Wild", "Ancient",
-    "Frost", "Shadow", "Storm", "Golden", "Crimson", "Azure", "Ember", "Sturdy",
-    "Noble", "Cunning", "Valiant", "Bold", "Iron", "Crystal", "Lunar", "Solar",
-    "Thunder", "Ghost", "Phantom", "Savage", "Mystic", "Sacred", "Hollow", "Primal",
-    "Radiant", "Dusky", "Glacial", "Volcanic", "Obsidian", "Emerald", "Sapphire", "Amber",
-    "Verdant", "Ashen", "Blazing", "Soaring", "Wandering", "Fearless", "Dauntless", "Righteous",
-};
-
-constexpr std::array<const char*, 48> WOW_NOUNS{
-    "Wolf", "Raven", "Bear", "Hawk", "Dragon", "Blade", "Storm", "Sentinel",
-    "Guardian", "Warden", "Hunter", "Ranger", "Paladin", "Warrior", "Rogue", "Mage",
-    "Druid", "Monk", "Shaman", "Knight", "Champion", "Stalker", "Reaver", "Fang",
-    "Claw", "Talon", "Shield", "Hammer", "Spear", "Arrow", "Flame", "Frost",
-    "Thunder", "Stone", "Oak", "River", "Mountain", "Valley", "Meadow", "Isle",
-    "Comet", "Star", "Moon", "Spirit", "Wraith", "Titan", "Gryphon", "Phoenix",
-};
+using DatumCoinbaseTagWords::WOW_ADJECTIVES;
+using DatumCoinbaseTagWords::WOW_NOUNS;
 
 bool HasConfigUnsafeWhitespace(const std::string& value)
 {
