@@ -52,12 +52,10 @@ discarded with the GUI. Session changes and sampling pauses introduce graph
 gaps instead of synthetic zero samples. Chance per block is the GUI-derived
 miner hashrate divided by the network hashrate inferred as
 `network_difficulty * 2^32 / 600`; invalid or incomplete inputs produce no
-value.
-
-For each accepted share, the C status layer also calculates achieved difficulty
-from the submitted hash and atomically retains the session maximum. The internal
-snapshot exposes this Best Share value to Qt only; DATUM startup resets it and
-miner disconnects do not.
+value. For each accepted share, the C status layer also calculates achieved
+difficulty from the submitted hash and atomically retains the session maximum.
+The internal snapshot exposes this Best Share value to Qt only; DATUM startup
+resets it and miner disconnects do not.
 
 ## Ownership and lifecycle
 
@@ -95,9 +93,12 @@ refresh.
 The `setdatumdiff` RPC and the Qt share-difficulty field write the new share
 difficulty to a C11 atomic runtime value. Each Stratum worker observes that
 value in its own event loop and sends the updated difficulty and a clean current
-job from the worker thread, avoiding cross-thread socket-buffer access. The
-selected `datumdiff` is persisted for startup, and the runtime value never
-changes the GBT network target.
+job from the worker thread, avoiding cross-thread socket-buffer access. The Qt
+payout address and Coinbase tag use a mutex-protected C runtime snapshot; the
+bridge swaps both values together and requests the same bounded template
+refresh, so new jobs use the new coinbase without restarting DATUM. The three
+values are persisted for the next startup, and none changes the GBT network
+target.
 
 ## Dependency direction
 

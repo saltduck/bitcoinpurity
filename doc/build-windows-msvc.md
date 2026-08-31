@@ -59,6 +59,10 @@ ctest --test-dir build --build-config Release  # Append "-j N" for N parallel te
 cmake --install build --config Release         # Optional.
 ```
 
+To compile UPnP port-mapping support, append `-DWITH_MINIUPNPC=ON` to the
+configuration command. The vcpkg manifest provides the required MiniUPnPc
+dependency through its `miniupnpc` feature.
+
 ### 5. Building with Dynamic Linking without GUI
 
 ```

@@ -36,6 +36,10 @@ static bool g_coinbaser_started;
 static bool g_curl_initialized;
 static bool g_net_initialized;
 static pthread_mutex_t g_status_lock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t g_coinbase_config_lock = PTHREAD_MUTEX_INITIALIZER;
+static unsigned char g_runtime_payout_script[sizeof(datum_config.mining_pool_script)];
+static size_t g_runtime_payout_script_len;
+static char g_runtime_coinbase_tag[sizeof(datum_config.mining_coinbase_tag_primary)];
 static uint64_t g_session_started_ms;
 static uint64_t g_last_template_update_ms;
 static bool g_last_template_success;
@@ -57,6 +61,15 @@ static bool copy_string(char* dst, size_t dst_size, const char* src,
     }
     memcpy(dst, src, strlen(src) + 1);
     return true;
+}
+
+static void set_runtime_coinbase_config(const unsigned char* payout_script, size_t payout_script_len, const char* coinbase_tag)
+{
+    pthread_mutex_lock(&g_coinbase_config_lock);
+    memcpy(g_runtime_payout_script, payout_script, payout_script_len);
+    g_runtime_payout_script_len = payout_script_len;
+    snprintf(g_runtime_coinbase_tag, sizeof(g_runtime_coinbase_tag), "%s", coinbase_tag ? coinbase_tag : "");
+    pthread_mutex_unlock(&g_coinbase_config_lock);
 }
 
 bool datum_embedded_should_stop(void)
@@ -127,6 +140,7 @@ int datum_embedded_start(const datum_embedded_config* config, char* error, size_
     datum_config.datum_pooled_mining_only = false;
     memcpy(datum_config.mining_pool_script, config->payout_script, config->payout_script_len);
     datum_config.mining_pool_script_len = (int)config->payout_script_len;
+    set_runtime_coinbase_config(config->payout_script, config->payout_script_len, config->coinbase_tag);
     update_rpc_auth(&datum_config);
     if (datum_net_init() != 0) {
         snprintf(error, error_size, "failed to initialize DATUM network support");
@@ -212,6 +226,11 @@ void datum_embedded_stop(void)
         g_net_initialized = false;
     }
     sodium_memzero(&datum_config, sizeof(datum_config));
+    pthread_mutex_lock(&g_coinbase_config_lock);
+    memset(g_runtime_payout_script, 0, sizeof(g_runtime_payout_script));
+    g_runtime_payout_script_len = 0;
+    memset(g_runtime_coinbase_tag, 0, sizeof(g_runtime_coinbase_tag));
+    pthread_mutex_unlock(&g_coinbase_config_lock);
     atomic_store_explicit(&g_share_difficulty, 0, memory_order_release);
 }
 
@@ -294,6 +313,56 @@ int datum_embedded_update_share_difficulty(uint64_t difficulty, char* error, siz
         return -1;
     }
     atomic_store_explicit(&g_share_difficulty, difficulty, memory_order_release);
+    return 0;
+}
+
+int datum_embedded_update_payout_and_coinbase(const unsigned char* payout_script, size_t payout_script_len,
+                                              const char* coinbase_tag, char* error, size_t error_size)
+{
+    if (!error || error_size == 0) return -1;
+    error[0] = '\0';
+    if (!payout_script || payout_script_len == 0 || payout_script_len > sizeof(g_runtime_payout_script)) {
+        snprintf(error, error_size, "invalid payout script");
+        return -1;
+    }
+    if (!coinbase_tag || strlen(coinbase_tag) >= sizeof(g_runtime_coinbase_tag)) {
+        snprintf(error, error_size, "coinbase tag must be at most %zu bytes", sizeof(g_runtime_coinbase_tag) - 1);
+        return -1;
+    }
+    if (!atomic_load_explicit(&g_running, memory_order_acquire) || datum_embedded_should_stop()) {
+        snprintf(error, error_size, "DATUM is not running");
+        return -1;
+    }
+    set_runtime_coinbase_config(payout_script, payout_script_len, coinbase_tag);
+    datum_request_template_refresh();
+    return 0;
+}
+
+int datum_embedded_copy_payout_script(unsigned char* payout_script, size_t payout_script_capacity, size_t* payout_script_len)
+{
+    if (!payout_script || !payout_script_len) return -1;
+    pthread_mutex_lock(&g_coinbase_config_lock);
+    if (g_runtime_payout_script_len == 0 || g_runtime_payout_script_len > payout_script_capacity) {
+        pthread_mutex_unlock(&g_coinbase_config_lock);
+        return -1;
+    }
+    memcpy(payout_script, g_runtime_payout_script, g_runtime_payout_script_len);
+    *payout_script_len = g_runtime_payout_script_len;
+    pthread_mutex_unlock(&g_coinbase_config_lock);
+    return 0;
+}
+
+int datum_embedded_copy_coinbase_tag(char* coinbase_tag, size_t coinbase_tag_capacity)
+{
+    if (!coinbase_tag || coinbase_tag_capacity == 0) return -1;
+    pthread_mutex_lock(&g_coinbase_config_lock);
+    const size_t tag_len = strlen(g_runtime_coinbase_tag);
+    if (tag_len >= coinbase_tag_capacity) {
+        pthread_mutex_unlock(&g_coinbase_config_lock);
+        return -1;
+    }
+    memcpy(coinbase_tag, g_runtime_coinbase_tag, tag_len + 1);
+    pthread_mutex_unlock(&g_coinbase_config_lock);
     return 0;
 }
 

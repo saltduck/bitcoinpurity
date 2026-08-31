@@ -67,6 +67,7 @@ const char *cbstart_hex = "01000000010000000000000000000000000000000000000000000
 int generate_coinbase_input(int height, char *cb, int *target_pot_index) {
 	int cb_input_sz = 0;
 	int tag_len[2] = { 0, 0 };
+	char runtime_primary_tag[sizeof(datum_config.mining_coinbase_tag_primary)] = { 0 };
 	int k, m, i;
 	int excess;
 	bool datum_active = false;
@@ -91,7 +92,8 @@ int generate_coinbase_input(int height, char *cb, int *target_pot_index) {
 	// PUSHBYTES X, Primary tag, 0x0F, Secondary tag, 0x0F, Tertiary tag, 0x00
 	// We should then push a unique entropy tag (push + 2 bytes = 3 bytes)
 	if (!datum_active) {
-		tag_len[0] = strlen(datum_config.mining_coinbase_tag_primary);
+		datum_embedded_copy_coinbase_tag(runtime_primary_tag, sizeof(runtime_primary_tag));
+		tag_len[0] = strlen(runtime_primary_tag);
 	} else {
 		tag_len[0] = strlen(datum_config.override_mining_coinbase_tag_primary);
 	}
@@ -145,7 +147,7 @@ int generate_coinbase_input(int height, char *cb, int *target_pot_index) {
 				}
 			} else {
 				for(m=0;m<tag_len[0];m++) {
-					uchar_to_hex(&cb[i], (unsigned char)datum_config.mining_coinbase_tag_primary[m]); i+=2; cb_input_sz++;
+					uchar_to_hex(&cb[i], (unsigned char)runtime_primary_tag[m]); i+=2; cb_input_sz++;
 				}
 			}
 			if (!tag_len[1]) {
@@ -369,8 +371,11 @@ void generate_base_coinbase_txns_for_stratum_job(T_DATUM_STRATUM_JOB *s, bool ne
 		s->is_datum_job = true;
 	} else {
 		// No pool
-		s->pool_addr_script_len = datum_config.mining_pool_script_len;
-		memcpy(s->pool_addr_script, datum_config.mining_pool_script, datum_config.mining_pool_script_len);
+		unsigned char runtime_payout_script[sizeof(datum_config.mining_pool_script)];
+		size_t runtime_payout_script_len = 0;
+		datum_embedded_copy_payout_script(runtime_payout_script, sizeof(runtime_payout_script), &runtime_payout_script_len);
+		s->pool_addr_script_len = (int)runtime_payout_script_len;
+		memcpy(s->pool_addr_script, runtime_payout_script, runtime_payout_script_len);
 		s->is_datum_job = false;
 	}
 	if (!s->pool_addr_script_len) {
@@ -545,8 +550,11 @@ void generate_coinbase_txns_for_stratum_job(T_DATUM_STRATUM_JOB *s, bool empty_o
 		}
 	} else {
 		// No pool
-		s->pool_addr_script_len = datum_config.mining_pool_script_len;
-		memcpy(s->pool_addr_script, datum_config.mining_pool_script, datum_config.mining_pool_script_len);
+		unsigned char runtime_payout_script[sizeof(datum_config.mining_pool_script)];
+		size_t runtime_payout_script_len = 0;
+		datum_embedded_copy_payout_script(runtime_payout_script, sizeof(runtime_payout_script), &runtime_payout_script_len);
+		s->pool_addr_script_len = (int)runtime_payout_script_len;
+		memcpy(s->pool_addr_script, runtime_payout_script, runtime_payout_script_len);
 		s->is_datum_job = false;
 		empty_only = true;
 	}

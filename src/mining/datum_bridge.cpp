@@ -69,6 +69,7 @@ struct DatumRuntimeState {
     bool upnp{DEFAULT_DATUM_UPNP};
     bool auth_required{DEFAULT_DATUM_AUTH};
     std::string payout_address;
+    std::string coinbase_tag;
     node::NodeContext* node{nullptr};
 };
 
@@ -512,6 +513,7 @@ bool StartDatum(node::NodeContext& node, bilingual_str& error)
         g_datum_state.upnp = datum_upnp;
         g_datum_state.auth_required = config.auth_required;
         g_datum_state.payout_address = address;
+        g_datum_state.coinbase_tag = coinbase_tag;
     }
     g_datum_validation = std::make_unique<DatumValidationInterface>();
     Assert(node.validation_signals)->RegisterValidationInterface(g_datum_validation.get());
@@ -585,6 +587,9 @@ DatumStatusSnapshot GetDatumStatusSnapshot(bool include_miners)
     result.listen = runtime.listen;
     result.port = runtime.port;
     result.payout_address = runtime.payout_address;
+    result.configured_payout_address = gArgs.GetArg("-datumaddress", "");
+    result.coinbase_tag = runtime.coinbase_tag;
+    result.configured_coinbase_tag = gArgs.GetArg("-datumcoinbasetag", "Bitcoin Purity");
     result.session_started_ms = stats.session_started_ms;
     result.mapping_requested = runtime.upnp || mapping.requested;
     result.mapping_active = mapping.active;
@@ -740,6 +745,37 @@ bool SetDatumDifficulty(const int64_t difficulty, std::string& error)
         g_datum_state.share_difficulty = difficulty;
     }
     LogInfo("[datum] share difficulty updated at runtime to %d", static_cast<int>(difficulty));
+    return true;
+}
+
+bool SetDatumPayoutAndCoinbase(const std::string& address, const std::string& coinbase_tag, std::string& error)
+{
+    if (address.empty() || !IsValidDestinationString(address, Params())) {
+        error = "payout address is invalid for the active Purity network";
+        return false;
+    }
+    if (coinbase_tag.size() > 63) {
+        error = "coinbase tag must be at most 63 bytes";
+        return false;
+    }
+    const CScript payout_script{GetScriptForDestination(DecodeDestination(address))};
+    if (payout_script.empty() || payout_script.size() > 64) {
+        error = "payout address produced an unsupported payout script";
+        return false;
+    }
+    std::array<char, 256> c_error{};
+    if (datum_embedded_update_payout_and_coinbase(
+            reinterpret_cast<const unsigned char*>(payout_script.data()), payout_script.size(),
+            coinbase_tag.c_str(), c_error.data(), c_error.size()) != 0) {
+        error = c_error.data();
+        return false;
+    }
+    {
+        std::lock_guard lock{g_datum_state_mutex};
+        g_datum_state.payout_address = address;
+        g_datum_state.coinbase_tag = coinbase_tag;
+    }
+    LogInfo("[datum] payout address and Coinbase tag updated at runtime");
     return true;
 }
 

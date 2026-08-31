@@ -2,7 +2,7 @@
 
 ## Status
 
-Superseded by [TASK-009](TASK-009.md). The standalone Window-menu DATUM window
+Superseded by [TASK-010](TASK-010.md). The standalone Window-menu DATUM window
 was removed; its status views now live only in the main-window Mining page.
 
 ## Goal

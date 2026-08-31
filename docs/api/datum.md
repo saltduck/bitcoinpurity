@@ -34,8 +34,9 @@ saved credentials remain in the read/write config file rather than
 `settings.json`.
 
 The Qt Share difficulty field uses the same runtime update as `setdatumdiff`
-when DATUM is running. It updates connected miners immediately and persists the
-selected `datumdiff` value for the next startup; other DATUM settings still
+when DATUM is running. The payout address and Coinbase tag fields also update
+the running coinbase template immediately. All three values are persisted as
+`datumdiff`, `datumaddress`, and `datumcoinbasetag`; other DATUM settings still
 require a restart.
 
 When compiled with `BUILD_DATUM=ON`, the Bitcoin-Qt main-window Mining page
@@ -46,10 +47,9 @@ derives a five-minute rolling hashrate, estimated network hashrate, and chance
 per block in Qt. These inputs and derived values do not add or change
 `getdatuminfo` fields. Unavailable inputs are displayed as unavailable. The
 24-hour graph is GUI-local, sampled while visible, bounded to 1,440 entries,
-and never persisted or exposed by `getdatuminfo`.
-Best Share is likewise a GUI-only internal snapshot value: it is the highest
-achieved difficulty among accepted shares in the current DATUM session and does
-not add a `getdatuminfo` field.
+and never persisted or exposed by `getdatuminfo`. Best Share is likewise a
+GUI-only internal snapshot value: it is the highest achieved difficulty among
+accepted shares in the current DATUM session and does not add an RPC field.
 
 ### Minimal local configuration
 

@@ -43,8 +43,7 @@ hashrate is calculated from cumulative accepted share difficulty using actual
 elapsed time and a rolling window of up to five minutes. Sampling begins with a
 baseline, occurs once per visible minute, keeps at most 24 hours in memory, and
 resets when Bitcoin-Qt restarts. Missing or incomplete inputs are shown as
-unavailable.
-`BUILD_DATUM=OFF` builds contain no Mining entry or dashboard.
+unavailable. `BUILD_DATUM=OFF` builds contain no Mining entry or dashboard.
 
 The Qt Settings dialog preserves the complete upstream/master Settings surface
 (including Main, Wallet, Network, Mempool, Spam filtering, Mining, and Display)
@@ -53,21 +52,20 @@ runtime gate, Stratum listener, dedicated DATUM UPnP mapping, authentication,
 bounded client counts, fixed Purity payout address, share difficulty, coinbase
 tag, and optional loopback RPC credentials. Changes are written to the
 read/write config file, credentials are not written to `settings.json`, and a
-restart is required for configuration changes other than the runtime share-
-difficulty update. The Qt share-difficulty field uses the same runtime update
-path as the `setdatumdiff` RPC when DATUM is running.
+restart is required only for configuration changes other than the runtime
+share-difficulty, payout-address, and Coinbase-tag updates. The Qt fields use
+the same runtime update path while DATUM is running.
 
 Mining status is presented only in the main-window Mining page; the Window menu
 does not expose a separate DATUM status window. The page refreshes only while
 visible and shows runtime and actual port-mapping state, session share totals,
-estimated miner hashrate, current job/template data, connected workers, and
-block-submit diagnostics. Worker names, IP addresses, and user agents remain
+current job/template data, connected workers, and block-submit diagnostics.
+The active runtime payout address and Coinbase tag update immediately after a
+hot configuration change. Worker names, IP addresses, and user agents remain
 local to the GUI; the status RPC exposes aggregate data only. Session counters
-survive miner disconnects but reset on the next DATUM run.
-The cumulative accepted-difficulty input and the GUI-derived network hashrate
-and chance are internal-only and do not extend `getdatuminfo`.
-The summary also displays the current session's highest achieved accepted-share
-difficulty as Best Share; this value is internal-only and resets with DATUM.
+survive miner disconnects but reset on the next DATUM run. The cumulative
+accepted-difficulty input, GUI-derived hashrates and chance, and Best Share are
+internal-only and do not extend `getdatuminfo`.
 
 `datumupnp=1` is an explicit opt-in that maps only the configured DATUM TCP
 port, independently of the node's P2P `upnp` setting. It uses miniupnpc when
@@ -79,10 +77,13 @@ public deployments should set `datumauth=1` and configure a strong unique
 password.
 
 While DATUM is running, the `setdatumdiff` RPC or the Qt share-difficulty field
-can hot-reload only the fixed Stratum share difficulty (1 through 2147483647).
-The selected value is also persisted as `datumdiff`; existing authorized miners
-receive a clean `mining.set_difficulty` and `mining.notify`; the network
-consensus target is unchanged. A restart loads the persisted `-datumdiff` value.
+can hot-reload the fixed Stratum share difficulty (1 through 2147483647), and
+the Qt payout address and Coinbase tag fields can hot-reload the coinbase
+template. The selected values are persisted as `datumdiff`, `datumaddress`, and
+`datumcoinbasetag`; authorized miners receive a clean `mining.notify` for the
+coinbase changes, while difficulty changes also send `mining.set_difficulty`.
+The network consensus target is unchanged. A restart loads the persisted values
+when DATUM is not running.
 
 The public protocol, configuration defaults, security controls, lifecycle,
 verification criteria, and non-goals are normative in

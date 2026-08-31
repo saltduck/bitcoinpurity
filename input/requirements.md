@@ -40,9 +40,10 @@ provenance baseline. Do not silently update it.
   credentials.
 - Saving DATUM settings writes to the read/write config file, keeps sensitive
   credentials out of `settings.json`, and marks the node for restart for all
-  settings except the share-difficulty hot update. The DATUM share-difficulty
-  field must update a running subsystem immediately. Existing configuration-
-  file and command-line precedence remains authoritative.
+  settings except the share-difficulty, payout-address, and Coinbase-tag hot
+  updates. Those three fields must update a running subsystem immediately.
+  Existing configuration-file and command-line precedence remains
+  authoritative.
 
 ## Qt main window and DATUM mining dashboard
 
@@ -74,8 +75,9 @@ provenance baseline. Do not silently update it.
   standalone DATUM status window or Window-menu DATUM entry.
 - The visible Mining page refreshes once per second and stops polling while
   hidden. It shows runtime/listener/authentication and actual port-mapping
-  state, mining totals and estimated hashrate, the current template/job,
-  connected worker details, and block-submit/last-error diagnostics.
+  state, active and configured payout addresses and Coinbase tags, mining
+  totals, the current template/job, connected worker details, and block-submit/
+  last-error diagnostics. Hot configuration changes converge without restart.
 - Worker names, remote IP addresses, and miner user agents are local-GUI-only.
   They must never be returned by `getdatuminfo`.
 - Session share and block counters reset when DATUM starts, persist when a
@@ -114,12 +116,16 @@ The implementation must not derive the payout address from a Stratum username.
 It must not reverse `rpcauth` or hard-code an RPC password.
 
 The `setdatumdiff` RPC and the Qt DATUM share-difficulty field must hot-reload
-the fixed Stratum share difficulty while DATUM is running. The value is
-persisted as `datumdiff` and is runtime-only until restart, must be an integer
-from 1 through 2147483647, must not alter the network consensus target, and
-must cause every currently authorized miner to receive a new
-`mining.set_difficulty` followed by a clean `mining.notify`. Invalid values and
-calls while DATUM is stopped fail without changing the active difficulty.
+the fixed Stratum share difficulty while DATUM is running. The Qt payout address
+and Coinbase tag fields must also hot-reload the running coinbase template.
+These values are persisted as `datumdiff`, `datumaddress`, and
+`datumcoinbasetag`; when DATUM is not running they take effect on its next
+start. Share difficulty must be an integer from 1 through 2147483647, must not
+alter the network consensus target, and must cause every currently authorized
+miner to receive a new `mining.set_difficulty` followed by a clean
+`mining.notify`. Payout and Coinbase changes send a clean `mining.notify`.
+Invalid values and calls while DATUM is stopped fail without changing the
+active difficulty.
 Restart behavior continues to use `-datumdiff` from the normal configuration
 precedence chain.
 

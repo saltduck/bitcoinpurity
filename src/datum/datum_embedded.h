@@ -102,6 +102,10 @@ void datum_embedded_get_stats(datum_embedded_stats* stats);
 uint32_t datum_embedded_get_miner_stats(datum_embedded_miner_stats* miners, uint32_t capacity);
 uint64_t datum_embedded_get_share_difficulty(void);
 int datum_embedded_update_share_difficulty(uint64_t difficulty, char* error, size_t error_size);
+int datum_embedded_update_payout_and_coinbase(const unsigned char* payout_script, size_t payout_script_len,
+                                              const char* coinbase_tag, char* error, size_t error_size);
+int datum_embedded_copy_payout_script(unsigned char* payout_script, size_t payout_script_capacity, size_t* payout_script_len);
+int datum_embedded_copy_coinbase_tag(char* coinbase_tag, size_t coinbase_tag_capacity);
 void datum_embedded_record_template_result(bool success, const char* error);
 void datum_embedded_record_block_candidate(const char* block_hash);
 void datum_embedded_record_block_result(const char* block_hash, bool accepted, const char* result);
