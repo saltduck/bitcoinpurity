@@ -27,6 +27,7 @@
 namespace DatumCoinbaseTagUtil {
 namespace {
 
+using DatumCoinbaseTagWords::WOW_ADVERBS;
 using DatumCoinbaseTagWords::WOW_ADJECTIVES;
 using DatumCoinbaseTagWords::WOW_NOUNS;
 
@@ -52,9 +53,10 @@ void ConnectRandomButton(QPushButton* random_button, QLineEdit* tag_edit)
 QString GenerateRandomWowTag()
 {
     auto& rng{*QRandomGenerator::global()};
+    const QString adverb{WOW_ADVERBS[rng.bounded(static_cast<int>(WOW_ADVERBS.size()))]};
     const QString adjective{WOW_ADJECTIVES[rng.bounded(static_cast<int>(WOW_ADJECTIVES.size()))]};
     const QString noun{WOW_NOUNS[rng.bounded(static_cast<int>(WOW_NOUNS.size()))]};
-    return adjective + QLatin1Char(' ') + noun;
+    return adverb + QLatin1Char(' ') + adjective + QLatin1Char(' ') + noun;
 }
 
 QWidget* CreateInputRow(QWidget* parent, QLineEdit** tag_edit_out)
@@ -67,7 +69,7 @@ QWidget* CreateInputRow(QWidget* parent, QLineEdit** tag_edit_out)
     tag_edit->setToolTip(QObject::tr("Optional operator-controlled coinbase tag, up to 63 bytes."));
 
     auto* const random_button{new QPushButton(QObject::tr("Random"), row)};
-    random_button->setToolTip(QObject::tr("Generate a random WoW-style name (adjective + noun)."));
+    random_button->setToolTip(QObject::tr("Generate a random WoW-style name (adverb + adjective + noun)."));
     ConnectRandomButton(random_button, tag_edit);
 
     layout->addWidget(tag_edit);

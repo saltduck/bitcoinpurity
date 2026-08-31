@@ -1,17 +1,36 @@
 #!/usr/bin/env python3
 # Copyright (c) 2026 The Bitcoin Purity developers
 # Distributed under the MIT software license.
-"""Generate WoW-style adjective and noun word lists for DATUM coinbase tags."""
+"""Generate WoW-style adverb, adjective, and noun word lists for DATUM coinbase tags."""
 
 from __future__ import annotations
 
 import pathlib
 import sys
 
-TARGET_COUNT = 2048
-MAX_WORD_LEN = 20
+TARGET_COUNT = 128
+MAX_WORD_LEN = 16
 
-BASE_ADJECTIVES = [
+ADVERBS = [
+    "Swiftly", "Boldly", "Grimly", "Wildly", "Fiercely", "Bravely", "Silently", "Darkly",
+    "Coldly", "Hotly", "Wisely", "Madly", "Calmly", "Keenly", "Softly", "Loudly",
+    "Gently", "Rudely", "Sharply", "Dimly", "Brightly", "Suddenly", "Slowly", "Quickly",
+    "Steadily", "Proudly", "Humbly", "Nobly", "Sternly", "Mildly", "Meekly", "Strongly",
+    "Mightily", "Dearly", "Surely", "Purely", "Vainly", "Bitterly", "Sweetly", "Sorely",
+    "Wholly", "Freely", "Closely", "Openly", "Covertly", "Plainly", "Blindly", "Direly",
+    "Bleakly", "Starkly", "Howlingly", "Roaringly", "Ragingly", "Blazingly", "Glacially", "Moltenly",
+    "Frozenly", "Anciently", "Primally", "Radiantly", "Duskily", "Hoarily", "Mistily", "Mournfully",
+    "Joyfully", "Woefully", "Fearfully", "Fearlessly", "Dauntlessly", "Righteously", "Valiantly", "Cunningly",
+    "Sturdily", "Lightly", "Heavily", "Tightly", "Loosely", "Deeply", "Highly", "Lowly",
+    "Truly", "Nearly", "Barely", "Hardly", "Partly", "Mainly", "Chiefly", "Merely",
+    "Likely", "Awfully", "Fairly", "Badly", "Eagerly", "Faintly", "Warmly", "Coolly",
+    "Dryly", "Wetly", "Grimacingly", "Sleepily", "Wearily", "Heedlessly", "Carefully", "Recklessly",
+    "Aloft", "Astride", "Abroad", "Afield", "Ashore", "Afar", "Thence", "Whence",
+    "Ever", "Never", "Always", "Seldom", "Often", "Once", "Twice", "Thrice",
+    "Henceforth", "Hither", "Thither", "Yonder", "Ere", "Anon", "Soon", "Late",
+]
+
+ADJECTIVES = [
     "Swift", "Mighty", "Silent", "Fierce", "Brave", "Grim", "Wild", "Ancient",
     "Frost", "Shadow", "Storm", "Golden", "Crimson", "Azure", "Ember", "Sturdy",
     "Noble", "Cunning", "Valiant", "Bold", "Iron", "Crystal", "Lunar", "Solar",
@@ -20,9 +39,17 @@ BASE_ADJECTIVES = [
     "Verdant", "Ashen", "Blazing", "Soaring", "Wandering", "Fearless", "Dauntless", "Righteous",
     "Bleak", "Dire", "Fell", "Stark", "Bitter", "Keen", "Proud", "Stern",
     "Hoary", "Misty", "Molten", "Frozen", "Warped", "Blessed", "Cursed", "Haunted",
+    "Fallen", "Risen", "Lonely", "Hidden", "Broken", "Burning", "Chilling", "Howling",
+    "Roaring", "Raging", "Whispering", "Sleeping", "Hunting", "Hunted", "Twisted", "Blighted",
+    "Elder", "Young", "Pale", "Scarlet", "Violet", "Scarce", "Royal", "Humble",
+    "Gentle", "Rude", "Sharp", "Dim", "Bright", "Sudden", "Slow", "Quick",
+    "Steady", "Meek", "Strong", "Dear", "Sure", "Pure", "Vain", "Sweet",
+    "Sore", "Whole", "Free", "Close", "Open", "Covert", "Plain", "Blind",
+    "Deep", "High", "Low", "True", "Near", "Bare", "Hard", "Arcane",
+    "Ethereal", "Vivid", "Somber", "Gaunt", "Lithe", "Gilded", "Sable", "Ochre",
 ]
 
-BASE_NOUNS = [
+NOUNS = [
     "Wolf", "Raven", "Bear", "Hawk", "Dragon", "Blade", "Storm", "Sentinel",
     "Guardian", "Warden", "Hunter", "Ranger", "Paladin", "Warrior", "Rogue", "Mage",
     "Druid", "Monk", "Shaman", "Knight", "Champion", "Stalker", "Reaver", "Fang",
@@ -31,116 +58,53 @@ BASE_NOUNS = [
     "Comet", "Star", "Moon", "Spirit", "Wraith", "Titan", "Gryphon", "Phoenix",
     "Hound", "Stag", "Boar", "Lion", "Serpent", "Viper", "Eagle", "Owl",
     "Forge", "Anvil", "Crown", "Sigil", "Banner", "Relic", "Totem", "Idol",
-]
-
-ADJECTIVE_PREFIXES = [
-    "Blood", "Dark", "Storm", "Frost", "Shadow", "Wild", "Ancient", "Grim",
-    "Fell", "Dire", "Bleak", "Stark", "Bitter", "Burning", "Chilling", "Howling",
-    "Roaring", "Whispering", "Raging", "Blessed", "Cursed", "Lone", "Proud", "Stern",
-    "Hoary", "Misty", "Molten", "Frozen", "Deep", "High", "True", "Elder",
-    "Death", "Soul", "Ash", "Bone", "Iron", "Gold", "Silver", "Star",
-    "Moon", "Sun", "Void", "Chaos", "Sacred", "Profane", "Holy", "Haunted",
-    "Fallen", "Risen", "Sleeping", "Hunting", "Hunted", "Twisted", "Blighted", "Radiant",
-    "Dusky", "Glacial", "Volcanic", "Primal", "Hollow", "Mystic", "Phantom", "Ghost",
-]
-
-ADJECTIVE_SUFFIXES = [
-    "born", "hearted", "souled", "marked", "touched", "bound", "wrought", "forged",
-    "blooded", "eyed", "clad", "wise", "fell", "keen", "free", "bright",
-    "dark", "pale", "red", "black", "white", "grey", "gold", "silver",
-    "iron", "steel", "frost", "flame", "storm", "wind", "stone", "oak",
-]
-
-NOUN_PREFIXES = [
-    "Blood", "Dark", "Storm", "Frost", "Shadow", "Wild", "Ancient", "Grim",
-    "Ash", "Bone", "Iron", "Gold", "Silver", "Star", "Moon", "Sun",
-    "Fire", "Ice", "Wind", "Stone", "Oak", "Thorn", "Moss", "Wolf",
-    "Raven", "Bear", "Hawk", "Dragon", "Flame", "Thunder", "Ghost", "Spirit",
-    "Death", "Soul", "Void", "Chaos", "Sacred", "Cursed", "Fallen", "Risen",
-    "Hollow", "Crystal", "Obsidian", "Emerald", "Sapphire", "Amber", "Crimson", "Azure",
-    "Ember", "Dusky", "Glacial", "Volcanic", "Radiant", "Misty", "Hoary", "Bleak",
-    "Lone", "Deep", "High", "Elder", "Night", "Day", "Dream", "Doom",
-]
-
-NOUN_SUFFIXES = [
-    "born", "kin", "fang", "claw", "ward", "walker", "rider", "caller",
-    "seeker", "keeper", "bringer", "breaker", "maker", "bane", "heart", "soul",
-    "blade", "shield", "hammer", "spear", "arrow", "flame", "frost", "storm",
-    "stone", "rock", "wood", "bark", "leaf", "root", "wing", "horn",
+    "Keep", "Tower", "Castle", "Fort", "Gate", "Wall", "Bridge", "Harbor",
+    "Shrine", "Temple", "Altar", "Crypt", "Tomb", "Vault", "Chest", "Key",
+    "Ring", "Amulet", "Orb", "Staff", "Wand", "Scepter", "Throne", "Seal",
+    "Mark", "Rune", "Glyph", "Scroll", "Tome", "Codex", "Map", "Compass",
+    "Anchor", "Sail", "Hull", "Keel", "Mast", "Oar", "Rudder", "Helm",
+    "Path", "Road", "Trail", "Track", "Pass", "Gap", "Peak", "Crest",
+    "Cave", "Grotto", "Cavern", "Mine", "Pit", "Well", "Spring", "Falls",
+    "Lich", "Banshee", "Golem", "Hydra", "Basilisk", "Kraken", "Leviathan", "Wyvern",
 ]
 
 
-def accept(word: str) -> bool:
-    return 2 <= len(word) <= MAX_WORD_LEN and word.isascii() and word[0].isupper()
-
-
-def combine(head: str, tail: str) -> str | None:
-    if head.lower() == tail.lower():
-        return None
-    if tail.lower().startswith(head.lower()):
-        return None
-    return f"{head}{tail.lower()}"
-
-
-def fill(words: set[str], candidates: list[str | None]) -> None:
-    for word in candidates:
-        if word and accept(word):
-            words.add(word)
-
-
-def generate_adjectives() -> list[str]:
-    words: set[str] = set()
-    fill(words, BASE_ADJECTIVES)
-    for prefix in ADJECTIVE_PREFIXES:
-        for base in BASE_ADJECTIVES:
-            fill(words, [combine(prefix, base)])
-    for base in BASE_ADJECTIVES:
-        for suffix in ADJECTIVE_SUFFIXES:
-            fill(words, [combine(base, suffix)])
-    for prefix in ADJECTIVE_PREFIXES:
-        for suffix in ADJECTIVE_SUFFIXES:
-            fill(words, [combine(prefix, suffix)])
-    ordered = sorted(words)
-    if len(ordered) < TARGET_COUNT:
-        raise RuntimeError(f"only generated {len(ordered)} adjectives")
-    return ordered[:TARGET_COUNT]
-
-
-def generate_nouns() -> list[str]:
-    words: set[str] = set()
-    fill(words, BASE_NOUNS)
-    for prefix in NOUN_PREFIXES:
-        for base in BASE_NOUNS:
-            fill(words, [combine(prefix, base)])
-    for base in BASE_NOUNS:
-        for suffix in NOUN_SUFFIXES:
-            fill(words, [combine(base, suffix)])
-    for prefix in NOUN_PREFIXES:
-        for suffix in NOUN_SUFFIXES:
-            fill(words, [combine(prefix, suffix)])
-    ordered = sorted(words)
-    if len(ordered) < TARGET_COUNT:
-        raise RuntimeError(f"only generated {len(ordered)} nouns")
-    return ordered[:TARGET_COUNT]
-
-
-def emit_array(name: str, words: list[str]) -> str:
-    lines = [f"inline constexpr std::array<const char*, {len(words)}> {name}{{"]
-    row: list[str] = []
+def validate(words: list[str], label: str) -> list[str]:
+    if len(words) != TARGET_COUNT:
+        raise RuntimeError(f"{label}: expected {TARGET_COUNT} words, got {len(words)}")
+    lowered = [word.lower() for word in words]
+    if len(set(lowered)) != TARGET_COUNT:
+        raise RuntimeError(f"{label}: duplicate entries detected")
     for word in words:
-        row.append(f"\"{word}\"")
-        if len(row) == 8:
-            lines.append("    " + ", ".join(row) + ",")
-            row = []
-    if row:
-        lines.append("    " + ", ".join(row) + ",")
-    lines.append("};")
-    return "\n".join(lines)
+        if not (2 <= len(word) <= MAX_WORD_LEN and word.isascii() and word[0].isupper() and word[1:].islower()):
+            raise RuntimeError(f"{label}: invalid word {word!r}")
+        if not word.isalpha():
+            raise RuntimeError(f"{label}: non-alpha word {word!r}")
+    return words
 
 
 def main() -> int:
-    adjectives = generate_adjectives()
-    nouns = generate_nouns()
+    adverbs = validate(ADVERBS, "adverbs")
+    adjectives = validate(ADJECTIVES, "adjectives")
+    nouns = validate(NOUNS, "nouns")
+
+    overlap = set(w.lower() for w in adverbs) & set(w.lower() for w in adjectives)
+    if overlap:
+        raise RuntimeError(f"adverbs and adjectives overlap: {sorted(overlap)}")
+
+    def emit_array(name: str, words: list[str]) -> str:
+        lines = [f"inline constexpr std::array<const char*, {len(words)}> {name}{{"]
+        row: list[str] = []
+        for word in words:
+            row.append(f"\"{word}\"")
+            if len(row) == 8:
+                lines.append("    " + ", ".join(row) + ",")
+                row = []
+        if row:
+            lines.append("    " + ", ".join(row) + ",")
+        lines.append("};")
+        return "\n".join(lines)
+
     output = pathlib.Path(__file__).resolve().parents[2] / "src/qt/datumcoinbasetag_words.h"
     content = f"""// Copyright (c) 2026 The Bitcoin Purity developers
 // Distributed under the MIT software license.
@@ -153,6 +117,8 @@ def main() -> int:
 
 namespace DatumCoinbaseTagWords {{
 
+{emit_array("WOW_ADVERBS", adverbs)}
+
 {emit_array("WOW_ADJECTIVES", adjectives)}
 
 {emit_array("WOW_NOUNS", nouns)}
@@ -162,7 +128,7 @@ namespace DatumCoinbaseTagWords {{
 #endif // BITCOIN_QT_DATUMCOINBASETAG_WORDS_H
 """
     output.write_text(content, encoding="utf-8")
-    print(f"Wrote {output} ({len(adjectives)} adjectives, {len(nouns)} nouns)")
+    print(f"Wrote {output} ({len(adverbs)} adverbs, {len(adjectives)} adjectives, {len(nouns)} nouns)")
     return 0
 
 
