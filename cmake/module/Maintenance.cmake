@@ -81,7 +81,7 @@ function(add_macos_deploy_target)
     )
 
     set(bitcoin_icns ${PROJECT_BINARY_DIR}/src/qt/res/rendered_icons/bitcoin.icns)
-    set(bitcoin_icns_dest ${macos_app}/Contents/Resources/bitcoin.icns)
+    set(bitcoin_icns_dest ${PROJECT_BINARY_DIR}/${macos_app}/Contents/Resources/bitcoin.icns)
     add_custom_command(
       OUTPUT ${bitcoin_icns_dest}
       COMMAND ${CMAKE_COMMAND} -E copy ${bitcoin_icns} ${bitcoin_icns_dest}
@@ -92,21 +92,44 @@ function(add_macos_deploy_target)
 
     add_custom_command(
       OUTPUT ${PROJECT_BINARY_DIR}/${macos_app}/Contents/MacOS/Bitcoin-Qt
+      COMMAND ${CMAKE_COMMAND} -E rm -rf
+        ${PROJECT_BINARY_DIR}/${macos_app}/Contents/Frameworks
+        ${PROJECT_BINARY_DIR}/${macos_app}/Contents/PlugIns
+        ${PROJECT_BINARY_DIR}/${macos_app}/Contents/_CodeSignature
       COMMAND ${CMAKE_COMMAND} --install ${PROJECT_BINARY_DIR} --config $<CONFIG> --component bitcoin-qt --prefix ${macos_app}/Contents/MacOS --strip
       COMMAND ${CMAKE_COMMAND} -E rename ${macos_app}/Contents/MacOS/bin/$<TARGET_FILE_NAME:bitcoin-qt> ${macos_app}/Contents/MacOS/Bitcoin-Qt
       COMMAND ${CMAKE_COMMAND} -E rm -rf ${macos_app}/Contents/MacOS/bin
       COMMAND ${CMAKE_COMMAND} -E rm -rf ${macos_app}/Contents/MacOS/share
+      DEPENDS bitcoin-qt
       VERBATIM
     )
 
     string(REPLACE " " "-" osx_volname ${CLIENT_NAME})
     set(osx_zip_name "${osx_volname}-${CLIENT_VERSION_STRING}")
+    set(macos_zip_app "${CLIENT_NAME}.app")
+    if(NOT QT_TRANSLATIONS_DIR)
+      foreach(_qt_ver 5 6)
+        if(DEFINED Qt${_qt_ver}_DIR)
+          get_filename_component(_qt_prefix "${Qt${_qt_ver}_DIR}/../../.." ABSOLUTE)
+          if(EXISTS "${_qt_prefix}/translations")
+            set(QT_TRANSLATIONS_DIR "${_qt_prefix}/translations")
+            break()
+          endif()
+        endif()
+      endforeach()
+    endif()
+    set(macdeploy_args ${macos_app} ${osx_zip_name} -zip-app-name ${CLIENT_NAME})
+    if(QT_TRANSLATIONS_DIR)
+      list(APPEND macdeploy_args -translations-dir=${QT_TRANSLATIONS_DIR})
+    endif()
     if(CMAKE_HOST_APPLE)
       add_custom_command(
         OUTPUT ${PROJECT_BINARY_DIR}/${osx_zip_name}.zip
         COMMAND ${CMAKE_COMMAND} -E rm -f ${PROJECT_BINARY_DIR}/${osx_zip_name}.zip
-        COMMAND ${PYTHON_COMMAND} ${PROJECT_SOURCE_DIR}/contrib/macdeploy/macdeployqtplus ${macos_app} ${osx_zip_name} -translations-dir=${QT_TRANSLATIONS_DIR} -zip
-        DEPENDS ${PROJECT_BINARY_DIR}/${macos_app}/Contents/MacOS/Bitcoin-Qt
+        COMMAND ${PYTHON_COMMAND} ${PROJECT_SOURCE_DIR}/contrib/macdeploy/macdeployqtplus ${macdeploy_args} -zip
+        DEPENDS
+          ${PROJECT_BINARY_DIR}/${macos_app}/Contents/MacOS/Bitcoin-Qt
+          ${bitcoin_icns_dest}
         VERBATIM
       )
       add_custom_target(deploydir
@@ -118,8 +141,10 @@ function(add_macos_deploy_target)
     else()
       add_custom_command(
         OUTPUT ${PROJECT_BINARY_DIR}/dist/${macos_app}/Contents/MacOS/Bitcoin-Qt
-        COMMAND OBJDUMP=${CMAKE_OBJDUMP} ${PYTHON_COMMAND} ${PROJECT_SOURCE_DIR}/contrib/macdeploy/macdeployqtplus ${macos_app} ${osx_zip_name} -translations-dir=${QT_TRANSLATIONS_DIR}
-        DEPENDS ${PROJECT_BINARY_DIR}/${macos_app}/Contents/MacOS/Bitcoin-Qt
+        COMMAND OBJDUMP=${CMAKE_OBJDUMP} ${PYTHON_COMMAND} ${PROJECT_SOURCE_DIR}/contrib/macdeploy/macdeployqtplus ${macdeploy_args}
+        DEPENDS
+          ${PROJECT_BINARY_DIR}/${macos_app}/Contents/MacOS/Bitcoin-Qt
+          ${bitcoin_icns_dest}
         VERBATIM
       )
       add_custom_target(deploydir
@@ -131,7 +156,8 @@ function(add_macos_deploy_target)
         OUTPUT ${PROJECT_BINARY_DIR}/dist/${osx_zip_name}.zip
         WORKING_DIRECTORY dist
         COMMAND ${CMAKE_COMMAND} -E rm -f ${PROJECT_BINARY_DIR}/dist/${osx_zip_name}.zip
-        COMMAND ${PROJECT_SOURCE_DIR}/cmake/script/macos_zip.sh ${ZIP_COMMAND} ${osx_zip_name}.zip
+        COMMAND ${PROJECT_SOURCE_DIR}/cmake/script/macos_zip.sh ${ZIP_COMMAND} ${osx_zip_name}.zip ${macos_zip_app}
+        DEPENDS ${PROJECT_BINARY_DIR}/dist/${macos_app}/Contents/MacOS/Bitcoin-Qt
         VERBATIM
       )
       add_custom_target(deploy
