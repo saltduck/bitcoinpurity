@@ -229,7 +229,7 @@ void AppendU64(std::string& out, uint64_t value)
     AppendU32(out, static_cast<uint32_t>(value >> 32));
 }
 
-std::pair<std::string, std::string> BuildStoredZipMembers(const std::vector<std::pair<std::string, std::string>>& files)
+std::pair<std::string, std::string> BuildStoredZipMembers(const std::vector<std::pair<std::string, std::string>>& files, uint16_t flags = 0)
 {
     std::string locals;
     std::string centrals;
@@ -239,7 +239,7 @@ std::pair<std::string, std::string> BuildStoredZipMembers(const std::vector<std:
         const uint32_t size = static_cast<uint32_t>(data.size());
         std::string local{"PK\x03\x04"};
         AppendU16(local, 20);
-        AppendU16(local, 0);
+        AppendU16(local, flags);
         AppendU16(local, 0);
         AppendU16(local, 0);
         AppendU16(local, 0);
@@ -254,7 +254,7 @@ std::pair<std::string, std::string> BuildStoredZipMembers(const std::vector<std:
         std::string central{"PK\x01\x02"};
         AppendU16(central, 20);
         AppendU16(central, 20);
-        AppendU16(central, 0);
+        AppendU16(central, flags);
         AppendU16(central, 0);
         AppendU16(central, 0);
         AppendU16(central, 0);
@@ -277,9 +277,9 @@ std::pair<std::string, std::string> BuildStoredZipMembers(const std::vector<std:
     return {std::move(locals), std::move(centrals)};
 }
 
-void WriteStoredZip(const fs::path& path, const std::vector<std::pair<std::string, std::string>>& files)
+void WriteStoredZip(const fs::path& path, const std::vector<std::pair<std::string, std::string>>& files, uint16_t flags = 0)
 {
-    const auto [locals, centrals] = BuildStoredZipMembers(files);
+    const auto [locals, centrals] = BuildStoredZipMembers(files, flags);
     std::string eocd{"PK\x05\x06"};
     AppendU16(eocd, 0);
     AppendU16(eocd, 0);
@@ -314,8 +314,8 @@ void WriteStoredZip64(const fs::path& path, const std::vector<std::pair<std::str
     AppendU32(locator, 1);
 
     std::string eocd{"PK\x05\x06"};
-    AppendU16(eocd, 0);
-    AppendU16(eocd, 0);
+    AppendU16(eocd, 0xffff);
+    AppendU16(eocd, 0xffff);
     AppendU16(eocd, 0xffff);
     AppendU16(eocd, 0xffff);
     AppendU32(eocd, 0xffffffff);
@@ -325,6 +325,78 @@ void WriteStoredZip64(const fs::path& path, const std::vector<std::pair<std::str
     std::ofstream out{path, std::ios::binary};
     BOOST_REQUIRE(out);
     out << locals << centrals << zip64_eocd << locator << eocd;
+}
+
+// Classic EOCD (disk=0) but central-directory sizes are ZIP64 sentinels, with
+// the real sizes in extra 0x0001 after another extra block (as Python can emit).
+void WriteStoredZipWithZip64Extra(const fs::path& path, const std::vector<std::pair<std::string, std::string>>& files)
+{
+    std::string locals;
+    std::string centrals;
+    uint32_t offset = 0;
+    for (const auto& [name, data] : files) {
+        const uint32_t crc = Crc32(data);
+        const uint32_t size = static_cast<uint32_t>(data.size());
+        std::string local{"PK\x03\x04"};
+        AppendU16(local, 45);
+        AppendU16(local, 0);
+        AppendU16(local, 0);
+        AppendU16(local, 0);
+        AppendU16(local, 0);
+        AppendU32(local, crc);
+        AppendU32(local, size);
+        AppendU32(local, size);
+        AppendU16(local, static_cast<uint16_t>(name.size()));
+        AppendU16(local, 0);
+        local += name;
+        local += data;
+
+        std::string extra;
+        AppendU16(extra, 0x5455); // dummy UT extra, so ZIP64 is not the first block
+        AppendU16(extra, 1);
+        extra.push_back(0);
+        AppendU16(extra, 0x0001);
+        AppendU16(extra, 16);
+        AppendU64(extra, size);
+        AppendU64(extra, size);
+
+        std::string central{"PK\x01\x02"};
+        AppendU16(central, 45);
+        AppendU16(central, 45);
+        AppendU16(central, 0);
+        AppendU16(central, 0);
+        AppendU16(central, 0);
+        AppendU16(central, 0);
+        AppendU32(central, crc);
+        AppendU32(central, 0xffffffff);
+        AppendU32(central, 0xffffffff);
+        AppendU16(central, static_cast<uint16_t>(name.size()));
+        AppendU16(central, static_cast<uint16_t>(extra.size()));
+        AppendU16(central, 0);
+        AppendU16(central, 0);
+        AppendU16(central, 0);
+        AppendU32(central, 0);
+        AppendU32(central, offset);
+        central += name;
+        central += extra;
+
+        offset += static_cast<uint32_t>(local.size());
+        locals += local;
+        centrals += central;
+    }
+
+    std::string eocd{"PK\x05\x06"};
+    AppendU16(eocd, 0);
+    AppendU16(eocd, 0);
+    AppendU16(eocd, static_cast<uint16_t>(files.size()));
+    AppendU16(eocd, static_cast<uint16_t>(files.size()));
+    AppendU32(eocd, static_cast<uint32_t>(centrals.size()));
+    AppendU32(eocd, static_cast<uint32_t>(locals.size()));
+    AppendU16(eocd, 0);
+
+    std::ofstream out{path, std::ios::binary};
+    BOOST_REQUIRE(out);
+    out << locals << centrals << eocd;
 }
 
 } // namespace
@@ -418,7 +490,35 @@ BOOST_AUTO_TEST_CASE(zip_extract_zip64_eocd)
     });
     std::string error;
     const fs::path dest = m_path_root / "zip64-out";
-    BOOST_CHECK(ZipExtractTo(zip_path, dest, 0, {}, error));
+    BOOST_CHECK_MESSAGE(ZipExtractTo(zip_path, dest, 0, {}, error), error);
+    BOOST_CHECK(fs::exists(dest / "blocks" / "blk00000.dat"));
+    BOOST_CHECK(fs::exists(dest / "chainstate" / "CURRENT"));
+}
+
+BOOST_AUTO_TEST_CASE(zip_extract_data_descriptor_flag)
+{
+    const fs::path zip_path = m_path_root / "descriptor.zip";
+    WriteStoredZip(zip_path, {
+        {"blocks/blk00000.dat", "blk"},
+        {"chainstate/CURRENT", "CURRENT"},
+    }, /*flags=*/0x0008);
+    std::string error;
+    const fs::path dest = m_path_root / "descriptor-out";
+    BOOST_CHECK_MESSAGE(ZipExtractTo(zip_path, dest, 0, {}, error), error);
+    BOOST_CHECK(fs::exists(dest / "blocks" / "blk00000.dat"));
+    BOOST_CHECK(fs::exists(dest / "chainstate" / "CURRENT"));
+}
+
+BOOST_AUTO_TEST_CASE(zip_extract_zip64_extra_after_other_extra)
+{
+    const fs::path zip_path = m_path_root / "zip64-extra.zip";
+    WriteStoredZipWithZip64Extra(zip_path, {
+        {"blocks/blk00000.dat", "blk"},
+        {"chainstate/CURRENT", "CURRENT"},
+    });
+    std::string error;
+    const fs::path dest = m_path_root / "zip64-extra-out";
+    BOOST_CHECK_MESSAGE(ZipExtractTo(zip_path, dest, 0, {}, error), error);
     BOOST_CHECK(fs::exists(dest / "blocks" / "blk00000.dat"));
     BOOST_CHECK(fs::exists(dest / "chainstate" / "CURRENT"));
 }

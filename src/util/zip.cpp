@@ -35,7 +35,6 @@ constexpr uint32_t SIG_ZIP64_LOCATOR{0x07064b50};
 constexpr uint16_t METHOD_STORE{0};
 constexpr uint16_t METHOD_DEFLATE{8};
 constexpr uint16_t FLAG_ENCRYPTED{0x0001};
-constexpr uint16_t FLAG_DATA_DESCRIPTOR{0x0008};
 constexpr uint16_t FLAG_STRONG_ENCRYPT{0x0040};
 constexpr uint16_t ZIP64_MAGIC16{0xffff};
 constexpr uint32_t ZIP64_MAGIC32{0xffffffffu};
@@ -160,21 +159,21 @@ bool ParseZip64Extra(const std::string& extra, ZipEntry& entry, bool need_uncomp
         if (pos + size > extra.size()) return false;
         if (tag == EXTRA_ZIP64) {
             size_t off = 0;
-            const auto take64 = [&](uint64_t& out, bool needed) {
+            const auto take64 = [&](uint64_t& out, bool& needed) {
                 if (!needed) return true;
-                if (off + 8 > size) return false;
+                if (off + 8 > size) return true;
                 out = ReadLE64(reinterpret_cast<const unsigned char*>(extra.data() + pos + off));
                 off += 8;
+                needed = false;
                 return true;
             };
-            if (!take64(entry.uncomp_size, need_uncomp)) return false;
-            if (!take64(entry.comp_size, need_comp)) return false;
-            if (!take64(entry.local_header_ofs, need_offset)) return false;
-            return true;
+            take64(entry.uncomp_size, need_uncomp);
+            take64(entry.comp_size, need_comp);
+            take64(entry.local_header_ofs, need_offset);
         }
         pos += size;
     }
-    return !(need_uncomp || need_comp || need_offset);
+    return !need_uncomp && !need_comp && !need_offset;
 }
 
 class ZipReader
@@ -255,12 +254,17 @@ private:
         uint64_t entries = ReadLE16(eocd.data() + 10);
         uint64_t cd_size = ReadLE32(eocd.data() + 12);
         uint64_t cd_offset = ReadLE32(eocd.data() + 16);
-        if (disk != 0 || cd_disk != 0) {
-            error = "Archive contains an unsupported or encrypted entry.";
+        // ZIP64 archives (Info-ZIP, 7-Zip, Python) store 0xFFFF / 0xFFFFFFFF in the
+        // 32-bit EOCD and put the real values in the ZIP64 EOCD. That is not multi-disk.
+        if ((disk != 0 && disk != ZIP64_MAGIC16) || (cd_disk != 0 && cd_disk != ZIP64_MAGIC16)) {
+            error = "Archive spans multiple disks and cannot be extracted.";
             return false;
         }
 
-        if (entries == ZIP64_MAGIC16 || cd_size == ZIP64_MAGIC32 || cd_offset == ZIP64_MAGIC32) {
+        const bool zip64 = disk == ZIP64_MAGIC16 || cd_disk == ZIP64_MAGIC16 ||
+                           entries == ZIP64_MAGIC16 || cd_size == ZIP64_MAGIC32 ||
+                           cd_offset == ZIP64_MAGIC32;
+        if (zip64) {
             if (*eocd_ofs < 20) {
                 error = "Archive is not a zip file.";
                 return false;
@@ -277,7 +281,7 @@ private:
                 return false;
             }
             if (ReadLE32(z64.data() + 16) != 0 || ReadLE32(z64.data() + 20) != 0) {
-                error = "Archive contains an unsupported or encrypted entry.";
+                error = "Archive spans multiple disks and cannot be extracted.";
                 return false;
             }
             entries = ReadLE64(z64.data() + 32);
@@ -328,7 +332,7 @@ private:
             const std::string extra(reinterpret_cast<const char*>(cd.data() + pos), extra_len);
             pos += extra_len + comment_len;
             if (start_disk != 0 && start_disk != ZIP64_MAGIC16) {
-                error = "Archive contains an unsupported or encrypted entry.";
+                error = "Archive spans multiple disks and cannot be extracted.";
                 return false;
             }
             const bool need_uncomp = uncomp32 == ZIP64_MAGIC32;
@@ -538,10 +542,16 @@ bool ZipExtractTo(const fs::path& archive_path,
             error = "Archive contains a symbolic link and cannot be extracted.";
             return false;
         }
-        if ((entry.flags & (FLAG_ENCRYPTED | FLAG_STRONG_ENCRYPT | FLAG_DATA_DESCRIPTOR)) != 0 ||
-            (entry.method != METHOD_STORE && entry.method != METHOD_DEFLATE) ||
-            entry.comp_size > MAX_ENTRY_BYTES || entry.uncomp_size > MAX_ENTRY_BYTES) {
-            error = "Archive contains an unsupported or encrypted entry.";
+        if ((entry.flags & (FLAG_ENCRYPTED | FLAG_STRONG_ENCRYPT)) != 0) {
+            error = "Archive contains an encrypted entry and cannot be extracted.";
+            return false;
+        }
+        if (entry.method != METHOD_STORE && entry.method != METHOD_DEFLATE) {
+            error = "Archive contains an unsupported compression method.";
+            return false;
+        }
+        if (entry.comp_size > MAX_ENTRY_BYTES || entry.uncomp_size > MAX_ENTRY_BYTES) {
+            error = "Archive contains an oversized entry and cannot be extracted.";
             return false;
         }
 
