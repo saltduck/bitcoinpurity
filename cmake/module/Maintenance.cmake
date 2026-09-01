@@ -71,12 +71,13 @@ endfunction()
 function(add_macos_deploy_target)
   if(CMAKE_SYSTEM_NAME STREQUAL "Darwin" AND TARGET bitcoin-qt)
     set(macos_app "Bitcoin-Qt.app")
-    # Populate Contents subdirectory.
-    configure_file(${PROJECT_SOURCE_DIR}/share/qt/Info.plist.in ${macos_app}/Contents/Info.plist NO_SOURCE_PERMISSIONS)
-    file(CONFIGURE OUTPUT ${macos_app}/Contents/PkgInfo CONTENT "APPL????")
-    # Populate Contents/Resources subdirectory.
-    file(CONFIGURE OUTPUT ${macos_app}/Contents/Resources/empty.lproj CONTENT "")
-    file(CONFIGURE OUTPUT ${macos_app}/Contents/Resources/Base.lproj/InfoPlist.strings
+    # Stage bundle metadata outside the .app so it is restored on every deploy.
+    # configure_file into the .app is lost if that directory is deleted.
+    set(osx_bundle_meta ${PROJECT_BINARY_DIR}/osx-bundle)
+    configure_file(${PROJECT_SOURCE_DIR}/share/qt/Info.plist.in ${osx_bundle_meta}/Info.plist NO_SOURCE_PERMISSIONS)
+    file(CONFIGURE OUTPUT ${osx_bundle_meta}/PkgInfo CONTENT "APPL????")
+    file(CONFIGURE OUTPUT ${osx_bundle_meta}/empty.lproj CONTENT "")
+    file(CONFIGURE OUTPUT ${osx_bundle_meta}/InfoPlist.strings
       CONTENT "{ CFBundleDisplayName = \"@CLIENT_NAME@\"; CFBundleName = \"@CLIENT_NAME@\"; }"
     )
 
@@ -96,11 +97,21 @@ function(add_macos_deploy_target)
         ${PROJECT_BINARY_DIR}/${macos_app}/Contents/Frameworks
         ${PROJECT_BINARY_DIR}/${macos_app}/Contents/PlugIns
         ${PROJECT_BINARY_DIR}/${macos_app}/Contents/_CodeSignature
+      COMMAND ${CMAKE_COMMAND} -E make_directory ${macos_app}/Contents/Resources/Base.lproj
+      COMMAND ${CMAKE_COMMAND} -E copy ${osx_bundle_meta}/Info.plist ${macos_app}/Contents/Info.plist
+      COMMAND ${CMAKE_COMMAND} -E copy ${osx_bundle_meta}/PkgInfo ${macos_app}/Contents/PkgInfo
+      COMMAND ${CMAKE_COMMAND} -E copy ${osx_bundle_meta}/empty.lproj ${macos_app}/Contents/Resources/empty.lproj
+      COMMAND ${CMAKE_COMMAND} -E copy ${osx_bundle_meta}/InfoPlist.strings ${macos_app}/Contents/Resources/Base.lproj/InfoPlist.strings
       COMMAND ${CMAKE_COMMAND} --install ${PROJECT_BINARY_DIR} --config $<CONFIG> --component bitcoin-qt --prefix ${macos_app}/Contents/MacOS --strip
       COMMAND ${CMAKE_COMMAND} -E rename ${macos_app}/Contents/MacOS/bin/$<TARGET_FILE_NAME:bitcoin-qt> ${macos_app}/Contents/MacOS/Bitcoin-Qt
       COMMAND ${CMAKE_COMMAND} -E rm -rf ${macos_app}/Contents/MacOS/bin
       COMMAND ${CMAKE_COMMAND} -E rm -rf ${macos_app}/Contents/MacOS/share
-      DEPENDS bitcoin-qt
+      DEPENDS
+        bitcoin-qt
+        ${osx_bundle_meta}/Info.plist
+        ${osx_bundle_meta}/PkgInfo
+        ${osx_bundle_meta}/empty.lproj
+        ${osx_bundle_meta}/InfoPlist.strings
       VERBATIM
     )
 

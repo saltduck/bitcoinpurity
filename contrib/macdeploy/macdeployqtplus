@@ -521,7 +521,12 @@ if config.zip is not None:
                 shutil.rmtree(zip_target)
             os.rename(target, zip_target)
             stamp_bundle_mtime(zip_target)
-    shutil.make_archive('{}'.format(appname), format='zip', root_dir='dist', base_dir=zip_base)
+    zip_path = os.path.abspath(f"{appname}.zip")
+    if os.path.exists(zip_path):
+        os.unlink(zip_path)
+    # zip -y preserves framework Current symlinks. shutil.make_archive follows
+    # them and writes empty directories, which makes the unzipped .app invalid.
+    subprocess.check_call(["zip", "-r", "-y", "-X", zip_path, zip_base], cwd="dist")
 
 # ------------------------------------------------
 

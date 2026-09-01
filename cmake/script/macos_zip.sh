@@ -17,4 +17,4 @@ if [ -n "${3:-}" ] && [ -d Bitcoin-Qt.app ] && [ "$3" != "Bitcoin-Qt.app" ]; the
 fi
 
 rm -f -- "$2"
-find . | sort | "$1" -X@ "$2"
+find . | sort | "$1" -y -X@ "$2"
