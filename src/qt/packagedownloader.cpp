@@ -1083,7 +1083,7 @@ private:
 
         QNetworkRequest request = makeDownloadRequest();
         if (resuming) {
-            request.setRawHeader("Range", QByteArray("bytes=") + QByteArray::number(existing) + '-');
+            request.setRawHeader("Range", QByteArray("bytes=") + QByteArray::number(static_cast<qulonglong>(existing)) + '-');
         }
 
         m_download_output.setFileName(GUIUtil::PathToQString(m_download_path));
