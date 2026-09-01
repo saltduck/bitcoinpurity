@@ -24,6 +24,12 @@ Bitcoin Core requires one of the following compilers.
 | glibc | [link](https://www.gnu.org/software/libc/) | N/A | [2.31](https://github.com/bitcoin/bitcoin/pull/29987) | Yes |
 | Linux Kernel (if building that platform) | [link](https://www.kernel.org/) | N/A | [3.17.0](https://github.com/bitcoin/bitcoin/pull/27699) | Yes |
 
+zlib is required to inflate official datadir zip archives in-process. System
+builds need the development package: `zlib1g-dev` (Debian/Ubuntu), `zlib-devel`
+(Fedora), or the SDK/base copy on macOS and BSD. Guix/depends builds compile
+[`zlib.mk`](../depends/packages/zlib.mk). CMake fails with `Could NOT find ZLIB`
+if headers are missing.
+
 ## Optional
 
 | Dependency | Releases | Version used | Minimum required | Runtime |

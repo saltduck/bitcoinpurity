@@ -54,6 +54,10 @@ Now, you can either build from self-compiled [depends](#dependencies) or install
 
     sudo apt-get install libevent-dev zlib1g-dev libboost-dev libcurl4-openssl-dev libjansson-dev libsodium-dev
 
+zlib (`zlib1g-dev`) is required so official data packages can be extracted
+in-process. CMake fails with `Could NOT find ZLIB` if the development headers
+are missing.
+
 The curl, jansson, and libsodium packages are required by the default embedded
 DATUM build. They are not required when configuring with `-DBUILD_DATUM=OFF`.
 
@@ -111,6 +115,9 @@ Build requirements:
 Now, you can either build from self-compiled [depends](#dependencies) or install the required dependencies:
 
     sudo dnf install libevent-devel zlib-devel boost-devel
+
+zlib (`zlib-devel`) is required so official data packages can be extracted
+in-process. CMake fails with `Could NOT find ZLIB` if it is missing.
 
 SQLite is required for the descriptor wallet:
 
@@ -192,7 +199,7 @@ Mining is also possible in disable-wallet mode using the `getblocktemplate` RPC 
 
 Setup and Build Example: Arch Linux
 -----------------------------------
-This example lists the steps necessary to setup and build a command line only distribution of the latest changes on Arch Linux:
+This example lists the steps necessary to setup and build a command line only distribution of the latest changes on Arch Linux. `zlib` is required so official data packages can be extracted in-process.
 
     pacman --sync --needed cmake boost gcc git libevent zlib make python sqlite librsvg imagemagick
     git clone https://github.com/bitcoinknots/bitcoin.git

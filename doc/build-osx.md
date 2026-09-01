@@ -48,8 +48,11 @@ See [dependencies.md](dependencies.md) for a complete overview.
 To install, run the following from your terminal:
 
 ``` bash
-brew install cmake boost pkgconf libevent zlib curl jansson libsodium
+brew install cmake boost pkgconf libevent curl jansson libsodium
 ```
+
+zlib is required to extract official data packages. CMake uses the copy in the
+macOS SDK; Homebrew's `zlib` formula is keg-only and is not needed.
 
 ### 4. Clone Bitcoin repository
 
