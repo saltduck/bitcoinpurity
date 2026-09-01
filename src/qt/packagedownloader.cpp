@@ -113,6 +113,28 @@ std::optional<UniValue> ReadPackageManifest(const fs::path& datadir)
     return json;
 }
 
+bool WritePackageManifest(const fs::path& datadir, const OfficialDataPackage& package, QString& error)
+{
+    UniValue json(UniValue::VOBJ);
+    json.pushKV("id", package.id);
+    json.pushKV("snapshot_height", package.snapshot_height);
+    json.pushKV("base_blockhash", package.base_blockhash.GetHex());
+    json.pushKV("prune_mib", package.prune_mib);
+
+    const fs::path manifest_path = datadir / "bitcoinpurity-package.json";
+    std::ofstream out{manifest_path};
+    if (!out) {
+        error = QObject::tr("Could not write the package manifest.");
+        return false;
+    }
+    out << json.write(2, 0) << '\n';
+    if (!out) {
+        error = QObject::tr("Could not write the package manifest.");
+        return false;
+    }
+    return true;
+}
+
 bool ValidateExtractedPackage(const fs::path& datadir, const OfficialDataPackage& package, QString& error)
 {
     if (!fs::exists(datadir / "blocks") || !fs::is_directory(datadir / "blocks")) {
@@ -134,8 +156,14 @@ bool ValidateExtractedPackage(const fs::path& datadir, const OfficialDataPackage
         return false;
     }
 
-    const auto manifest = ReadPackageManifest(datadir);
-    if (!manifest || !manifest->isObject()) {
+    auto manifest = ReadPackageManifest(datadir);
+    if (!manifest) {
+        // Published archives may omit bitcoinpurity-package.json. The signed
+        // package catalog already supplies id / height / hash.
+        if (!WritePackageManifest(datadir, package, error)) return false;
+        return true;
+    }
+    if (!manifest->isObject()) {
         error = QObject::tr("Extracted data is missing a valid package manifest.");
         return false;
     }
@@ -183,7 +211,37 @@ std::string ArchiveFilenameFromUri(const std::string& uri, const std::string& pa
 
 bool ShouldSkipZipEntryPath(std::string_view entry)
 {
-    return entry.starts_with("__MACOSX/") || entry.starts_with("._") || entry.find("/._") != std::string_view::npos;
+    if (entry.starts_with("__MACOSX/") || entry.starts_with("._") || entry.find("/._") != std::string_view::npos) {
+        return true;
+    }
+
+    const size_t slash = entry.find_last_of('/');
+    const std::string_view base = slash == std::string_view::npos ? entry : entry.substr(slash + 1);
+    static constexpr std::string_view skip_names[] = {
+        ".DS_Store",
+        ".lock",
+        "bitcoin.conf",
+        "bitcoin_rw.conf",
+        "settings.json",
+        "debug.log",
+        "db.log",
+        "mempool.dat",
+        "banlist.json",
+        "banlist.dat",
+        "peers.dat",
+        "anchors.dat",
+        "onion_private_key",
+        "i2p_private_key",
+    };
+    for (const auto name : skip_names) {
+        if (base == name) return true;
+    }
+
+    auto is_wallets_path = [](std::string_view path) {
+        return path == "wallets" || path == "wallets/" || path.starts_with("wallets/") ||
+               path.ends_with("/wallets") || path.find("/wallets/") != std::string_view::npos;
+    };
+    return is_wallets_path(entry);
 }
 
 bool ValidateZipEntryPaths(const std::vector<std::string>& entries, QString& error)
