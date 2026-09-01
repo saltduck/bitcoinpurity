@@ -129,7 +129,7 @@ bool ValidateExtractedPackage(const fs::path& datadir, const OfficialDataPackage
 
     const auto chainparams = CreateChainParams(gArgs, gArgs.GetChainType());
     if (!chainparams || !IsOfficialSnapshotTrusted(*chainparams, package.snapshot_height, package.base_blockhash)) {
-        error = QObject::tr("Package snapshot does not match a trusted chain checkpoint.");
+        error = QObject::tr("Package snapshot is not valid for this chain.");
         return false;
     }
 

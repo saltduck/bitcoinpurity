@@ -68,6 +68,48 @@ BOOST_AUTO_TEST_CASE(snapshot_trust_mainnet_assumeutxo)
     BOOST_CHECK(!IsOfficialSnapshotTrusted(*params, 1, hash));
 }
 
+BOOST_AUTO_TEST_CASE(snapshot_trust_allows_unpinned_post_activation_height)
+{
+    const auto params = CreateChainParams(m_args, ChainType::MAIN);
+    BOOST_REQUIRE(params);
+    const uint256 package_hash = uint256::FromUserHex("00000000000000040440db37ab428b029ee5dda57d192088c13046d124eeb80b").value();
+    BOOST_CHECK(IsOfficialSnapshotTrusted(*params, 961814, package_hash));
+    BOOST_CHECK(!IsOfficialSnapshotTrusted(*params, 961814, uint256::ZERO));
+
+    const uint256 activation = uint256::FromUserHex("0000000000000000003ea74f4dafdda7ed4e02c4c1ccb9768e0ca4f9e1a35159").value();
+    BOOST_CHECK(IsOfficialSnapshotTrusted(*params, 961637, activation));
+    BOOST_CHECK(!IsOfficialSnapshotTrusted(*params, 961637, package_hash));
+    BOOST_CHECK(!IsOfficialSnapshotTrusted(*params, 800000, package_hash));
+}
+
+BOOST_AUTO_TEST_CASE(parse_published_mainnet_manifest)
+{
+    // Live https://downloads.bitcoinpurity.org/official-packages-mainnet.json
+    const std::string published_json = R"({
+  "packages": [
+    {
+      "id": "mainnet-961814-prune-10gb",
+      "snapshot_height": 961814,
+      "base_blockhash": "00000000000000040440db37ab428b029ee5dda57d192088c13046d124eeb80b",
+      "prune_mib": 10000,
+      "download_uri": "https://downloads.bitcoinpurity.org/nodedata/BitcoinPurity-10000-961814-4b9ebf59.zip",
+      "archive_sha256": "4b9ebf59002eda73aff911803642c0223bb792660c48f76826780836182e21f1",
+      "archive_size_bytes": 30390803377,
+      "extracted_size_bytes": 34182117528
+    }
+  ],
+  "signature": "MEYCIQCcjCUf1XDcD1OGNO0bO+AyFG/wMrN7wRXjKBaMd3XsWgIhAOmIKizS3yhsdpL97oAhkm1WgdD2WCjk3fdQwzC7LTYJ"
+})";
+
+    const auto packages = ParseOfficialDataPackagesFromJson(
+        published_json, "published-mainnet", OfficialPackageTrustPolicy::REMOTE_SIGNED);
+    BOOST_REQUIRE_EQUAL(packages.size(), 1U);
+    BOOST_CHECK_EQUAL(packages[0].id, "mainnet-961814-prune-10gb");
+    BOOST_CHECK_EQUAL(packages[0].snapshot_height, 961814);
+    BOOST_CHECK_EQUAL(packages[0].prune_mib, 10000);
+    BOOST_CHECK_EQUAL(packages[0].archive_size_bytes, 30390803377ULL);
+}
+
 BOOST_AUTO_TEST_CASE(manifest_signature_roundtrip)
 {
     CKey key;

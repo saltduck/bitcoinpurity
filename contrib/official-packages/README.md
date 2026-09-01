@@ -74,8 +74,10 @@ Remote package lists and archives are validated as follows:
 
 1. The manifest must carry a valid detached ECDSA signature (STRICT policy).
 2. Each `download_uri` must use HTTPS and point at `downloads.bitcoinpurity.org`.
-3. Each package `snapshot_height` / `base_blockhash` pair must match a built-in
-   assumeutxo entry or consensus checkpoint for the active chain.
+3. Each package `snapshot_height` / `base_blockhash` must be internally
+   consistent. If that height is already an assumeutxo or checkpoint pin, the
+   hash must match; otherwise any mainnet height at or after Purity activation
+   is accepted so new packages can be published without a client release.
 4. Zip archives are scanned for path traversal (`..`, absolute paths) before
    extraction, and extracted files must remain inside the destination datadir.
 
