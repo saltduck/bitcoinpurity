@@ -14,6 +14,7 @@
 #include <util/fs.h>
 #include <util/fs_helpers.h>
 #include <util/strencodings.h>
+#include <util/zip.h>
 
 #include <univalue.h>
 
@@ -24,17 +25,17 @@
 #include <QLabel>
 #include <QMessageBox>
 #include <QDateTime>
+#include <QEventLoop>
+#include <QFont>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
-#include <QProcess>
-#include <QEventLoop>
-#include <QFont>
 #include <QProgressBar>
 #include <QTimer>
 #include <QUrl>
 #include <QVBoxLayout>
 
+#include <algorithm>
 #include <array>
 #include <cctype>
 #include <fstream>
@@ -234,32 +235,13 @@ OfficialPackageTrustPolicy PackageDownloadTrustPolicy()
 
 std::optional<std::vector<std::string>> ListZipEntryNames(const fs::path& archive_path, QString& error)
 {
-    QProcess process;
-    process.setProgram(QStringLiteral("unzip"));
-    process.setArguments({
-        QStringLiteral("-Z1"),
-        GUIUtil::PathToQString(archive_path),
-    });
-    process.start();
-    if (!process.waitForStarted(-1)) {
-        error = QObject::tr("Failed to start the archive listing tool.");
+    std::string native_error;
+    auto entries = ZipListEntries(archive_path, native_error);
+    if (!entries) {
+        error = native_error.empty()
+            ? QObject::tr("Could not read archive contents.")
+            : QString::fromStdString(native_error);
         return std::nullopt;
-    }
-    if (!process.waitForFinished(-1)) {
-        error = QObject::tr("Archive listing was interrupted.");
-        return std::nullopt;
-    }
-    if (process.exitStatus() != QProcess::NormalExit || process.exitCode() != 0) {
-        error = QObject::tr("Could not read archive contents: %1")
-            .arg(QString::fromLocal8Bit(process.readAllStandardError()));
-        return std::nullopt;
-    }
-
-    std::vector<std::string> entries;
-    const QStringList lines = QString::fromUtf8(process.readAllStandardOutput()).split('\n', Qt::SkipEmptyParts);
-    entries.reserve(lines.size());
-    for (const QString& line : lines) {
-        entries.push_back(line.trimmed().toStdString());
     }
     return entries;
 }
@@ -304,55 +286,6 @@ std::optional<int> DetectZipStripComponents(const std::vector<std::string>& entr
 
     const int slash_count = static_cast<int>(std::count(package_prefix->begin(), package_prefix->end(), '/'));
     return slash_count + 1;
-}
-
-bool RunExtractProcess(const QString& program, const QStringList& arguments, QString& error, const ProgressPumpFn& pump = {})
-{
-    QProcess process;
-    process.setProgram(program);
-    process.setArguments(arguments);
-    process.start();
-    if (!process.waitForStarted(-1)) {
-        return false;
-    }
-    while (!process.waitForFinished(250)) {
-        if (pump) pump(-1, QString());
-    }
-    if (process.exitStatus() != QProcess::NormalExit || process.exitCode() != 0) {
-        error = QObject::tr("Archive extraction failed: %1").arg(QString::fromLocal8Bit(process.readAllStandardError()));
-        return false;
-    }
-    return true;
-}
-
-bool ExtractArchiveWithStrip(const fs::path& archive_path, const fs::path& datadir, int strip_components, QString& error, const ProgressPumpFn& pump = {})
-{
-    const QString archive = GUIUtil::PathToQString(archive_path);
-    const QString dest = GUIUtil::PathToQString(datadir);
-    QStringList args{
-        QStringLiteral("-xf"),
-        archive,
-        QStringLiteral("-C"),
-        dest,
-        QStringLiteral("--exclude=__MACOSX"),
-        QStringLiteral("--exclude=*/.DS_Store"),
-        QStringLiteral("--exclude=*/._*"),
-    };
-    if (strip_components > 0) {
-        args << QStringLiteral("--strip-components=%1").arg(strip_components);
-    }
-
-    error.clear();
-    if (RunExtractProcess(QStringLiteral("bsdtar"), args, error, pump)) {
-        return true;
-    }
-    const QString bsdtar_error = error;
-    error.clear();
-    if (RunExtractProcess(QStringLiteral("tar"), args, error, pump)) {
-        return true;
-    }
-    error = bsdtar_error;
-    return false;
 }
 
 bool IsPackageDataRoot(const fs::path& path)
@@ -453,29 +386,24 @@ bool ExtractArchive(const fs::path& archive_path, const fs::path& datadir, QStri
 
     if (pump) pump(-1, QObject::tr("Extracting archive…"));
 
-    if (ExtractArchiveWithStrip(archive_path, datadir, *strip_components, error, pump)) {
-        fs::remove_all(datadir / "__MACOSX");
-        if (!AllExtractedPathsContained(datadir, error)) {
-            return false;
-        }
-        if (IsPackageDataRoot(datadir)) {
-            return true;
-        }
-        error = QObject::tr("Extracted data is missing the blocks directory.");
+    std::string extract_error;
+    if (!ZipExtractTo(archive_path, datadir, *strip_components, ShouldSkipZipEntryPath, extract_error,
+                      [&](uint64_t) {
+                          if (pump) pump(-1, QString());
+                      })) {
+        error = extract_error.empty()
+            ? QObject::tr("Archive extraction failed.")
+            : QString::fromStdString(extract_error);
         return false;
     }
 
-    // Fallback for systems without bsdtar/tar zip support.
-    QStringList unzip_args{
-        QStringLiteral("-q"),
-        GUIUtil::PathToQString(archive_path),
-        QStringLiteral("-d"),
-        GUIUtil::PathToQString(datadir),
-    };
-    if (!RunExtractProcess(QStringLiteral("unzip"), unzip_args, error, pump)) {
+    fs::remove_all(datadir / "__MACOSX");
+    if (!AllExtractedPathsContained(datadir, error)) {
         return false;
     }
-
+    if (IsPackageDataRoot(datadir)) {
+        return true;
+    }
     if (!HoistWrappedExtractRoot(datadir, error)) {
         return false;
     }

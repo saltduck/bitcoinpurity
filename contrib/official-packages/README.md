@@ -79,7 +79,9 @@ Remote package lists and archives are validated as follows:
    hash must match; otherwise any mainnet height at or after Purity activation
    is accepted so new packages can be published without a client release.
 4. Zip archives are scanned for path traversal (`..`, absolute paths) before
-   extraction, and extracted files must remain inside the destination datadir.
+   extraction. Listing and extraction are implemented in-process with zlib
+   inflate (no external `unzip`/`tar`), and extracted files must remain inside
+   the destination datadir.
 
 Local manifests loaded via `-officialpackages` or a datadir override skip
 signature and download-host checks so developers can test offline.

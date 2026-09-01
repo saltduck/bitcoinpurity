@@ -52,7 +52,7 @@ Build requirements:
 
 Now, you can either build from self-compiled [depends](#dependencies) or install the required dependencies:
 
-    sudo apt-get install libevent-dev libboost-dev libcurl4-openssl-dev libjansson-dev libsodium-dev
+    sudo apt-get install libevent-dev zlib1g-dev libboost-dev libcurl4-openssl-dev libjansson-dev libsodium-dev
 
 The curl, jansson, and libsodium packages are required by the default embedded
 DATUM build. They are not required when configuring with `-DBUILD_DATUM=OFF`.
@@ -110,7 +110,7 @@ Build requirements:
 
 Now, you can either build from self-compiled [depends](#dependencies) or install the required dependencies:
 
-    sudo dnf install libevent-devel boost-devel
+    sudo dnf install libevent-devel zlib-devel boost-devel
 
 SQLite is required for the descriptor wallet:
 
@@ -194,7 +194,7 @@ Setup and Build Example: Arch Linux
 -----------------------------------
 This example lists the steps necessary to setup and build a command line only distribution of the latest changes on Arch Linux:
 
-    pacman --sync --needed cmake boost gcc git libevent make python sqlite librsvg imagemagick
+    pacman --sync --needed cmake boost gcc git libevent zlib make python sqlite librsvg imagemagick
     git clone https://github.com/bitcoinknots/bitcoin.git
     cd bitcoin/
     cmake -B build
