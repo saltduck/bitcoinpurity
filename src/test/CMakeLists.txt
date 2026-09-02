@@ -68,6 +68,7 @@ add_executable(test_bitcoin
   netbase_tests.cpp
   node_warnings_tests.cpp
   official_packages_tests.cpp
+  software_updates_tests.cpp
   orphanage_tests.cpp
   pcp_tests.cpp
   peerman_tests.cpp

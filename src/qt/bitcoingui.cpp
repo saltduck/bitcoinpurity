@@ -22,6 +22,7 @@
 #include <qt/optionsmodel.h>
 #include <qt/platformstyle.h>
 #include <qt/rpcconsole.h>
+#include <qt/softwareupdater.h>
 #include <qt/utilitydialog.h>
 
 #ifdef ENABLE_WALLET
@@ -425,6 +426,10 @@ void BitcoinGUI::createActions()
     showHelpMessageAction->setMenuRole(QAction::NoRole);
     showHelpMessageAction->setStatusTip(tr("Show the %1 help message to get a list with possible Bitcoin command-line options").arg(CLIENT_NAME));
 
+    checkForUpdatesAction = new QAction(tr("Check for &Updates…"), this);
+    checkForUpdatesAction->setMenuRole(QAction::ApplicationSpecificRole);
+    checkForUpdatesAction->setStatusTip(tr("Check downloads.bitcoinpurity.org for a newer version"));
+
     m_mask_values_action = new QAction(tr("&Mask values"), this);
     m_mask_values_action->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_M));
     m_mask_values_action->setStatusTip(tr("Mask the values in the Overview tab"));
@@ -435,6 +440,7 @@ void BitcoinGUI::createActions()
     connect(aboutQtAction, &QAction::triggered, qApp, QApplication::aboutQt);
     connect(optionsAction, &QAction::triggered, this, &BitcoinGUI::optionsClicked);
     connect(showHelpMessageAction, &QAction::triggered, this, &BitcoinGUI::showHelpMessageClicked);
+    connect(checkForUpdatesAction, &QAction::triggered, this, &BitcoinGUI::checkForUpdatesClicked);
     connect(m_show_netwatch_action, &QAction::triggered, this, &BitcoinGUI::showNetWatch);
     connect(openRPCConsoleAction, &QAction::triggered, this, &BitcoinGUI::showDebugWindow);
     connect(showMempoolStatsAction, &QAction::triggered, this, &BitcoinGUI::showMempoolStatsWindow);
@@ -660,6 +666,7 @@ void BitcoinGUI::createMenuBar()
 
     QMenu *help = appMenuBar->addMenu(tr("&Help"));
     help->addAction(showHelpMessageAction);
+    help->addAction(checkForUpdatesAction);
     help->addSeparator();
     help->addAction(aboutAction);
     help->addAction(aboutQtAction);
@@ -749,6 +756,34 @@ void BitcoinGUI::setClientModel(ClientModel *_clientModel, interfaces::BlockAndH
         rpcConsole->setClientModel(_clientModel, tip_info->block_height, tip_info->block_time, tip_info->verification_progress);
 
         updateProxyIcon();
+
+        if (!m_software_update_checker) {
+            m_software_update_checker = new SoftwareUpdateChecker(this);
+            connect(m_software_update_checker, &SoftwareUpdateChecker::updateAvailable, this,
+                [this](const SoftwareReleaseInfo& release, const SoftwareReleaseArtifact& artifact) {
+                    SoftwareUpdatePresenter::showUpdateAvailable(this, release, artifact);
+                    if (notificator) {
+                        notificator->notify(
+                            Notificator::Information,
+                            tr("Update Available"),
+                            tr("Bitcoin Purity %1 is available to download.")
+                                .arg(QString::fromStdString(release.version)));
+                    }
+                });
+            connect(m_software_update_checker, &SoftwareUpdateChecker::noUpdateAvailable, this,
+                [this](bool manual) {
+                    if (manual) {
+                        SoftwareUpdatePresenter::showNoUpdate(this);
+                    }
+                });
+            connect(m_software_update_checker, &SoftwareUpdateChecker::checkFailed, this,
+                [this](const QString& error, bool manual) {
+                    if (manual) {
+                        SoftwareUpdatePresenter::showCheckFailed(this, error);
+                    }
+                });
+            m_software_update_checker->scheduleStartupCheck();
+        }
 
 #ifdef ENABLE_WALLET
         if(walletFrame)
@@ -1066,6 +1101,13 @@ void BitcoinGUI::showDebugWindowActivateConsole()
 void BitcoinGUI::showHelpMessageClicked()
 {
     GUIUtil::bringToFront(helpMessageDialog);
+}
+
+void BitcoinGUI::checkForUpdatesClicked()
+{
+    if (m_software_update_checker) {
+        m_software_update_checker->checkNow(true);
+    }
 }
 
 void BitcoinGUI::showMempoolStatsWindow()
@@ -1515,6 +1557,7 @@ void BitcoinGUI::showEvent(QShowEvent *event)
     openRPCConsoleAction->setEnabled(true);
     showMempoolStatsAction->setEnabled(true);
     aboutAction->setEnabled(true);
+    checkForUpdatesAction->setEnabled(true);
     optionsAction->setEnabled(true);
 }
 

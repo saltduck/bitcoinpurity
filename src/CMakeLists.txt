@@ -172,6 +172,7 @@ add_library(bitcoin_common STATIC EXCLUDE_FROM_ALL
   init/common.cpp
   kernel/chainparams.cpp
   kernel/official_packages.cpp
+  kernel/software_updates.cpp
   util/zip.cpp
   key.cpp
   key_io.cpp

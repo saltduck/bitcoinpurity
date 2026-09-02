@@ -41,6 +41,7 @@ class WalletModel;
 class HelpMessageDialog;
 class ModalOverlay;
 class MempoolStats;
+class SoftwareUpdateChecker;
 enum class SynchronizationState;
 
 namespace interfaces {
@@ -159,6 +160,7 @@ private:
     QAction* backupWalletAction = nullptr;
     QAction* changePassphraseAction = nullptr;
     QAction* aboutQtAction = nullptr;
+    QAction* checkForUpdatesAction = nullptr;
     QAction* m_show_netwatch_action = nullptr;
     QAction* openRPCConsoleAction = nullptr;
     QAction* openAction = nullptr;
@@ -182,6 +184,7 @@ private:
     QSystemTrayIcon* trayIcon = nullptr;
     const std::unique_ptr<QMenu> trayIconMenu;
     Notificator* notificator = nullptr;
+    SoftwareUpdateChecker* m_software_update_checker = nullptr;
     GuiNetWatch* NetWatch = nullptr;
     RPCConsole* rpcConsole = nullptr;
     HelpMessageDialog* helpMessageDialog = nullptr;
@@ -334,6 +337,8 @@ public Q_SLOTS:
     void showDebugWindowActivateConsole();
     /** Show help message dialog */
     void showHelpMessageClicked();
+    /** Check for software updates */
+    void checkForUpdatesClicked();
     /** Show mempool stats window */
     void showMempoolStatsWindow();
     /** Show window if hidden, unminimize when minimized, rise when obscured or show if hidden and fToggleHidden is true */
