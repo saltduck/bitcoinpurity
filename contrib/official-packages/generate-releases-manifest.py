@@ -22,6 +22,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -30,8 +31,20 @@ PLATFORM_SUFFIXES = {
     "x86_64-linux-gnu": "linux-x86_64",
     "aarch64-linux-gnu": "linux-arm64",
     "arm64-apple-darwin": "macos-arm64",
+    "x86_64-apple-darwin": "macos-x86_64",
     "win64": "windows-x86_64",
 }
+
+PLATFORM_TOKEN = "|".join(re.escape(suffix) for suffix in PLATFORM_SUFFIXES)
+
+# bitcoin-purity-1.0.0rc1-arm64-apple-darwin.zip
+# bitcoin-purity-1.0.1-x86_64-linux-gnu.tar.gz
+ARTIFACT_WITH_PLATFORM = re.compile(
+    rf"(?i)^bitcoin-purity-(.+?)-(?:{PLATFORM_TOKEN})\.(?:tar\.gz|zip)$"
+)
+
+# Bitcoin-Purity-1.0.0rc1.zip (macdeploy)
+ARTIFACT_MACDEPLOY = re.compile(r"(?i)^bitcoin-purity-(.+)\.(?:tar\.gz|zip)$")
 
 
 def sha256_file(path: Path) -> str:
@@ -43,9 +56,20 @@ def sha256_file(path: Path) -> str:
 
 
 def detect_platform(filename: str) -> str | None:
+    lowered = filename.lower()
     for suffix, platform in PLATFORM_SUFFIXES.items():
-        if suffix in filename:
+        if suffix in lowered:
             return platform
+    return None
+
+
+def extract_version_from_artifact(filename: str) -> str | None:
+    match = ARTIFACT_WITH_PLATFORM.match(filename)
+    if match:
+        return match.group(1)
+    match = ARTIFACT_MACDEPLOY.match(filename)
+    if match:
+        return match.group(1)
     return None
 
 
@@ -53,9 +77,80 @@ def normalize_tag(version: str) -> str:
     return version if version.startswith("v") else f"v{version}"
 
 
+def normalize_bare_version(version: str) -> str:
+    return normalize_tag(version).removeprefix("v")
+
+
+def iter_artifact_paths(artifacts_dir: Path) -> list[Path]:
+    paths: list[Path] = []
+    for path in sorted(artifacts_dir.rglob("*")):
+        if not path.is_file():
+            continue
+        if path.name in {"SHA256SUMS", "releases.json"}:
+            continue
+        if path.name.endswith(".tar.gz") or path.name.endswith(".zip"):
+            paths.append(path)
+    return paths
+
+
+def select_artifacts_for_version(bare_version: str, artifact_paths: list[Path]) -> list[Path]:
+    """Keep only artifacts whose embedded version matches --version."""
+    selected: list[Path] = []
+    other_versions: dict[str, list[str]] = {}
+
+    for path in artifact_paths:
+        artifact_version = extract_version_from_artifact(path.name)
+        if artifact_version is None:
+            print(
+                f"warning: skipping artifact with unrecognized name: {path.name}",
+                file=sys.stderr,
+            )
+            continue
+        if artifact_version != bare_version:
+            other_versions.setdefault(artifact_version, []).append(path.name)
+            print(
+                f"warning: skipping {path.name} (version {artifact_version!r}, "
+                f"requested {bare_version!r})",
+                file=sys.stderr,
+            )
+            continue
+        selected.append(path)
+
+    if selected:
+        return selected
+
+    message = [f"error: no artifacts for version {bare_version!r} in {artifact_paths[0].parent}"]
+    if other_versions:
+        details = "\n".join(
+            f"  {version}: {', '.join(names)}"
+            for version, names in sorted(other_versions.items())
+        )
+        message.append("Other versions present (skipped):")
+        message.append(details)
+        message.append(f"Re-run with one of: {', '.join(f'--version {v}' for v in sorted(other_versions))}")
+    raise SystemExit("\n".join(message))
+
+
+def ensure_unique_platforms(artifact_paths: list[Path]) -> None:
+    by_platform: dict[str, list[str]] = {}
+    for path in artifact_paths:
+        platform = detect_platform(path.name)
+        assert platform is not None
+        by_platform.setdefault(platform, []).append(path.name)
+
+    duplicates = {platform: names for platform, names in by_platform.items() if len(names) > 1}
+    if duplicates:
+        details = "\n".join(f"  {platform}: {', '.join(names)}" for platform, names in sorted(duplicates.items()))
+        raise SystemExit(
+            f"error: multiple artifacts for the same platform in version {artifact_paths[0].name!r}:\n"
+            f"{details}\n"
+            "Remove duplicates or narrow --artifacts-dir."
+        )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--version", required=True, help="Release tag, e.g. v1.0.1")
+    parser.add_argument("--version", required=True, help="Release tag, e.g. v1.0.1 or 1.0.0rc1")
     parser.add_argument("--artifacts-dir", type=Path, required=True, help="Directory containing release archives")
     parser.add_argument("--repo", default="saltduck/bitcoinpurity", help="GitHub owner/repo for download URIs")
     parser.add_argument("--released-at", help="ISO-8601 UTC timestamp (default: now)")
@@ -66,32 +161,35 @@ def main() -> int:
     if not args.artifacts_dir.is_dir():
         raise SystemExit(f"error: artifacts directory not found: {args.artifacts_dir}")
 
-    tag = normalize_tag(args.version)
-    bare_version = tag.removeprefix("v")
+    bare_version = normalize_bare_version(args.version)
+    tag = normalize_tag(bare_version)
     released_at = args.released_at or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     release_notes_url = f"https://github.com/{args.repo}/releases/tag/{tag}"
 
-    artifacts: list[dict] = []
-    for path in sorted(args.artifacts_dir.iterdir()):
-        if not path.is_file():
-            continue
-        if path.name in {"SHA256SUMS", "releases.json"}:
-            continue
-        if not (path.name.endswith(".tar.gz") or path.name.endswith(".zip")):
-            continue
+    artifact_paths: list[Path] = []
+    for path in iter_artifact_paths(args.artifacts_dir):
         platform = detect_platform(path.name)
         if platform is None:
             print(f"warning: skipping unrecognized artifact {path.name}", file=sys.stderr)
             continue
+        artifact_paths.append(path)
+
+    if not artifact_paths:
+        raise SystemExit(f"error: no release artifacts found in {args.artifacts_dir}")
+
+    artifact_paths = select_artifacts_for_version(bare_version, artifact_paths)
+    ensure_unique_platforms(artifact_paths)
+
+    artifacts: list[dict] = []
+    for path in artifact_paths:
+        platform = detect_platform(path.name)
+        assert platform is not None
         artifacts.append({
             "platform": platform,
             "download_uri": f"https://github.com/{args.repo}/releases/download/{tag}/{path.name}",
             "archive_sha256": sha256_file(path),
             "archive_size_bytes": path.stat().st_size,
         })
-
-    if not artifacts:
-        raise SystemExit(f"error: no release artifacts found in {args.artifacts_dir}")
 
     manifest = {
         "schema": 1,

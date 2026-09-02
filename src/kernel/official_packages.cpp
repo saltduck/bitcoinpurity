@@ -110,21 +110,6 @@ std::optional<uint256> ParseHashHex(const std::string& hex, const std::string& f
     return *hash;
 }
 
-std::optional<uint256> ParseStandardSha256Hex(const std::string& hex)
-{
-    const auto bytes = TryParseHex<uint8_t>(hex);
-    if (!bytes || bytes->size() != 32) {
-        LogPrintf("Official packages config: invalid archive_sha256 %s\n", hex);
-        return std::nullopt;
-    }
-    if (std::all_of(bytes->begin(), bytes->end(), [](uint8_t b) { return b == 0; })) {
-        return std::nullopt;
-    }
-    uint256 hash;
-    std::copy(bytes->begin(), bytes->end(), hash.begin());
-    return hash;
-}
-
 std::optional<OfficialDataPackage> ParsePackage(
     const UniValue& entry, OfficialPackageTrustPolicy trust_policy)
 {
@@ -237,6 +222,21 @@ std::optional<fs::path> FindDatadirOfficialPackagesPath(const ArgsManager& args,
 }
 
 } // namespace
+
+std::optional<uint256> ParseStandardSha256Hex(const std::string& hex)
+{
+    const auto bytes = TryParseHex<uint8_t>(hex);
+    if (!bytes || bytes->size() != 32) {
+        LogPrintf("Official packages config: invalid archive_sha256 %s\n", hex);
+        return std::nullopt;
+    }
+    if (std::all_of(bytes->begin(), bytes->end(), [](uint8_t b) { return b == 0; })) {
+        return std::nullopt;
+    }
+    uint256 hash;
+    std::copy(bytes->begin(), bytes->end(), hash.begin());
+    return hash;
+}
 
 bool IsOfficialDownloadUriAllowed(const std::string& uri, OfficialPackageTrustPolicy trust_policy)
 {

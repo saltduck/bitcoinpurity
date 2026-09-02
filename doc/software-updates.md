@@ -75,6 +75,13 @@ python3 contrib/official-packages/generate-releases-manifest.py \
   --output releases.json
 ```
 
+`--version` must match the version embedded in every artifact filename, for example
+`bitcoin-purity-1.0.0rc1-arm64-apple-darwin.zip` requires `--version 1.0.0rc1`
+(or `v1.0.0rc1`). The script rejects mismatches such as `--version rc1`.
+
+When the artifacts directory contains multiple versions, only files matching
+`--version` are included; other archives are skipped with a warning.
+
 The release workflow runs this step automatically when a `v*` tag is pushed.
 
 ### 2. Sign the manifest
@@ -120,7 +127,7 @@ The current release uses the same key as official datadir package manifests.
 | `-updatesmanifest=<url>` | CDN default | Override manifest URL (testing) |
 
 Automatic checks are skipped for development builds (`-dev` suffix) and at most
-once every seven days unless the user chooses **Help → Check for Updates…**.
+once every day unless the user chooses **Help → Check for Updates…**.
 
 ## Security model
 

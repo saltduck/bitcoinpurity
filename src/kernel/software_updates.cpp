@@ -112,11 +112,26 @@ std::optional<ParsedSoftwareVersion> ParseSoftwareVersionString(std::string_view
         input = input.substr(0, dev_pos);
     }
 
+    // Release builds may append a git commit id, e.g. 1.0.0rc1-4143c14706e8.
+    const auto dash = input.find('-');
+    if (dash != std::string_view::npos && dash > 0) {
+        const auto suffix = input.substr(dash + 1);
+        const bool build_metadata = !suffix.empty() &&
+            std::all_of(suffix.begin(), suffix.end(), [](unsigned char c) { return std::isalnum(c); });
+        if (build_metadata) {
+            input = input.substr(0, dash);
+        }
+    }
+
     int rc_number = -1;
     const auto rc_pos = input.find("rc");
     if (rc_pos != std::string_view::npos) {
-        const auto rc_text = input.substr(rc_pos + 2);
-        if (rc_text.empty() || !ParseUnsignedComponent(rc_text, rc_number) || rc_number < 1) {
+        size_t rc_start = rc_pos + 2;
+        size_t rc_end = rc_start;
+        while (rc_end < input.size() && std::isdigit(static_cast<unsigned char>(input[rc_end]))) {
+            ++rc_end;
+        }
+        if (rc_end == rc_start || !ParseUnsignedComponent(input.substr(rc_start, rc_end - rc_start), rc_number) || rc_number < 1) {
             return std::nullopt;
         }
         input = input.substr(0, rc_pos);
@@ -177,7 +192,7 @@ std::optional<SoftwareReleaseArtifact> ParseArtifact(const UniValue& value, Soft
         return std::nullopt;
     }
 
-    const auto hash = uint256::FromUserHex(archive_sha256_hex);
+    const auto hash = ParseStandardSha256Hex(archive_sha256_hex);
     if (!hash) {
         LogPrintf("Software updates: invalid archive_sha256 for platform %s\n", platform);
         return std::nullopt;

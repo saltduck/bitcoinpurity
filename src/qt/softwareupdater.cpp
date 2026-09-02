@@ -35,16 +35,18 @@
 #include <QStandardPaths>
 #include <QTimer>
 #include <QUrl>
+#include <QVariant>
 #include <QVBoxLayout>
 
 #include <array>
 #include <fstream>
+#include <optional>
 
 namespace {
 
 static constexpr qint64 STARTUP_CHECK_DELAY_MS{30'000};
 static constexpr qint64 MANIFEST_FETCH_TIMEOUT_MS{30'000};
-static constexpr qint64 CHECK_INTERVAL_SECONDS{7 * 24 * 60 * 60};
+static constexpr qint64 CHECK_INTERVAL_SECONDS{24 * 60 * 60};
 static constexpr qint64 DOWNLOAD_STALL_TIMEOUT_MS{45'000};
 
 static constexpr const char* SETTINGS_GROUP{"software_updates"};
@@ -76,6 +78,29 @@ QString UrgencyLabel(SoftwareUpdateUrgency urgency)
     }
 }
 
+void ConfigureUpdateRequest(QNetworkRequest& request)
+{
+    request.setHeader(QNetworkRequest::UserAgentHeader,
+        QStringLiteral("%1/%2").arg(CLIENT_NAME, LocalVersionString()));
+    request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
+    request.setAttribute(QNetworkRequest::CacheLoadControlAttribute, QNetworkRequest::AlwaysNetwork);
+    request.setRawHeader("Cache-Control", "no-cache");
+}
+
+std::optional<int> HttpStatusCode(const QNetworkReply* reply)
+{
+    if (!reply) return std::nullopt;
+    const QVariant status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute);
+    if (!status.isValid()) return std::nullopt;
+    return status.toInt();
+}
+
+bool HttpStatusOk(const QNetworkReply* reply)
+{
+    const auto status = HttpStatusCode(reply);
+    return status && *status >= 200 && *status < 300;
+}
+
 QString InstallInstructions()
 {
 #if defined(Q_OS_MACOS)
@@ -100,9 +125,7 @@ std::optional<std::string> FetchManifestJson(const QUrl& url, QString& error_out
 {
     QNetworkAccessManager manager;
     QNetworkRequest request(url);
-    request.setHeader(QNetworkRequest::UserAgentHeader,
-        QStringLiteral("%1/%2").arg(CLIENT_NAME, LocalVersionString()));
-    request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
+    ConfigureUpdateRequest(request);
 
     QNetworkReply* reply = manager.get(request);
     QEventLoop loop;
@@ -124,6 +147,14 @@ std::optional<std::string> FetchManifestJson(const QUrl& url, QString& error_out
 
     if (reply->error() != QNetworkReply::NoError) {
         error_out = reply->errorString();
+        reply->deleteLater();
+        QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+        return std::nullopt;
+    }
+
+    if (!HttpStatusOk(reply)) {
+        const auto status = HttpStatusCode(reply);
+        error_out = QObject::tr("Failed to load the release manifest (HTTP %1).").arg(status.value_or(0));
         reply->deleteLater();
         QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
         return std::nullopt;
@@ -210,6 +241,7 @@ private Q_SLOTS:
     {
         if (!m_reply || !m_output.isOpen()) return;
         m_output.write(m_reply->readAll());
+        m_output.flush();
         m_last_progress_ms = QDateTime::currentMSecsSinceEpoch();
         updateProgress();
     }
@@ -217,24 +249,47 @@ private Q_SLOTS:
     void onFinished()
     {
         if (!m_reply) return;
-        m_output.close();
 
-        if (m_cancelled) {
-            m_reply->deleteLater();
-            m_reply = nullptr;
-            return;
-        }
+        const bool cancelled = m_cancelled;
+        const QNetworkReply::NetworkError error = m_reply->error();
+        const QString error_string = m_reply->errorString();
+        const bool http_ok = HttpStatusOk(m_reply);
+        const auto http_status = HttpStatusCode(m_reply);
 
-        if (m_reply->error() != QNetworkReply::NoError) {
-            fail(m_reply->errorString());
-            m_reply->deleteLater();
-            m_reply = nullptr;
-            return;
+        if (m_output.isOpen()) {
+            m_output.write(m_reply->readAll());
+            m_output.flush();
+            m_output.close();
         }
 
         m_reply->deleteLater();
         m_reply = nullptr;
         m_stall_timer->stop();
+
+        if (cancelled) return;
+
+        if (error != QNetworkReply::NoError) {
+            fs::remove(m_download_path);
+            fail(error_string);
+            return;
+        }
+
+        if (!http_ok) {
+            fs::remove(m_download_path);
+            fail(tr("Download failed (HTTP %1).").arg(http_status.value_or(0)));
+            return;
+        }
+
+        std::error_code ec;
+        const uint64_t file_size = fs::file_size(m_download_path, ec);
+        if (ec || file_size != m_artifact.archive_size_bytes) {
+            fs::remove(m_download_path);
+            fail(tr("Download verification failed: expected %1 bytes, got %2.")
+                .arg(m_artifact.archive_size_bytes)
+                .arg(ec ? 0 : file_size));
+            return;
+        }
+
         verifyDownload();
     }
 
@@ -256,9 +311,7 @@ private:
         }
 
         QNetworkRequest request(QUrl(QString::fromStdString(m_artifact.download_uri)));
-        request.setHeader(QNetworkRequest::UserAgentHeader,
-            QStringLiteral("%1/%2").arg(CLIENT_NAME, LocalVersionString()));
-        request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
+        ConfigureUpdateRequest(request);
 
         m_output.setFileName(GUIUtil::PathToQString(m_download_path));
         if (!m_output.open(QIODevice::WriteOnly)) {
@@ -301,8 +354,11 @@ private:
 
         uint256 digest;
         if (!HashFileSha256(m_download_path, digest) || digest != m_artifact.archive_sha256) {
+            const QString expected = QString::fromStdString(HexStr(Span<const uint8_t>(m_artifact.archive_sha256.begin(), m_artifact.archive_sha256.size())));
+            const QString actual = QString::fromStdString(HexStr(Span<const uint8_t>(digest.begin(), digest.size())));
             fs::remove(m_download_path);
-            fail(tr("Download verification failed. The file was removed."));
+            fail(tr("Download verification failed: SHA256 mismatch.\n\nExpected: %1\nActual:   %2\n\nThe file was removed.")
+                .arg(expected, actual));
             return;
         }
 
