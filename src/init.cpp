@@ -39,6 +39,7 @@
 #include <kernel/caches.h>
 #include <kernel/chainparams.h>
 #include <kernel/context.h>
+#include <kernel/software_updates.h>
 #include <kernel/warning.h>
 #include <key.h>
 #include <logging.h>
@@ -526,6 +527,8 @@ void SetupServerArgs(ArgsManager& argsman, bool can_listen_ipc)
     argsman.AddArg("-corepolicy", strprintf("Use Bitcoin Core policy defaults (default: %u)", DEFAULT_COREPOLICY), ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
     argsman.AddArg("-datadir=<dir>", "Specify data directory", ArgsManager::ALLOW_ANY | ArgsManager::DISALLOW_NEGATION, OptionsCategory::OPTIONS);
     argsman.AddArg("-officialpackages=<file>", "Path to a local JSON file listing official datadir packages for fast initial sync. Relative paths are resolved from the current directory or the datadir. By default the GUI fetches the package list from https://downloads.bitcoinpurity.org/ at startup.", ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
+    argsman.AddArg("-checkforupdates", strprintf("Enable the GUI software update checker (default: %u)", DEFAULT_CHECKFORUPDATES), ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
+    argsman.AddArg("-updatesmanifest=<url>", "Override the signed releases manifest URL used by the GUI update checker (default: https://downloads.bitcoinpurity.org/releases.json).", ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
     argsman.AddArg("-dbbatchsize", strprintf("Maximum database write batch size in bytes (default: %u)", nDefaultDbBatchSize), ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::OPTIONS);
     argsman.AddArg("-dbcache=<n>", strprintf("Maximum database cache size <n> MiB (minimum %s, default is platform dependent, between %s and %s). Make sure you have enough RAM. In addition, unused memory allocated to the mempool is shared with this cache (see -maxmempool).", MIN_DBCACHE_BYTES / 1_MiB, MIN_DEFAULT_DBCACHE / 1_MiB, MAX_DEFAULT_DBCACHE / 1_MiB), ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
     argsman.AddArg("-dbfilesize",

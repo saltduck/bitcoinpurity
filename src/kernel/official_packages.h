@@ -86,4 +86,7 @@ bool VerifyOfficialPackagesManifestSignature(
 /** Whether a zip archive entry path is safe to extract (no zip-slip). */
 bool IsZipArchiveEntryPathSafe(std::string_view entry_path);
 
+/** Parse a standard SHA-256 hex digest (same byte order as shasum / CSHA256). */
+std::optional<uint256> ParseStandardSha256Hex(const std::string& hex);
+
 #endif // BITCOIN_KERNEL_OFFICIAL_PACKAGES_H

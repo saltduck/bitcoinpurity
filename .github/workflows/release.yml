@@ -558,6 +558,32 @@ jobs:
 
           cat SHA256SUMS
 
+      - name: Checkout source for manifest tooling
+        uses: actions/checkout@v6
+        with:
+          sparse-checkout: |
+            contrib/official-packages
+          sparse-checkout-cone-mode: false
+
+      - name: Generate releases manifest
+        run: |
+          python3 contrib/official-packages/generate-releases-manifest.py \
+            --version "${GITHUB_REF_NAME}" \
+            --artifacts-dir release-artifacts \
+            --repo "${GITHUB_REPOSITORY}" \
+            --output release-artifacts/releases.json
+
+      - name: Sign releases manifest
+        env:
+          RELEASES_MANIFEST_SIGNING_KEY: ${{ secrets.RELEASES_MANIFEST_SIGNING_KEY }}
+        if: env.RELEASES_MANIFEST_SIGNING_KEY != ''
+        run: |
+          printf '%s\n' "${RELEASES_MANIFEST_SIGNING_KEY}" > /tmp/releases-sign.pem
+          python3 contrib/official-packages/sign-manifest.py \
+            --sign release-artifacts/releases.json \
+            --key /tmp/releases-sign.pem
+          rm -f /tmp/releases-sign.pem
+
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -566,6 +592,7 @@ jobs:
             release-artifacts/bitcoin-purity-*.tar.gz \
             release-artifacts/bitcoin-purity-*.zip \
             release-artifacts/SHA256SUMS \
+            release-artifacts/releases.json \
             --repo "${GITHUB_REPOSITORY}" \
             --title "Bitcoin Purity ${GITHUB_REF_NAME}" \
             --generate-notes
