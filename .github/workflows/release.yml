@@ -551,10 +551,18 @@ jobs:
       - name: Generate SHA256SUMS
         working-directory: release-artifacts
         run: |
-          sha256sum \
-            bitcoin-purity-*.tar.gz \
-            bitcoin-purity-*.zip \
-            > SHA256SUMS
+          shopt -s nullglob
+          files=(
+            bitcoin-purity-*.tar.gz
+            bitcoin-purity-*.zip
+            Bitcoin-Purity-*.zip
+            bitcoin-win64-setup-*.exe
+          )
+          if ((${#files[@]} == 0)); then
+            echo "error: no release archives found for SHA256SUMS" >&2
+            exit 1
+          fi
+          sha256sum "${files[@]}" > SHA256SUMS
 
           cat SHA256SUMS
 
@@ -588,11 +596,22 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          shopt -s nullglob
+          files=(
+            release-artifacts/bitcoin-purity-*.tar.gz
+            release-artifacts/bitcoin-purity-*.zip
+            release-artifacts/Bitcoin-Purity-*.zip
+            release-artifacts/bitcoin-win64-setup-*.exe
+            release-artifacts/SHA256SUMS
+            release-artifacts/releases.json
+          )
+          if ((${#files[@]} < 3)); then
+            echo "error: expected release archives plus SHA256SUMS and releases.json" >&2
+            ls -la release-artifacts >&2 || true
+            exit 1
+          fi
           gh release create "${GITHUB_REF_NAME}" \
-            release-artifacts/bitcoin-purity-*.tar.gz \
-            release-artifacts/bitcoin-purity-*.zip \
-            release-artifacts/SHA256SUMS \
-            release-artifacts/releases.json \
+            "${files[@]}" \
             --repo "${GITHUB_REPOSITORY}" \
             --title "Bitcoin Purity ${GITHUB_REF_NAME}" \
             --generate-notes

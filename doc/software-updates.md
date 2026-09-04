@@ -76,8 +76,12 @@ python3 contrib/official-packages/generate-releases-manifest.py \
 ```
 
 `--version` must match the version embedded in every artifact filename, for example
-`bitcoin-purity-1.0.0rc1-arm64-apple-darwin.zip` requires `--version 1.0.0rc1`
+`bitcoin-purity-1.0.0rc1-arm64-apple-darwin.zip` or
+`bitcoin-win64-setup-1.0.0rc1-x86_64-w64-mingw32.exe` requires `--version 1.0.0rc1`
 (or `v1.0.0rc1`). The script rejects mismatches such as `--version rc1`.
+
+Recognized Windows packages include both `bitcoin-purity-*-win64.zip` (CI zip) and
+`bitcoin-win64-setup-*-x86_64-w64-mingw32.exe` (cmake `deploy` NSIS installer).
 
 When the artifacts directory contains multiple versions, only files matching
 `--version` are included; other archives are skipped with a warning.
