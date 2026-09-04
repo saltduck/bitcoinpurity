@@ -325,6 +325,10 @@ bool OptionsModel::Init(bilingual_str& error)
         settings.setValue("fMinimizeOnClose", false);
     fMinimizeOnClose = settings.value("fMinimizeOnClose").toBool();
 
+    if (!settings.contains("fShowOfficialNotices"))
+        settings.setValue("fShowOfficialNotices", true);
+    m_show_official_notices = settings.value("fShowOfficialNotices").toBool();
+
     // Display
     if (!settings.contains("DisplayBitcoinUnit")) {
         auto init_unit = BitcoinUnit::BTC;
@@ -626,6 +630,8 @@ QVariant OptionsModel::getOption(OptionID option, const std::string& suffix) con
         return SettingToBool(setting(), DEFAULT_NATPMP);
     case MinimizeOnClose:
         return fMinimizeOnClose;
+    case ShowOfficialNotices:
+        return m_show_official_notices;
 
     // default proxy
     case ProxyUse:
@@ -871,6 +877,10 @@ bool OptionsModel::setOption(OptionID option, const QVariant& value, const std::
     case MinimizeOnClose:
         fMinimizeOnClose = value.toBool();
         settings.setValue("fMinimizeOnClose", fMinimizeOnClose);
+        break;
+    case ShowOfficialNotices:
+        m_show_official_notices = value.toBool();
+        settings.setValue("fShowOfficialNotices", m_show_official_notices);
         break;
 
     // default proxy

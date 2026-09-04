@@ -42,6 +42,7 @@ class HelpMessageDialog;
 class ModalOverlay;
 class MempoolStats;
 class SoftwareUpdateChecker;
+class OfficialBroadcastChecker;
 enum class SynchronizationState;
 
 namespace interfaces {
@@ -161,6 +162,7 @@ private:
     QAction* changePassphraseAction = nullptr;
     QAction* aboutQtAction = nullptr;
     QAction* checkForUpdatesAction = nullptr;
+    QAction* checkOfficialNoticesAction = nullptr;
     QAction* m_show_netwatch_action = nullptr;
     QAction* openRPCConsoleAction = nullptr;
     QAction* openAction = nullptr;
@@ -185,6 +187,7 @@ private:
     const std::unique_ptr<QMenu> trayIconMenu;
     Notificator* notificator = nullptr;
     SoftwareUpdateChecker* m_software_update_checker = nullptr;
+    OfficialBroadcastChecker* m_official_broadcast_checker = nullptr;
     GuiNetWatch* NetWatch = nullptr;
     RPCConsole* rpcConsole = nullptr;
     HelpMessageDialog* helpMessageDialog = nullptr;
@@ -339,6 +342,8 @@ public Q_SLOTS:
     void showHelpMessageClicked();
     /** Check for software updates */
     void checkForUpdatesClicked();
+    /** Check for official broadcast notices */
+    void checkOfficialNoticesClicked();
     /** Show mempool stats window */
     void showMempoolStatsWindow();
     /** Show window if hidden, unminimize when minimized, rise when obscured or show if hidden and fToggleHidden is true */

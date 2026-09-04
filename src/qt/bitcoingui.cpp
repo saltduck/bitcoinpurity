@@ -22,6 +22,7 @@
 #include <qt/optionsmodel.h>
 #include <qt/platformstyle.h>
 #include <qt/rpcconsole.h>
+#include <qt/officialbroadcasts.h>
 #include <qt/softwareupdater.h>
 #include <qt/utilitydialog.h>
 
@@ -430,6 +431,10 @@ void BitcoinGUI::createActions()
     checkForUpdatesAction->setMenuRole(QAction::ApplicationSpecificRole);
     checkForUpdatesAction->setStatusTip(tr("Check downloads.bitcoinpurity.org for a newer version"));
 
+    checkOfficialNoticesAction = new QAction(tr("Check Official &Notices…"), this);
+    checkOfficialNoticesAction->setMenuRole(QAction::ApplicationSpecificRole);
+    checkOfficialNoticesAction->setStatusTip(tr("Check downloads.bitcoinpurity.org for official notices"));
+
     m_mask_values_action = new QAction(tr("&Mask values"), this);
     m_mask_values_action->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_M));
     m_mask_values_action->setStatusTip(tr("Mask the values in the Overview tab"));
@@ -441,6 +446,7 @@ void BitcoinGUI::createActions()
     connect(optionsAction, &QAction::triggered, this, &BitcoinGUI::optionsClicked);
     connect(showHelpMessageAction, &QAction::triggered, this, &BitcoinGUI::showHelpMessageClicked);
     connect(checkForUpdatesAction, &QAction::triggered, this, &BitcoinGUI::checkForUpdatesClicked);
+    connect(checkOfficialNoticesAction, &QAction::triggered, this, &BitcoinGUI::checkOfficialNoticesClicked);
     connect(m_show_netwatch_action, &QAction::triggered, this, &BitcoinGUI::showNetWatch);
     connect(openRPCConsoleAction, &QAction::triggered, this, &BitcoinGUI::showDebugWindow);
     connect(showMempoolStatsAction, &QAction::triggered, this, &BitcoinGUI::showMempoolStatsWindow);
@@ -667,6 +673,7 @@ void BitcoinGUI::createMenuBar()
     QMenu *help = appMenuBar->addMenu(tr("&Help"));
     help->addAction(showHelpMessageAction);
     help->addAction(checkForUpdatesAction);
+    help->addAction(checkOfficialNoticesAction);
     help->addSeparator();
     help->addAction(aboutAction);
     help->addAction(aboutQtAction);
@@ -783,6 +790,36 @@ void BitcoinGUI::setClientModel(ClientModel *_clientModel, interfaces::BlockAndH
                     }
                 });
             m_software_update_checker->scheduleStartupCheck();
+        }
+
+        if (!m_official_broadcast_checker) {
+            m_official_broadcast_checker = new OfficialBroadcastChecker(this);
+            connect(m_official_broadcast_checker, &OfficialBroadcastChecker::noticesAvailable, this,
+                [this](const std::vector<OfficialBroadcastNotice>& notices) {
+                    OfficialBroadcastPresenter::showNotices(this, notices);
+                    if (notificator && !notices.empty()) {
+                        const auto& first = notices.front();
+                        notificator->notify(
+                            Notificator::Information,
+                            first.title.empty()
+                                ? tr("Official Notice")
+                                : QString::fromStdString(first.title),
+                            QString::fromStdString(first.body));
+                    }
+                });
+            connect(m_official_broadcast_checker, &OfficialBroadcastChecker::noNoticesAvailable, this,
+                [this](bool manual) {
+                    if (manual) {
+                        OfficialBroadcastPresenter::showNoNotices(this);
+                    }
+                });
+            connect(m_official_broadcast_checker, &OfficialBroadcastChecker::checkFailed, this,
+                [this](const QString& error, bool manual) {
+                    if (manual) {
+                        OfficialBroadcastPresenter::showCheckFailed(this, error);
+                    }
+                });
+            m_official_broadcast_checker->scheduleStartupCheck();
         }
 
 #ifdef ENABLE_WALLET
@@ -1107,6 +1144,13 @@ void BitcoinGUI::checkForUpdatesClicked()
 {
     if (m_software_update_checker) {
         m_software_update_checker->checkNow(true);
+    }
+}
+
+void BitcoinGUI::checkOfficialNoticesClicked()
+{
+    if (m_official_broadcast_checker) {
+        m_official_broadcast_checker->checkNow(true);
     }
 }
 
@@ -1558,6 +1602,7 @@ void BitcoinGUI::showEvent(QShowEvent *event)
     showMempoolStatsAction->setEnabled(true);
     aboutAction->setEnabled(true);
     checkForUpdatesAction->setEnabled(true);
+    checkOfficialNoticesAction->setEnabled(true);
     optionsAction->setEnabled(true);
 }
 

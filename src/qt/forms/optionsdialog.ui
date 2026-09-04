@@ -885,6 +885,19 @@
         </widget>
        </item>
        <item>
+        <widget class="QCheckBox" name="showOfficialNotices">
+         <property name="toolTip">
+          <string>Fetch and display signed official notices from downloads.bitcoinpurity.org. Notices you have already read will not be shown again.</string>
+         </property>
+         <property name="text">
+          <string>Show &amp;official notices</string>
+         </property>
+         <property name="checked">
+          <bool>true</bool>
+         </property>
+        </widget>
+       </item>
+       <item>
         <layout class="QHBoxLayout" name="horizontalLayout_3_Display">
          <item>
           <widget class="QLabel" name="thirdPartyTxUrlsLabel">

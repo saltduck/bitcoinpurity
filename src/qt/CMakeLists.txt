@@ -259,6 +259,8 @@ add_library(bitcoinqt STATIC EXCLUDE_FROM_ALL
   packagedownloader.h
   softwareupdater.cpp
   softwareupdater.h
+  officialbroadcasts.cpp
+  officialbroadcasts.h
   $<$<PLATFORM_ID:Darwin>:macdockiconhandler.h>
   $<$<PLATFORM_ID:Darwin>:macdockiconhandler.mm>
   $<$<PLATFORM_ID:Darwin>:macnotificationhandler.h>
