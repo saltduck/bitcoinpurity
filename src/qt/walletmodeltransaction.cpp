@@ -16,6 +16,22 @@ QList<SendCoinsRecipient> WalletModelTransaction::getRecipients() const
     return recipients;
 }
 
+void WalletModelTransaction::setOpReturnData(std::vector<unsigned char> data, const QString& display)
+{
+    m_op_return_data = std::move(data);
+    m_op_return_display = display;
+}
+
+const std::vector<unsigned char>& WalletModelTransaction::getOpReturnData() const
+{
+    return m_op_return_data;
+}
+
+QString WalletModelTransaction::getOpReturnDisplay() const
+{
+    return m_op_return_display;
+}
+
 CTransactionRef& WalletModelTransaction::getWtx()
 {
     return wtx;

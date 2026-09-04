@@ -11,6 +11,7 @@
 #include <qt/bitcoinunits.h>
 #include <qt/clientmodel.h>
 #include <qt/coincontroldialog.h>
+#include <qt/guiconstants.h>
 #include <qt/guiutil.h>
 #include <qt/optionsmodel.h>
 #include <qt/platformstyle.h>
@@ -33,13 +34,19 @@
 #include <chrono>
 #include <fstream>
 #include <memory>
+#include <optional>
+#include <string>
+#include <vector>
 
 #include <QDebug>
 #include <QFontMetrics>
 #include <QScrollBar>
 #include <QSettings>
+#include <QSignalBlocker>
 #include <QTextDocument>
 #include <QTextEdit>
+
+#include <util/strencodings.h>
 
 using common::PSBTError;
 using wallet::CCoinControl;
@@ -88,6 +95,11 @@ SendCoinsDialog::SendCoinsDialog(const PlatformStyle *_platformStyle, QWidget *p
 
     connect(ui->addButton, &QPushButton::clicked, this, &SendCoinsDialog::addEntry);
     connect(ui->clearButton, &QPushButton::clicked, this, &SendCoinsDialog::clear);
+    connect(ui->opReturnMemo, &QLineEdit::textChanged, this, &SendCoinsDialog::onOpReturnMemoTextChanged);
+    connect(ui->opReturnMemo, &QLineEdit::editingFinished, this, &SendCoinsDialog::onOpReturnMemoEditingFinished);
+    connect(ui->radioOpReturnMemoText, &QRadioButton::toggled, this, &SendCoinsDialog::onOpReturnMemoFormatChanged);
+    connect(ui->radioOpReturnMemoHex, &QRadioButton::toggled, this, &SendCoinsDialog::onOpReturnMemoFormatChanged);
+    updateOpReturnMemoBytes();
 
     // Coin Control
     connect(ui->pushButtonCoinControl, &QPushButton::clicked, this, &SendCoinsDialog::coinControlButtonClicked);
@@ -291,6 +303,17 @@ bool SendCoinsDialog::PrepareSendText(QString& question_string, QString& informa
 
     // prepare transaction for getting txFee earlier
     m_current_transaction = std::make_unique<WalletModelTransaction>(recipients);
+    {
+        std::vector<unsigned char> op_return_data;
+        QString op_return_display;
+        QString op_return_error;
+        if (!parseOpReturnMemo(op_return_data, op_return_display, &op_return_error)) {
+            Q_EMIT message(tr("Send Coins"), op_return_error, CClientUIInterface::MSG_ERROR);
+            fNewRecipientAllowed = true;
+            return false;
+        }
+        m_current_transaction->setOpReturnData(std::move(op_return_data), op_return_display);
+    }
     WalletModel::SendCoinsReturn prepareStatus;
 
     updateCoinControlState();
@@ -359,6 +382,14 @@ bool SendCoinsDialog::PrepareSendText(QString& question_string, QString& informa
         question_string.append(tr("Please, review your transaction."));
     }
     question_string.append("</span>%1");
+
+    const QString op_return_display = m_current_transaction->getOpReturnDisplay();
+    if (!m_current_transaction->getOpReturnData().empty()) {
+        question_string.append("<br /><br /><b>");
+        question_string.append(tr("Memo (OP_RETURN)"));
+        question_string.append("</b>: ");
+        question_string.append(GUIUtil::HtmlEscape(op_return_display));
+    }
 
     if(txFee > 0)
     {
@@ -663,6 +694,10 @@ void SendCoinsDialog::clear()
     ui->lineEditCoinControlChange->clear();
     coinControlUpdateLabels();
 
+    ui->opReturnMemo->clear();
+    ui->radioOpReturnMemoText->setChecked(true);
+    ui->opReturnMemo->setStyleSheet("");
+
     // Remove entries until only one left
     while(ui->entries->count())
     {
@@ -740,7 +775,10 @@ QWidget *SendCoinsDialog::setupTabChain(QWidget *prev)
             prev = entry->setupTabChain(prev);
         }
     }
-    QWidget::setTabOrder(prev, ui->sendButton);
+    QWidget::setTabOrder(prev, ui->radioOpReturnMemoText);
+    QWidget::setTabOrder(ui->radioOpReturnMemoText, ui->radioOpReturnMemoHex);
+    QWidget::setTabOrder(ui->radioOpReturnMemoHex, ui->opReturnMemo);
+    QWidget::setTabOrder(ui->opReturnMemo, ui->sendButton);
     QWidget::setTabOrder(ui->sendButton, ui->clearButton);
     QWidget::setTabOrder(ui->clearButton, ui->addButton);
     return ui->addButton;
@@ -862,6 +900,9 @@ void SendCoinsDialog::processSendCoinsReturn(const WalletModel::SendCoinsReturn 
         msgParams.first = tr("A fee higher than %1 is considered an absurdly high fee.").arg(BitcoinUnits::formatHtmlWithUnit(font_for_money, display_unit, model->wallet().getDefaultMaxTxFee()));
         break;
     }
+    case WalletModel::InvalidOPReturnMemo:
+        msgParams.first = tr("The on-chain memo exceeds the maximum size of %1 bytes.").arg(MAX_OP_RETURN_MEMO_BYTES);
+        break;
     // included to prevent a compiler warning.
     case WalletModel::OK:
     default:
@@ -958,6 +999,135 @@ void SendCoinsDialog::updateCoinControlState()
     m_coin_control->m_signal_bip125_rbf = ui->optInRBF->isChecked();
     // Include watch-only for wallets without private key
     m_coin_control->fAllowWatchOnly = model->wallet().privateKeysDisabled() && !model->wallet().hasExternalSigner();
+}
+
+void SendCoinsDialog::onOpReturnMemoTextChanged(const QString& text)
+{
+    Q_UNUSED(text);
+    updateOpReturnMemoBytes();
+}
+
+void SendCoinsDialog::onOpReturnMemoFormatChanged(bool checked)
+{
+    if (!checked) return;
+    updateOpReturnMemoBytes();
+}
+
+void SendCoinsDialog::onOpReturnMemoEditingFinished()
+{
+    std::vector<unsigned char> data;
+    QString display;
+    QString error;
+    if (!parseOpReturnMemo(data, display, &error)) {
+        // Keep the raw input so the user can fix invalid hex.
+        updateOpReturnMemoBytes();
+        return;
+    }
+    const QString cleaned = data.empty() ? QString() : display;
+    if (cleaned == ui->opReturnMemo->text()) {
+        updateOpReturnMemoBytes();
+        return;
+    }
+    {
+        QSignalBlocker blocker(ui->opReturnMemo);
+        ui->opReturnMemo->setText(cleaned);
+    }
+    updateOpReturnMemoBytes();
+}
+
+namespace {
+/** Strip whitespace and an optional leading 0x/0X from a hex memo input. */
+std::string NormalizeHexMemoInput(const QString& input)
+{
+    std::string hex;
+    hex.reserve(static_cast<size_t>(input.size()));
+    for (QChar qc : input) {
+        const ushort u = qc.unicode();
+        if (u < 0x80 && IsSpace(static_cast<char>(u))) {
+            continue;
+        }
+        hex.push_back(static_cast<char>(u <= 0x7f ? u : '?'));
+    }
+    if (hex.size() >= 2 && hex[0] == '0' && (hex[1] == 'x' || hex[1] == 'X')) {
+        hex.erase(0, 2);
+    }
+    return hex;
+}
+} // namespace
+
+bool SendCoinsDialog::parseOpReturnMemo(std::vector<unsigned char>& data, QString& display, QString* error) const
+{
+    data.clear();
+    display.clear();
+    if (error) error->clear();
+
+    const bool hex_mode = ui->radioOpReturnMemoHex->isChecked();
+    const QString input = ui->opReturnMemo->text();
+
+    if (hex_mode) {
+        const std::string hex = NormalizeHexMemoInput(input);
+        if (hex.empty()) {
+            return true;
+        }
+        const auto parsed = TryParseHex<unsigned char>(hex);
+        if (!parsed) {
+            if (error) *error = tr("The on-chain memo is not valid hexadecimal.");
+            return false;
+        }
+        if (parsed->size() > static_cast<size_t>(MAX_OP_RETURN_MEMO_BYTES)) {
+            if (error) *error = tr("The on-chain memo exceeds the maximum size of %1 bytes.").arg(MAX_OP_RETURN_MEMO_BYTES);
+            return false;
+        }
+        data = *parsed;
+        display = QString::fromStdString(HexStr(data));
+        return true;
+    }
+
+    const QString trimmed = input.trimmed();
+    if (trimmed.isEmpty()) {
+        return true;
+    }
+    const QByteArray utf8 = trimmed.toUtf8();
+    if (utf8.size() > MAX_OP_RETURN_MEMO_BYTES) {
+        if (error) *error = tr("The on-chain memo exceeds the maximum size of %1 bytes.").arg(MAX_OP_RETURN_MEMO_BYTES);
+        return false;
+    }
+    data.assign(utf8.begin(), utf8.end());
+    display = trimmed;
+    return true;
+}
+
+void SendCoinsDialog::updateOpReturnMemoBytes()
+{
+    const bool hex_mode = ui->radioOpReturnMemoHex->isChecked();
+    const QString input = ui->opReturnMemo->text();
+    int nbytes = 0;
+    bool invalid = false;
+
+    if (hex_mode) {
+        const std::string hex = NormalizeHexMemoInput(input);
+        if (!hex.empty()) {
+            const auto parsed = TryParseHex<unsigned char>(hex);
+            if (!parsed) {
+                invalid = true;
+                size_t digits = 0;
+                for (char c : hex) {
+                    if (HexDigit(c) >= 0) ++digits;
+                }
+                nbytes = static_cast<int>((digits + 1) / 2);
+            } else {
+                nbytes = static_cast<int>(parsed->size());
+            }
+        }
+    } else {
+        nbytes = input.trimmed().toUtf8().size();
+    }
+
+    if (nbytes > MAX_OP_RETURN_MEMO_BYTES) {
+        invalid = true;
+    }
+    ui->opReturnMemo->setStyleSheet(invalid ? STYLE_INVALID : QString());
+    ui->labelOpReturnMemoBytes->setText(QStringLiteral("%1/%2").arg(nbytes).arg(MAX_OP_RETURN_MEMO_BYTES));
 }
 
 void SendCoinsDialog::updateNumberOfBlocks(int count, const QDateTime& blockDate, double nVerificationProgress, SyncType synctype, SynchronizationState sync_state) {

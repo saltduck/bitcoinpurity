@@ -11,6 +11,9 @@
 #include <consensus/amount.h>
 
 #include <QObject>
+#include <QString>
+
+#include <vector>
 
 class SendCoinsRecipient;
 
@@ -26,6 +29,10 @@ public:
 
     QList<SendCoinsRecipient> getRecipients() const;
 
+    void setOpReturnData(std::vector<unsigned char> data, const QString& display);
+    const std::vector<unsigned char>& getOpReturnData() const;
+    QString getOpReturnDisplay() const;
+
     CTransactionRef& getWtx();
     void setWtx(const CTransactionRef&);
 
@@ -40,6 +47,8 @@ public:
 
 private:
     QList<SendCoinsRecipient> recipients;
+    std::vector<unsigned char> m_op_return_data;
+    QString m_op_return_display;
     CTransactionRef wtx;
     CAmount fee{0};
 };

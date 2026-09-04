@@ -15,6 +15,7 @@
 #include <qt/sendcoinsdialog.h>
 #include <qt/transactiontablemodel.h>
 
+#include <addresstype.h>
 #include <common/args.h> // for GetBoolArg
 #include <interfaces/handler.h>
 #include <interfaces/node.h>
@@ -22,6 +23,7 @@
 #include <node/interface_ui.h>
 #include <node/types.h>
 #include <psbt.h>
+#include <script/script.h>
 #include <util/rbf.h>
 #include <util/translation.h>
 #include <wallet/coincontrol.h>
@@ -211,6 +213,15 @@ WalletModel::SendCoinsReturn WalletModel::prepareTransaction(WalletModelTransact
     if(setAddress.size() != nAddresses)
     {
         return DuplicateAddress;
+    }
+
+    const std::vector<unsigned char>& op_return_data = transaction.getOpReturnData();
+    if (!op_return_data.empty()) {
+        if (op_return_data.size() > static_cast<size_t>(MAX_OP_RETURN_MEMO_BYTES)) {
+            return InvalidOPReturnMemo;
+        }
+        CRecipient opreturn_recipient{CNoDestination{CScript() << OP_RETURN << op_return_data}, /*nAmount=*/0, /*fSubtractFeeFromAmount=*/false};
+        vecSend.push_back(opreturn_recipient);
     }
 
     // If no coin was manually selected, use the cached balance

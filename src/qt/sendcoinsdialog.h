@@ -13,6 +13,8 @@
 #include <QString>
 #include <QTimer>
 
+#include <vector>
+
 class PlatformStyle;
 class SendCoinsEntry;
 class SendCoinsRecipient;
@@ -93,6 +95,11 @@ private:
     bool signWithExternalSigner(PartiallySignedTransaction& psbt, CMutableTransaction& mtx, bool& complete);
     void updateFeeMinimizedLabel();
     void updateCoinControlState();
+    void updateOpReturnMemoBytes();
+    /** Parse and clean the memo field. Returns false on invalid hex / oversized data.
+     *  On success, data is empty when the cleaned memo should not add an OP_RETURN.
+     *  If error is non-null, it receives a translated error string on failure. */
+    bool parseOpReturnMemo(std::vector<unsigned char>& data, QString& display, QString* error = nullptr) const;
 
 private Q_SLOTS:
     void sendButtonClicked(bool checked);
@@ -119,6 +126,9 @@ private Q_SLOTS:
     void updateFeeSectionControls();
     void updateNumberOfBlocks(int count, const QDateTime& blockDate, double nVerificationProgress, SyncType synctype, SynchronizationState sync_state);
     void updateSmartFeeLabel();
+    void onOpReturnMemoTextChanged(const QString& text);
+    void onOpReturnMemoFormatChanged(bool checked);
+    void onOpReturnMemoEditingFinished();
 
 Q_SIGNALS:
     // Fired when a message should be reported to the user
