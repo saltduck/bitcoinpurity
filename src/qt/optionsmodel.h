@@ -51,6 +51,7 @@ public:
         MapPortUPnP,            // bool
         MapPortNatpmp,          // bool
         MinimizeOnClose,        // bool
+        ShowOfficialNotices,    // bool
         ProxyUse,               // bool
         ProxyIP,                // QString
         ProxyPort,              // int
@@ -147,6 +148,7 @@ public:
     bool getShowTrayIcon() const { return m_show_tray_icon; }
     bool getMinimizeToTray() const { return fMinimizeToTray; }
     bool getMinimizeOnClose() const { return fMinimizeOnClose; }
+    bool getShowOfficialNotices() const { return m_show_official_notices; }
     BitcoinUnit getDisplayUnit() const { return m_display_bitcoin_unit; }
     bool getDisplayAddresses() const { return bDisplayAddresses; }
     QString getThirdPartyTxUrls() const { return strThirdPartyTxUrls; }
@@ -176,6 +178,7 @@ private:
     bool m_show_tray_icon;
     bool fMinimizeToTray;
     bool fMinimizeOnClose;
+    bool m_show_official_notices{true};
     QString language;
     BitcoinUnit m_display_bitcoin_unit;
     bool bDisplayAddresses;
