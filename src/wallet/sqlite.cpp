@@ -123,12 +123,23 @@ SQLiteDatabase::SQLiteDatabase(const fs::path& dir_path, const fs::path& file_pa
             // Setup logging
             int ret = sqlite3_config(SQLITE_CONFIG_LOG, ErrorLogCallback, nullptr);
             if (ret != SQLITE_OK) {
+                // On some platforms (notably macOS system libsqlite3), CONFIG_LOG may
+                // still succeed after sqlite3_initialize(); treat other failures as fatal.
                 throw std::runtime_error(strprintf("SQLiteDatabase: Failed to setup error log: %s\n", sqlite3_errstr(ret)));
             }
-            // Force serialized threading mode
+            // Force serialized threading mode. sqlite3_config() must be called before
+            // sqlite3_initialize(). If another library already initialized the shared
+            // SQLite (common with macOS system libsqlite3), CONFIG_SERIALIZED returns
+            // SQLITE_MISUSE while CONFIG_LOG may still succeed. Wallet DB access is
+            // already serialized via g_sqlite_mutex / m_write_semaphore, so continue
+            // when mutex support is present.
             ret = sqlite3_config(SQLITE_CONFIG_SERIALIZED);
             if (ret != SQLITE_OK) {
-                throw std::runtime_error(strprintf("SQLiteDatabase: Failed to configure serialized threading mode: %s\n", sqlite3_errstr(ret)));
+                if (sqlite3_threadsafe() == 0) {
+                    throw std::runtime_error(strprintf("SQLiteDatabase: Failed to configure serialized threading mode: %s\n", sqlite3_errstr(ret)));
+                }
+                LogWarning("SQLiteDatabase: Could not set serialized threading mode (%s); continuing with sqlite3_threadsafe()=%d",
+                           sqlite3_errstr(ret), sqlite3_threadsafe());
             }
         }
         int ret = sqlite3_initialize(); // This is a no-op if sqlite3 is already initialized

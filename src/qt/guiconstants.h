@@ -19,6 +19,9 @@ static constexpr auto SHUTDOWN_POLLING_DELAY{200ms};
 /* AskPassphraseDialog -- Maximum passphrase length */
 static const int MAX_PASSPHRASE_SIZE = 1024;
 
+/* SendCoinsDialog -- Maximum byte length for optional OP_RETURN memo (text or hex) */
+static const int MAX_OP_RETURN_MEMO_BYTES = 80;
+
 /* BitcoinGUI -- Size of icons in status bar */
 static const int STATUSBAR_ICONSIZE = 16;
 

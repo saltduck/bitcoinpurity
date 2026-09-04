@@ -184,7 +184,6 @@ private:
     bool bDisplayAddresses;
     QString strThirdPartyTxUrls;
     FontChoice m_font_money{FontChoiceAbstract::EmbeddedFont};
-    bool m_font_money_supports_tonal;
     FontChoice m_font_qrcodes{FontChoiceAbstract::EmbeddedFont};
     bool m_peers_tab_alternating_row_colors;
     bool fCoinControlFeatures;

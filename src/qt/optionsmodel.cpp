@@ -9,7 +9,6 @@
 #include <qt/bitcoinunits.h>
 #include <qt/guiconstants.h>
 #include <qt/guiutil.h>
-#include <qt/tonalutils.h>
 
 #include <chainparams.h>
 #include <common/args.h>
@@ -347,10 +346,14 @@ bool OptionsModel::Init(bilingual_str& error)
         out = unit;
         return true;
     };
-    if (!unit_set_to_variant(m_display_bitcoin_unit, settings.value("DisplayBitcoinUnitKnots"))) {
-        if (!unit_set_to_variant(m_display_bitcoin_unit, settings.value("DisplayBitcoinUnit"))) {
-            m_display_bitcoin_unit = BitcoinUnit::BTC;
-        }
+    if (!unit_set_to_variant(m_display_bitcoin_unit, settings.value("DisplayBitcoinUnit"))) {
+        m_display_bitcoin_unit = BitcoinUnit::BTC;
+    }
+    // Drop any former tonal (TBC) Knots unit preference.
+    settings.remove("DisplayBitcoinUnitKnots");
+    if (!BitcoinUnits::availableUnits().contains(m_display_bitcoin_unit)) {
+        m_display_bitcoin_unit = BitcoinUnit::BTC;
+        settings.setValue("DisplayBitcoinUnit", QVariant::fromValue(m_display_bitcoin_unit));
     }
 
     if (!settings.contains("bDisplayAddresses"))
@@ -439,7 +442,6 @@ bool OptionsModel::Init(bilingual_str& error)
             m_font_money = FontChoiceAbstract::BestSystemFont;
         }
     }
-    m_font_money_supports_tonal = TonalUtils::font_supports_tonal(getFontForMoney(BitcoinUnit::BTC));
     Q_EMIT fontForMoneyChanged(getFontForMoney(BitcoinUnit::BTC));
 
     if (settings.contains("FontForQRCodes")) {
@@ -818,9 +820,7 @@ QFont OptionsModel::getFontForChoice(const FontChoice& fc)
 
 QFont OptionsModel::getFontForMoney(const BitcoinUnit unit) const
 {
-    if (BitcoinUnits::numsys(unit) == BitcoinUnits::Unit::TBC && !m_font_money_supports_tonal) {
-        return getFontForChoice(FontChoiceAbstract::EmbeddedFont);
-    }
+    Q_UNUSED(unit);
     return getFontForChoice(m_font_money);
 }
 
@@ -1008,7 +1008,6 @@ bool OptionsModel::setOption(OptionID option, const QVariant& value, const std::
         if (m_font_money == new_font) break;
         settings.setValue("FontForMoney", FontChoiceToString(new_font));
         m_font_money = new_font;
-        m_font_money_supports_tonal = TonalUtils::font_supports_tonal(getFontForMoney(BitcoinUnit::BTC));
         Q_EMIT fontForMoneyChanged(getFontForMoney(BitcoinUnit::BTC));
         break;
     }
@@ -1519,20 +1518,11 @@ void OptionsModel::setDisplayUnit(const QVariant& new_unit)
     if (new_unit.isNull() || new_unit.value<BitcoinUnit>() == m_display_bitcoin_unit) return;
     m_display_bitcoin_unit = new_unit.value<BitcoinUnit>();
     QSettings settings;
-    if (BitcoinUnits::numsys(m_display_bitcoin_unit) == BitcoinUnit::BTC) {
-        settings.setValue("DisplayBitcoinUnit", QVariant::fromValue(m_display_bitcoin_unit));
-        settings.remove("DisplayBitcoinUnitKnots");
-    } else {
-        settings.setValue("DisplayBitcoinUnitKnots", QVariant::fromValue(m_display_bitcoin_unit));
-    }
+    settings.setValue("DisplayBitcoinUnit", QVariant::fromValue(m_display_bitcoin_unit));
+    settings.remove("DisplayBitcoinUnitKnots");
     {
         // For older versions:
-        auto setting_val = BitcoinUnits::ToSetting(m_display_bitcoin_unit);
-        if (const QString* setting_str = std::get_if<QString>(&setting_val)) {
-            settings.setValue("nDisplayUnit", *setting_str);
-        } else {
-            settings.setValue("nDisplayUnit", std::get<qint8>(setting_val));
-        }
+        settings.setValue("nDisplayUnit", std::get<qint8>(BitcoinUnits::ToSetting(m_display_bitcoin_unit)));
     }
     Q_EMIT displayUnitChanged(m_display_bitcoin_unit);
 }

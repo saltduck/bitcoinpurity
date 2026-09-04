@@ -64,7 +64,8 @@ public:
         AmountWithFeeExceedsBalance,
         DuplicateAddress,
         TransactionCreationFailed, // Error returned when wallet is still locked
-        AbsurdFee
+        AbsurdFee,
+        InvalidOPReturnMemo
     };
 
     enum EncryptionStatus
@@ -159,6 +160,14 @@ public:
     // If coin control has selected outputs, searches the total amount inside the wallet.
     // Otherwise, uses the wallet's cached available balance.
     CAmount getAvailableBalance(const wallet::CCoinControl* control);
+
+    /**
+     * True when this transaction can also be valid on the Legacy (Bitcoin Core) chain:
+     * every input's prevout may still exist there (shared pre-activation history, or an
+     * unconfirmed parent that itself could appear on Legacy). Purity has no tx-level
+     * replay protection, so such sends should warn the user.
+     */
+    bool mayAppearOnLegacyChain(const CTransaction& tx) const;
 
 private:
     std::unique_ptr<interfaces::Wallet> m_wallet;
