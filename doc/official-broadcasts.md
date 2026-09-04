@@ -94,6 +94,9 @@ https://downloads.bitcoinpurity.org/broadcasts.json
 Automatic checks run at most once every day after a short startup delay. Users
 can also choose **Help → Check Official Notices…**.
 
+If `broadcasts.json` is missing on the CDN (HTTP 404), the client treats that as
+“no notices” and does not report an error.
+
 Read notice IDs are stored under the Qt settings group `official_broadcasts`.
 
 ## Security model

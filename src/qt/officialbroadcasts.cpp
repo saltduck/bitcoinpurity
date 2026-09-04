@@ -74,7 +74,19 @@ bool HttpStatusOk(const QNetworkReply* reply)
     return status && *status >= 200 && *status < 300;
 }
 
-std::optional<std::string> FetchManifestJson(const QUrl& url, QString& error_out)
+enum class ManifestFetchStatus {
+    Ok,
+    NotFound, //!< HTTP 404: treat as no published notices.
+    Failed,
+};
+
+struct ManifestFetchResult {
+    ManifestFetchStatus status{ManifestFetchStatus::Failed};
+    std::string body;
+    QString error;
+};
+
+ManifestFetchResult FetchManifestJson(const QUrl& url)
 {
     QNetworkAccessManager manager;
     QNetworkRequest request(url);
@@ -90,33 +102,34 @@ std::optional<std::string> FetchManifestJson(const QUrl& url, QString& error_out
     timeout.start();
     loop.exec();
 
-    if (!reply->isFinished()) {
-        error_out = QObject::tr("Timed out loading official notices.");
-        reply->abort();
+    auto finish = [&](ManifestFetchResult result) {
         reply->deleteLater();
         QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
-        return std::nullopt;
+        return result;
+    };
+
+    if (!reply->isFinished()) {
+        reply->abort();
+        return finish({ManifestFetchStatus::Failed, {}, QObject::tr("Timed out loading official notices.")});
+    }
+
+    const auto status = HttpStatusCode(reply);
+    if ((status && *status == 404) || reply->error() == QNetworkReply::ContentNotFoundError) {
+        // Missing broadcasts.json means there are currently no official notices.
+        return finish({ManifestFetchStatus::NotFound, {}, {}});
     }
 
     if (reply->error() != QNetworkReply::NoError) {
-        error_out = reply->errorString();
-        reply->deleteLater();
-        QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
-        return std::nullopt;
+        return finish({ManifestFetchStatus::Failed, {}, reply->errorString()});
     }
 
     if (!HttpStatusOk(reply)) {
-        const auto status = HttpStatusCode(reply);
-        error_out = QObject::tr("Failed to load official notices (HTTP %1).").arg(status.value_or(0));
-        reply->deleteLater();
-        QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
-        return std::nullopt;
+        return finish({ManifestFetchStatus::Failed, {},
+            QObject::tr("Failed to load official notices (HTTP %1).").arg(status.value_or(0))});
     }
 
     const QByteArray body = reply->readAll();
-    reply->deleteLater();
-    QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
-    return std::string(body.constData(), body.size());
+    return finish({ManifestFetchStatus::Ok, std::string(body.constData(), body.size()), {}});
 }
 
 std::vector<std::string> LoadDismissedIds()
@@ -215,20 +228,24 @@ void OfficialBroadcastChecker::performCheck(bool manual)
 
     recordCheckAttempt();
 
-    QString fetch_error;
-    const auto contents = FetchManifestJson(QUrl(QString::fromStdString(*manifest_url)), fetch_error);
-    if (!contents) {
+    const ManifestFetchResult fetch = FetchManifestJson(QUrl(QString::fromStdString(*manifest_url)));
+    if (fetch.status == ManifestFetchStatus::NotFound) {
         m_check_in_progress = false;
-        LogPrintf("Official broadcast check failed for %s: %s\n", *manifest_url, fetch_error.toStdString());
-        Q_EMIT checkFailed(fetch_error.isEmpty()
+        Q_EMIT noNoticesAvailable(manual);
+        return;
+    }
+    if (fetch.status != ManifestFetchStatus::Ok) {
+        m_check_in_progress = false;
+        LogPrintf("Official broadcast check failed for %s: %s\n", *manifest_url, fetch.error.toStdString());
+        Q_EMIT checkFailed(fetch.error.isEmpty()
                 ? tr("Could not load official notices from downloads.bitcoinpurity.org.")
-                : fetch_error,
+                : fetch.error,
             manual);
         return;
     }
 
     const auto notices = ParseOfficialBroadcastsManifest(
-        *contents, *manifest_url, OfficialBroadcastTrustPolicy::REMOTE_SIGNED);
+        fetch.body, *manifest_url, OfficialBroadcastTrustPolicy::REMOTE_SIGNED);
     if (!notices) {
         m_check_in_progress = false;
         Q_EMIT checkFailed(tr("Official notices from downloads.bitcoinpurity.org could not be verified."), manual);
@@ -276,5 +293,3 @@ void OfficialBroadcastPresenter::showCheckFailed(QWidget* parent, const QString&
 {
     QMessageBox::warning(parent, QObject::tr("Official Notices"), error);
 }
-
-#include <qt/officialbroadcasts.moc>
