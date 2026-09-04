@@ -161,6 +161,14 @@ public:
     // Otherwise, uses the wallet's cached available balance.
     CAmount getAvailableBalance(const wallet::CCoinControl* control);
 
+    /**
+     * True when this transaction can also be valid on the Legacy (Bitcoin Core) chain:
+     * every input's prevout may still exist there (shared pre-activation history, or an
+     * unconfirmed parent that itself could appear on Legacy). Purity has no tx-level
+     * replay protection, so such sends should warn the user.
+     */
+    bool mayAppearOnLegacyChain(const CTransaction& tx) const;
+
 private:
     std::unique_ptr<interfaces::Wallet> m_wallet;
     std::unique_ptr<interfaces::Handler> m_handler_unload;

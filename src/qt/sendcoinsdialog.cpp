@@ -434,6 +434,17 @@ bool SendCoinsDialog::PrepareSendText(QString& question_string, QString& informa
     question_string.append(QString("<br /><span style='font-size:10pt; font-weight:normal;'>(=%1)</span>")
         .arg(alternativeUnits.join(" " + tr("or") + " ")));
 
+    if (model->mayAppearOnLegacyChain(*m_current_transaction->getWtx())) {
+        question_string.append("<hr /><span style='color:#aa0000; font-weight:bold;'>");
+        question_string.append(tr("Legacy chain replay risk"));
+        question_string.append("</span><br /><span style='font-size:10pt; font-weight:normal; color:#aa0000;'>");
+        /*: Shown when a send spends only coins that may still exist on Bitcoin Core /
+            Legacy history. Purity intentionally has no transaction-level replay
+            protection, so the same signed transaction can be valid on both chains. */
+        question_string.append(tr("This transaction spends coins that may also exist on the Legacy (Bitcoin Core) chain. Because Bitcoin Purity has no transaction-level replay protection, the same transaction may be valid and confirmable on both chains."));
+        question_string.append("</span>");
+    }
+
     if (formatted.size() > 1) {
         question_string = question_string.arg("");
         informative_text = tr("To review recipient list click \"Show Details…\"");
@@ -607,6 +618,23 @@ void SendCoinsDialog::sendButtonClicked([[maybe_unused]] bool checked)
         confirmation_dialog.m_yes_button = QMessageBox::Ignore;
         confirmation_dialog.m_cancel_button = QMessageBox::Ok;
         if (static_cast<QMessageBox::StandardButton>(confirmation_dialog.exec()) == QMessageBox::Cancel) {
+            fNewRecipientAllowed = true;
+            return;
+        }
+    }
+
+    if (model->mayAppearOnLegacyChain(*m_current_transaction->getWtx())) {
+        QString replay_question = tr("This transaction may also appear on the Legacy (Bitcoin Core) chain.");
+        replay_question.append("<br /><br /><span style='font-size:10pt;'>");
+        /*: Intermediate warning before the normal send confirmation when all
+            selected inputs may still exist on Legacy/Core history. */
+        replay_question.append(tr("Bitcoin Purity does not include transaction-level replay protection. Spending coins from before the Purity activation height can produce a transaction that is valid on both chains. Continue only if you understand this risk."));
+        replay_question.append("</span>");
+
+        SendConfirmationDialog replay_dialog(tr("Legacy chain replay risk"), replay_question, "", "", SEND_CONFIRM_DELAY, /*enable_send=*/true, /*always_show_unsigned=*/false, this);
+        replay_dialog.setIcon(QMessageBox::Warning);
+        replay_dialog.confirmButtonText = tr("Continue");
+        if (static_cast<QMessageBox::StandardButton>(replay_dialog.exec()) == QMessageBox::Cancel) {
             fNewRecipientAllowed = true;
             return;
         }

@@ -16,7 +16,9 @@
 #include <qt/transactiontablemodel.h>
 
 #include <addresstype.h>
+#include <chainparams.h>
 #include <common/args.h> // for GetBoolArg
+#include <consensus/params.h>
 #include <interfaces/handler.h>
 #include <interfaces/node.h>
 #include <key_io.h>
@@ -29,8 +31,10 @@
 #include <wallet/coincontrol.h>
 #include <wallet/wallet.h> // for CRecipient
 
+#include <limits>
 #include <stdint.h>
 #include <functional>
+#include <set>
 
 #include <QDebug>
 #include <QMessageBox>
@@ -670,6 +674,60 @@ CAmount WalletModel::getAvailableBalance(const CCoinControl* control)
     }
     // Fetch balance from the wallet, taking into account the selected coins
     return wallet().getAvailableBalance(*control);
+}
+
+bool WalletModel::mayAppearOnLegacyChain(const CTransaction& tx) const
+{
+    const int activation_height = Params().GetConsensus().nPurityActivationHeight;
+    // No Purity fork on this chain (e.g. default testnet/regtest), or tip has not
+    // reached activation yet — Legacy vs Purity replay is not applicable.
+    if (activation_height >= std::numeric_limits<int>::max()) {
+        return false;
+    }
+    if (!m_client_model || m_client_model->getNumBlocks() < activation_height) {
+        return false;
+    }
+
+    std::set<uint256> visited;
+    std::function<bool(const uint256&)> coin_may_exist_on_legacy = [&](const uint256& txid) -> bool {
+        if (!visited.insert(txid).second) {
+            return false;
+        }
+
+        interfaces::WalletTxStatus status;
+        interfaces::WalletOrderForm order_form;
+        bool in_mempool = false;
+        int num_blocks = 0;
+        interfaces::WalletTx wtx = m_wallet->getWalletTxDetails(txid, status, order_form, in_mempool, num_blocks);
+        if (!wtx.tx) {
+            // Not in this wallet — cannot prove the coin is Purity-only.
+            return true;
+        }
+
+        if (status.depth_in_main_chain > 0) {
+            // Shared pre-activation history exists on Legacy; post-activation
+            // Purity blocks do not.
+            return status.block_height >= 0 && status.block_height < activation_height;
+        }
+
+        // Unconfirmed: outputs exist on Legacy only if this parent tx itself could.
+        if (wtx.is_coinbase) {
+            return false;
+        }
+        for (const CTxIn& txin : wtx.tx->vin) {
+            if (!coin_may_exist_on_legacy(txin.prevout.hash)) {
+                return false;
+            }
+        }
+        return !wtx.tx->vin.empty();
+    };
+
+    for (const CTxIn& txin : tx.vin) {
+        if (!coin_may_exist_on_legacy(txin.prevout.hash)) {
+            return false;
+        }
+    }
+    return !tx.vin.empty();
 }
 
 BitcoinAddressUnusedInWalletValidator::BitcoinAddressUnusedInWalletValidator(const WalletModel& wallet_model, QObject *parent) :
