@@ -72,7 +72,7 @@ QString UrgencyLabel(SoftwareUpdateUrgency urgency)
         return QObject::tr("Recommended");
     case SoftwareUpdateUrgency::REQUIRED:
         return QObject::tr("Required");
-    case SoftwareUpdateUrgency::OPTIONAL:
+    case SoftwareUpdateUrgency::OPTIONAL_UPDATE:
     default:
         return QObject::tr("Optional");
     }
@@ -111,8 +111,8 @@ QString InstallInstructions()
 #elif defined(Q_OS_WIN)
     return QObject::tr(
         "1. Quit Bitcoin Purity completely.\n"
-        "2. Extract the downloaded zip file.\n"
-        "3. Replace the existing bitcoin-qt.exe with the new one from the archive.");
+        "2. Run the downloaded installer (.exe), or extract the zip and replace bitcoin-qt.exe.\n"
+        "3. Start Bitcoin Purity again.");
 #else
     return QObject::tr(
         "1. Quit Bitcoin Purity completely.\n"

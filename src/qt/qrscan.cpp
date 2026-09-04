@@ -23,13 +23,13 @@
 #include <QPushButton>
 #include <QTimer>
 #include <QVBoxLayout>
-#include <QVideoFrame>
 
 #ifdef ENABLE_QRSCAN_CAMERA
 #include <QAbstractVideoBuffer>
 #include <QAbstractVideoSurface>
 #include <QCamera>
 #include <QCameraInfo>
+#include <QVideoFrame>
 #include <QVideoSurfaceFormat>
 #endif
 

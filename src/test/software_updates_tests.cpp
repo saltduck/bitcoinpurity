@@ -114,7 +114,7 @@ BOOST_AUTO_TEST_CASE(parse_signed_manifest)
         signed_json, "test", SoftwareUpdateTrustPolicy::LOCAL);
     BOOST_REQUIRE(release);
     BOOST_CHECK_EQUAL(release->version, "1.0.1");
-    BOOST_CHECK_EQUAL(release->urgency, SoftwareUpdateUrgency::OPTIONAL);
+    BOOST_CHECK_EQUAL(release->urgency, SoftwareUpdateUrgency::OPTIONAL_UPDATE);
     BOOST_REQUIRE_EQUAL(release->artifacts.size(), 1U);
     BOOST_CHECK_EQUAL(release->artifacts[0].platform, "linux-x86_64");
     BOOST_CHECK(VerifyOfficialPackagesManifestSignature(signed_json, pubkey));

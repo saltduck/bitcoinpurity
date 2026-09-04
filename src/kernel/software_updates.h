@@ -17,7 +17,8 @@ class ArgsManager;
 static constexpr bool DEFAULT_CHECKFORUPDATES{true};
 
 enum class SoftwareUpdateUrgency {
-    OPTIONAL,
+    // Not named OPTIONAL: Windows headers define OPTIONAL as an empty macro.
+    OPTIONAL_UPDATE,
     RECOMMENDED,
     REQUIRED,
 };
@@ -37,7 +38,7 @@ struct SoftwareReleaseArtifact {
 struct SoftwareReleaseInfo {
     std::string version;
     std::string released_at;
-    SoftwareUpdateUrgency urgency{SoftwareUpdateUrgency::OPTIONAL};
+    SoftwareUpdateUrgency urgency{SoftwareUpdateUrgency::OPTIONAL_UPDATE};
     std::string release_notes_url;
     std::vector<SoftwareReleaseArtifact> artifacts;
 };

@@ -32,18 +32,28 @@ PLATFORM_SUFFIXES = {
     "aarch64-linux-gnu": "linux-arm64",
     "arm64-apple-darwin": "macos-arm64",
     "x86_64-apple-darwin": "macos-x86_64",
+    # Prefer the full mingw triplet before the shorter "win64" token.
+    "x86_64-w64-mingw32": "windows-x86_64",
     "win64": "windows-x86_64",
 }
 
 PLATFORM_TOKEN = "|".join(re.escape(suffix) for suffix in PLATFORM_SUFFIXES)
 
+ARCHIVE_EXTENSIONS = (".tar.gz", ".zip", ".exe")
+
 # bitcoin-purity-1.0.0rc1-arm64-apple-darwin.zip
 # bitcoin-purity-1.0.1-x86_64-linux-gnu.tar.gz
+# bitcoin-purity-1.0.0rc2-win64.zip
 ARTIFACT_WITH_PLATFORM = re.compile(
-    rf"(?i)^bitcoin-purity-(.+?)-(?:{PLATFORM_TOKEN})\.(?:tar\.gz|zip)$"
+    rf"(?i)^bitcoin-purity-(.+?)-(?:{PLATFORM_TOKEN})\.(?:tar\.gz|zip|exe)$"
 )
 
-# Bitcoin-Purity-1.0.0rc1.zip (macdeploy)
+# cmake deploy / NSIS: bitcoin-win64-setup-1.0.0rc1-x86_64-w64-mingw32.exe
+ARTIFACT_WIN64_SETUP = re.compile(
+    r"(?i)^bitcoin-win64-setup-(.+)-(?:x86_64|i686)-w64-mingw32\.exe$"
+)
+
+# Bitcoin-Purity-1.0.0rc1.zip (macdeploy without host triplet)
 ARTIFACT_MACDEPLOY = re.compile(r"(?i)^bitcoin-purity-(.+)\.(?:tar\.gz|zip)$")
 
 
@@ -55,8 +65,15 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def is_release_archive(filename: str) -> bool:
+    lowered = filename.lower()
+    return any(lowered.endswith(ext) for ext in ARCHIVE_EXTENSIONS)
+
+
 def detect_platform(filename: str) -> str | None:
     lowered = filename.lower()
+    if ARTIFACT_WIN64_SETUP.match(filename):
+        return "windows-x86_64"
     for suffix, platform in PLATFORM_SUFFIXES.items():
         if suffix in lowered:
             return platform
@@ -65,6 +82,9 @@ def detect_platform(filename: str) -> str | None:
 
 def extract_version_from_artifact(filename: str) -> str | None:
     match = ARTIFACT_WITH_PLATFORM.match(filename)
+    if match:
+        return match.group(1)
+    match = ARTIFACT_WIN64_SETUP.match(filename)
     if match:
         return match.group(1)
     match = ARTIFACT_MACDEPLOY.match(filename)
@@ -88,7 +108,7 @@ def iter_artifact_paths(artifacts_dir: Path) -> list[Path]:
             continue
         if path.name in {"SHA256SUMS", "releases.json"}:
             continue
-        if path.name.endswith(".tar.gz") or path.name.endswith(".zip"):
+        if is_release_archive(path.name):
             paths.append(path)
     return paths
 
