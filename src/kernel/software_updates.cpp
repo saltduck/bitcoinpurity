@@ -165,7 +165,7 @@ int CompareParsedVersions(const ParsedSoftwareVersion& lhs, const ParsedSoftware
 std::optional<SoftwareUpdateUrgency> ParseUrgency(std::string_view urgency)
 {
     const std::string lowered = ToLowerAscii(urgency);
-    if (lowered == "optional") return SoftwareUpdateUrgency::OPTIONAL;
+    if (lowered == "optional") return SoftwareUpdateUrgency::OPTIONAL_UPDATE;
     if (lowered == "recommended") return SoftwareUpdateUrgency::RECOMMENDED;
     if (lowered == "required") return SoftwareUpdateUrgency::REQUIRED;
     return std::nullopt;

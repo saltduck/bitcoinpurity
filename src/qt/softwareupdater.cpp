@@ -72,7 +72,7 @@ QString UrgencyLabel(SoftwareUpdateUrgency urgency)
         return QObject::tr("Recommended");
     case SoftwareUpdateUrgency::REQUIRED:
         return QObject::tr("Required");
-    case SoftwareUpdateUrgency::OPTIONAL:
+    case SoftwareUpdateUrgency::OPTIONAL_UPDATE:
     default:
         return QObject::tr("Optional");
     }
