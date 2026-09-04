@@ -45,9 +45,6 @@ public:
         mBTC,
         uBTC,
         SAT,
-        bTBC,
-        sTBC,
-        TBC,
     };
     Q_ENUM(Unit)
 
@@ -78,10 +75,6 @@ public:
     static qint64 factor(Unit unit);
     //! Number of fractional places
     static int decimals(Unit unit);
-    //! Radix
-    static int radix(Unit unit);
-    //! Number system
-    static Unit numsys(Unit unit);
     //! Number of digits total in maximum value
     static qint64 max_digits(Unit unit);
     //! "Single step" amount, in satoshis
