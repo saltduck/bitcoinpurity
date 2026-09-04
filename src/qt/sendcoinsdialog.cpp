@@ -39,6 +39,7 @@
 #include <vector>
 
 #include <QDebug>
+#include <QEvent>
 #include <QFontMetrics>
 #include <QScrollBar>
 #include <QSettings>
@@ -95,10 +96,10 @@ SendCoinsDialog::SendCoinsDialog(const PlatformStyle *_platformStyle, QWidget *p
 
     connect(ui->addButton, &QPushButton::clicked, this, &SendCoinsDialog::addEntry);
     connect(ui->clearButton, &QPushButton::clicked, this, &SendCoinsDialog::clear);
-    connect(ui->opReturnMemo, &QLineEdit::textChanged, this, &SendCoinsDialog::onOpReturnMemoTextChanged);
-    connect(ui->opReturnMemo, &QLineEdit::editingFinished, this, &SendCoinsDialog::onOpReturnMemoEditingFinished);
+    connect(ui->opReturnMemo, &QPlainTextEdit::textChanged, this, &SendCoinsDialog::onOpReturnMemoTextChanged);
     connect(ui->radioOpReturnMemoText, &QRadioButton::toggled, this, &SendCoinsDialog::onOpReturnMemoFormatChanged);
     connect(ui->radioOpReturnMemoHex, &QRadioButton::toggled, this, &SendCoinsDialog::onOpReturnMemoFormatChanged);
+    ui->opReturnMemo->installEventFilter(this);
     updateOpReturnMemoBytes();
 
     // Coin Control
@@ -1001,10 +1002,17 @@ void SendCoinsDialog::updateCoinControlState()
     m_coin_control->fAllowWatchOnly = model->wallet().privateKeysDisabled() && !model->wallet().hasExternalSigner();
 }
 
-void SendCoinsDialog::onOpReturnMemoTextChanged(const QString& text)
+void SendCoinsDialog::onOpReturnMemoTextChanged()
 {
-    Q_UNUSED(text);
     updateOpReturnMemoBytes();
+}
+
+bool SendCoinsDialog::eventFilter(QObject* obj, QEvent* event)
+{
+    if (obj == ui->opReturnMemo && event->type() == QEvent::FocusOut) {
+        onOpReturnMemoEditingFinished();
+    }
+    return QDialog::eventFilter(obj, event);
 }
 
 void SendCoinsDialog::onOpReturnMemoFormatChanged(bool checked)
@@ -1024,13 +1032,13 @@ void SendCoinsDialog::onOpReturnMemoEditingFinished()
         return;
     }
     const QString cleaned = data.empty() ? QString() : display;
-    if (cleaned == ui->opReturnMemo->text()) {
+    if (cleaned == ui->opReturnMemo->toPlainText()) {
         updateOpReturnMemoBytes();
         return;
     }
     {
         QSignalBlocker blocker(ui->opReturnMemo);
-        ui->opReturnMemo->setText(cleaned);
+        ui->opReturnMemo->setPlainText(cleaned);
     }
     updateOpReturnMemoBytes();
 }
@@ -1062,7 +1070,7 @@ bool SendCoinsDialog::parseOpReturnMemo(std::vector<unsigned char>& data, QStrin
     if (error) error->clear();
 
     const bool hex_mode = ui->radioOpReturnMemoHex->isChecked();
-    const QString input = ui->opReturnMemo->text();
+    const QString input = ui->opReturnMemo->toPlainText();
 
     if (hex_mode) {
         const std::string hex = NormalizeHexMemoInput(input);
@@ -1100,7 +1108,7 @@ bool SendCoinsDialog::parseOpReturnMemo(std::vector<unsigned char>& data, QStrin
 void SendCoinsDialog::updateOpReturnMemoBytes()
 {
     const bool hex_mode = ui->radioOpReturnMemoHex->isChecked();
-    const QString input = ui->opReturnMemo->text();
+    const QString input = ui->opReturnMemo->toPlainText();
     int nbytes = 0;
     bool invalid = false;
 

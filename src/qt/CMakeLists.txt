@@ -364,6 +364,14 @@ if(ENABLE_WALLET)
       psbtoperationsdialog.h
       qrimagewidget.cpp
       qrimagewidget.h
+      qrscan.cpp
+      qrscan.h
+      quirc/decode.c
+      quirc/identify.c
+      quirc/quirc.c
+      quirc/quirc.h
+      quirc/quirc_internal.h
+      quirc/version_db.c
       receivecoinsdialog.cpp
       receivecoinsdialog.h
       receiverequestdialog.cpp
@@ -408,6 +416,13 @@ if(ENABLE_WALLET)
       bitcoin_wallet
       "Qt${WITH_QT_VERSION}::Network"
   )
+  if(ENABLE_QRSCAN_CAMERA)
+    target_link_libraries(bitcoinqt
+      PRIVATE
+        Qt5::Multimedia
+        Qt5::MultimediaWidgets
+    )
+  endif()
 endif()
 
 if(WITH_DBUS)

@@ -282,6 +282,16 @@ if(BUILD_GUI)
   )
   endif()  # Qt 6
   unset(qt_components)
+
+  # Optional camera-based QR scanning (file-based scanning always available).
+  # Prefer the component packages so missing Multimedia does not fail configure.
+  if("${WITH_QT_VERSION}" STREQUAL "5")
+    find_package(Qt5Multimedia QUIET)
+    find_package(Qt5MultimediaWidgets QUIET)
+    if(Qt5Multimedia_FOUND AND Qt5MultimediaWidgets_FOUND)
+      set(ENABLE_QRSCAN_CAMERA TRUE)
+    endif()
+  endif()
 endif()
 
 option(BUILD_BENCH "Build bench_bitcoin executable." OFF)
@@ -837,6 +847,7 @@ message("  port mapping using UPnP ............. ${WITH_MINIUPNPC}")
 message("  ZeroMQ .............................. ${WITH_ZMQ}")
 message("  USDT tracing ........................ ${WITH_USDT}")
 message("  QR code (GUI) ....................... ${WITH_QRENCODE}")
+message("  QR camera scan (GUI) ................ ${ENABLE_QRSCAN_CAMERA}")
 message("  DBus (GUI) .......................... ${WITH_DBUS}")
 message("  RDTS consent ........................ ${RDTS_CONSENT}")
 message("Tests:")

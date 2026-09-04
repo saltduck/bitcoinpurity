@@ -10,6 +10,7 @@
 #include <qt/guiutil.h>
 #include <qt/optionsmodel.h>
 #include <qt/platformstyle.h>
+#include <qt/qrscan.h>
 #include <qt/walletmodel.h>
 
 #include <QApplication>
@@ -24,6 +25,7 @@ SendCoinsEntry::SendCoinsEntry(const PlatformStyle *_platformStyle, QWidget *par
 
     ui->addressBookButton->setIcon(platformStyle->SingleColorIcon(":/icons/address-book"));
     ui->pasteButton->setIcon(platformStyle->SingleColorIcon(":/icons/editpaste"));
+    ui->scanQRButton->setIcon(platformStyle->SingleColorIcon(":/icons/qrscan"));
     ui->deleteButton->setIcon(platformStyle->SingleColorIcon(":/icons/remove"));
 
     if (platformStyle->getUseExtraSpacing())
@@ -47,6 +49,25 @@ void SendCoinsEntry::on_pasteButton_clicked()
 {
     // Paste text from clipboard into recipient field
     ui->payTo->setText(QApplication::clipboard()->text());
+}
+
+void SendCoinsEntry::on_scanQRButton_clicked()
+{
+    QRScanDialog dlg(platformStyle, this);
+    if (dlg.exec() != QDialog::Accepted) {
+        return;
+    }
+
+    const QString data = dlg.scannedData();
+    SendCoinsRecipient rcp;
+    if (GUIUtil::parseBitcoinURI(data, &rcp)) {
+        setValue(rcp);
+        ui->payAmount->setFocus();
+        return;
+    }
+
+    // Bare address (or other text payload): put it in Pay To.
+    setAddress(data);
 }
 
 void SendCoinsEntry::on_addressBookButton_clicked()
@@ -177,7 +198,8 @@ QWidget *SendCoinsEntry::setupTabChain(QWidget *prev)
     QWidget::setTabOrder(w, ui->checkboxSubtractFeeFromAmount);
     QWidget::setTabOrder(ui->checkboxSubtractFeeFromAmount, ui->addressBookButton);
     QWidget::setTabOrder(ui->addressBookButton, ui->pasteButton);
-    QWidget::setTabOrder(ui->pasteButton, ui->deleteButton);
+    QWidget::setTabOrder(ui->pasteButton, ui->scanQRButton);
+    QWidget::setTabOrder(ui->scanQRButton, ui->deleteButton);
     return ui->deleteButton;
 }
 
@@ -234,6 +256,7 @@ void SendCoinsEntry::changeEvent(QEvent* e)
     if (e->type() == QEvent::PaletteChange) {
         ui->addressBookButton->setIcon(platformStyle->SingleColorIcon(QStringLiteral(":/icons/address-book")));
         ui->pasteButton->setIcon(platformStyle->SingleColorIcon(QStringLiteral(":/icons/editpaste")));
+        ui->scanQRButton->setIcon(platformStyle->SingleColorIcon(QStringLiteral(":/icons/qrscan")));
         ui->deleteButton->setIcon(platformStyle->SingleColorIcon(QStringLiteral(":/icons/remove")));
     }
 

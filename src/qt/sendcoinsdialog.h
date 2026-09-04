@@ -28,6 +28,7 @@ namespace Ui {
 }
 
 QT_BEGIN_NAMESPACE
+class QEvent;
 class QUrl;
 QT_END_NAMESPACE
 
@@ -53,6 +54,9 @@ public:
 
     // Only used for testing-purposes
     wallet::CCoinControl* getCoinControl() { return m_coin_control.get(); }
+
+protected:
+    bool eventFilter(QObject* obj, QEvent* event) override;
 
 public Q_SLOTS:
     void clear();
@@ -126,7 +130,7 @@ private Q_SLOTS:
     void updateFeeSectionControls();
     void updateNumberOfBlocks(int count, const QDateTime& blockDate, double nVerificationProgress, SyncType synctype, SynchronizationState sync_state);
     void updateSmartFeeLabel();
-    void onOpReturnMemoTextChanged(const QString& text);
+    void onOpReturnMemoTextChanged();
     void onOpReturnMemoFormatChanged(bool checked);
     void onOpReturnMemoEditingFinished();
 
