@@ -83,6 +83,7 @@ static const int MAX_LINE_LENGTH = 100000;
  */
 constexpr int MAX_LINE_COUNT = 1000;
 static const uint16_t DEFAULT_TOR_SOCKS_PORT = 9050;
+constexpr std::string_view PRIVATE_KEY_NEW{"NEW:ED25519-V3"};
 
 /****** Low-level TorControlConnection ********/
 
@@ -536,7 +537,7 @@ void TorController::auth_cb(TorControlConnection& _conn, const TorControlReply& 
 
         // Finally - now create the service
         if (private_key.empty()) { // No private key, generate one
-            private_key = "NEW:ED25519-V3"; // Explicitly request key type - see issue #9214
+            private_key = PRIVATE_KEY_NEW; // Explicitly request key type - see issue #9214
         }
         // Request onion service, redirect port.
         _conn.Command(MakeAddOnionCmd(private_key, m_target.ToStringAddrPort(), /*enable_pow=*/true),
