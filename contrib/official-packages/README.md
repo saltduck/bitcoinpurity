@@ -96,6 +96,10 @@ chainstate/
 bitcoinpurity-package.json
 ```
 
+Optionally include `bitcoin.conf` with package-specific defaults; it is extracted
+into the datadir. Do **not** include runtime/user state such as `bitcoin_rw.conf`,
+`settings.json`, `wallets/`, peer databases, or log files.
+
 The manifest file documents the package identity and is validated on extraction:
 
 ```json
@@ -106,9 +110,6 @@ The manifest file documents the package identity and is validated on extraction:
   "prune_mib": 1907
 }
 ```
-
-Do **not** include user-specific files such as `bitcoin.conf`, `settings.json`,
-`wallets/`, or log files.
 
 ## Building a package
 
@@ -134,6 +135,8 @@ EOF
 
 (cd "${DATADIR}" && zip -r "${WORKDIR}/${PACKAGE_ID}.zip" blocks chainstate)
 (cd "${WORKDIR}" && zip -u "${PACKAGE_ID}.zip" bitcoinpurity-package.json)
+# Optional: ship package defaults
+# (cd "${DATADIR}" && zip -u "${WORKDIR}/${PACKAGE_ID}.zip" bitcoin.conf)
 ```
 
 4. Compute the archive SHA256:
