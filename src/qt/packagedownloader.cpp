@@ -217,10 +217,11 @@ bool ShouldSkipZipEntryPath(std::string_view entry)
 
     const size_t slash = entry.find_last_of('/');
     const std::string_view base = slash == std::string_view::npos ? entry : entry.substr(slash + 1);
+    // Skip runtime/user state that must not overwrite the local datadir.
+    // bitcoin.conf is intentionally extracted so packages can ship defaults.
     static constexpr std::string_view skip_names[] = {
         ".DS_Store",
         ".lock",
-        "bitcoin.conf",
         "bitcoin_rw.conf",
         "settings.json",
         "debug.log",
