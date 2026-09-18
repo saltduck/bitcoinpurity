@@ -215,6 +215,7 @@ class NetTest(BitcoinTestFramework):
     def test_getnetworkinfo(self):
         self.log.info("Test getnetworkinfo")
         info = self.nodes[0].getnetworkinfo()
+        assert_equal(info['version'], 290400)
         assert_equal(info['networkactive'], True)
         assert_equal(info['connections'], 2)
         assert_equal(info['connections_in'], 1)
