@@ -743,7 +743,7 @@ static RPCHelpMan getnetworkinfo()
 {
     LOCK(cs_main);
     UniValue obj(UniValue::VOBJ);
-    obj.pushKV("version",       CLIENT_VERSION);
+    obj.pushKV("version",       UPSTREAM_CORE_CONSENSUS_MAJOR * 10000 + UPSTREAM_CORE_CONSENSUS_MINOR * 100);
     obj.pushKV("subversion",    strSubVersion);
     obj.pushKV("protocolversion",PROTOCOL_VERSION);
     NodeContext& node = EnsureAnyNodeContext(request.context);
