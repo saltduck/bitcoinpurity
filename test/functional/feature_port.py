@@ -7,11 +7,13 @@ Test the -port option and its interactions with
 -bind.
 """
 
+import socket
 from test_framework.test_framework import (
     BitcoinTestFramework,
 )
 from test_framework.util import (
     p2p_port,
+    assert_raises,
 )
 
 
@@ -31,6 +33,26 @@ class PortTest(BitcoinTestFramework):
         self.log.info("When starting with -port, bitcoind binds to it and uses port + 1 for an onion bind")
         with node.assert_debug_log(expected_msgs=[f'Bound to 0.0.0.0:{port1}', f'Bound to 127.0.0.1:{port1 + 1}']):
             self.restart_node(0, extra_args=["-listen", f"-port={port1}"])
+
+        self.log.info("Verifying that another process cannot bind the same P2P listen port as bitcoind")
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as competing_listener:
+            competing_listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            # Misconfigured sockets allow port reuse unless the original
+            # listener requested for exclusive address use.
+            assert_raises(OSError, lambda: competing_listener.bind(("0.0.0.0", port1)))
+
+        self.log.info("Verifying that bitcoind does not bind to the P2P listen port if another process is already bound to it")
+        # Unlike Bitcoin Core, failing to bind 0.0.0.0 is not fatal here: when a
+        # non-standard -port is in use, the user is asked whether to fall back to
+        # the standard port, and bitcoind keeps running if they decline.
+        self.stop_node(0)
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as competing_listener:
+            competing_listener.bind(("0.0.0.0", port1))
+            with node.assert_debug_log(expected_msgs=[f'Unable to bind to 0.0.0.0:{port1} on this computer.'], unexpected_msgs=[f'Bound to 0.0.0.0:{port1}']):
+                self.start_node(0, extra_args=["-listen", f"-port={port1}"])
+            self.stop_node(0, expected_stderr=(
+                f"Error: Unable to bind to 0.0.0.0:{port1} on this computer. Bitcoin Purity is probably already running.\n"
+                f": Listen on port {port1} failed."))
 
         self.log.info("When specifying -port multiple times, only the last one is taken")
         with node.assert_debug_log(expected_msgs=[f'Bound to 0.0.0.0:{port2}', f'Bound to 127.0.0.1:{port2 + 1}'], unexpected_msgs=[f'Bound to 0.0.0.0:{port1}']):
