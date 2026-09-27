@@ -476,13 +476,15 @@ void TorController::add_onion_cb(TorControlConnection& _conn, const TorControlRe
 {
     if (reply.code == 250) {
         LogDebug(BCLog::TOR, "ADD_ONION successful (PoW defenses %s)", pow_was_enabled ? "enabled" : "disabled");
+        std::string service_id;
+        std::optional<std::string> returned_private_key;
         for (const std::string &s : reply.lines) {
             std::map<std::string,std::string> m = ParseTorReplyMapping(s);
             std::map<std::string,std::string>::iterator i;
             if ((i = m.find("ServiceID")) != m.end())
                 service_id = i->second;
             if ((i = m.find("PrivateKey")) != m.end())
-                private_key = i->second;
+                returned_private_key = i->second;
         }
         if (service_id.empty()) {
             LogWarning("tor: Error parsing ADD_ONION parameters:");
@@ -491,7 +493,8 @@ void TorController::add_onion_cb(TorControlConnection& _conn, const TorControlRe
             }
             return;
         }
-        service = LookupNumeric(std::string(service_id+".onion"), Params().GetDefaultPort());
+        if (returned_private_key) private_key = std::move(*returned_private_key);
+        service = LookupNumeric(service_id + ".onion", Params().GetDefaultPort());
         LogInfo("Got tor service ID %s, advertising service %s\n", service_id, service.ToStringAddrPort());
         if (WriteBinaryFile(GetPrivateKeyFile(), private_key)) {
             LogDebug(BCLog::TOR, "Cached service private key to %s\n", fs::PathToString(GetPrivateKeyFile()));
