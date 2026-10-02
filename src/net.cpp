@@ -2896,6 +2896,9 @@ void CConnman::ThreadOpenConnections(const std::vector<std::string> connect, Spa
 
         const auto current_time{NodeClock::now()};
         int nTries = 0;
+        // Stop preferring hints before the existing 30-try recent-attempt
+        // relaxation, so unusable/recently tried hints cannot starve fallback.
+        constexpr int PURITY_PREFERENCE_TRIES{20};
         const auto reachable_nets{g_reachable_nets.All()};
 
         while (!interruptNet)
@@ -2945,9 +2948,10 @@ void CConnman::ThreadOpenConnections(const std::vector<std::string> connect, Spa
                 // If preferred_net has a value set, pick an extra outbound
                 // peer from that network. The eviction logic in net_processing
                 // ensures that a peer from another network will be evicted.
+                const ServiceFlags preferred_services{nTries <= PURITY_PREFERENCE_TRIES ? NODE_PURITY_ASERT : NODE_NONE};
                 std::tie(addr, addr_last_try) = preferred_net.has_value()
-                    ? addrman.Select(false, {*preferred_net})
-                    : addrman.Select(false, reachable_nets);
+                    ? addrman.Select(false, {*preferred_net}, preferred_services)
+                    : addrman.Select(false, reachable_nets, preferred_services);
             }
 
             // Require outbound IPv4/IPv6 connections, other than feelers, to be to distinct network groups
@@ -2995,6 +2999,10 @@ void CConnman::ThreadOpenConnections(const std::vector<std::string> connect, Spa
             }
 
             addrConnect = addr;
+            if (!fFeeler && nTries <= PURITY_PREFERENCE_TRIES && (addr.nServices & NODE_PURITY_ASERT)) {
+                LogDebug(BCLog::NET, "Preferring outbound candidate advertising NODE_PURITY_ASERT%s\n",
+                         fLogIPs ? strprintf(": %s", addrConnect.ToStringAddrPort()) : "");
+            }
             break;
         }
 

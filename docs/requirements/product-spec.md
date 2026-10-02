@@ -88,3 +88,24 @@ when DATUM is not running.
 The public protocol, configuration defaults, security controls, lifecycle,
 verification criteria, and non-goals are normative in
 [`input/requirements.md`](../../input/requirements.md).
+
+## Purity P2P discovery service
+
+- Advertise experimental `NODE_PURITY_ASERT = (1ULL << 25)` in local
+  VERSION and normal addr/addrv2 service records; RPC names it `PURITY_ASERT`.
+- The bit is an unauthenticated discovery hint. The existing block hash at
+  height 961637 remains authoritative and must also reject a conflicting
+  chain advertised by a bit-25 peer.
+- Automatic outbound selection prefers known bit-25 records in the existing
+  AddrMan for the first 20 attempts. If there are no matching records, use normal
+  selection immediately; after 20 ineligible draws, return to normal selection.
+  Existing network diversity, services, recent-attempt and port checks apply.
+- Missing bit 25 never independently causes rejection or punishment. Manual
+  connections, anchors, feelers and bootstrap retain their existing behavior.
+- Keep existing NODE_REDUCED_DATA/stale-peer rules. This service does not make
+  all Core peers eligible after the shared pre-activation prefix is synced.
+- Keep network magic, message/storage layouts, consensus, transaction relay
+  and mempool policy unchanged.
+- Test service naming/value, local VERSION/address advertisement, V1/V2 and
+  AddrMan persistence, deterministic preference/fallback, legacy handshakes
+  and advertised-bit activation-hash mismatches.

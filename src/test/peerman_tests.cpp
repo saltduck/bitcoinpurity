@@ -77,6 +77,23 @@ BOOST_AUTO_TEST_CASE(connections_desirable_service_flags)
     BOOST_CHECK(peerman->GetDesirableServiceFlags(peer_flags) == ServiceFlags(NODE_NETWORK | NODE_WITNESS));
 }
 
+BOOST_AUTO_TEST_CASE(purity_service_is_optional)
+{
+    auto peerman = PeerManager::make(*m_node.connman, *m_node.addrman, nullptr, *m_node.chainman, *m_node.mempool, *m_node.warnings, {});
+    Consensus::Params& consensus{const_cast<Consensus::Params&>(m_node.chainman->GetParams().GetConsensus())};
+    consensus.nPurityActivationHeight = 100;
+    const ServiceFlags legacy{NODE_NETWORK | NODE_WITNESS | NODE_REDUCED_DATA};
+    for (const int height : {0, 99, 100}) {
+        peerman->SetBestBlock(height, std::chrono::seconds{0});
+        BOOST_CHECK((legacy & peerman->GetDesirableServiceFlags(legacy)) == peerman->GetDesirableServiceFlags(legacy));
+        BOOST_CHECK(peerman->GetDesirableServiceFlags(legacy) ==
+                    peerman->GetDesirableServiceFlags(ServiceFlags(legacy | NODE_PURITY_ASERT)));
+        BOOST_CHECK(!(peerman->GetDesirableServiceFlags(legacy) & NODE_PURITY_ASERT));
+        BOOST_CHECK((NODE_PURITY_ASERT & peerman->GetDesirableServiceFlags(NODE_PURITY_ASERT)) !=
+                    peerman->GetDesirableServiceFlags(NODE_PURITY_ASERT));
+    }
+}
+
 BOOST_AUTO_TEST_CASE(connections_desirable_service_flags_require_purity_after_prefix)
 {
     std::unique_ptr<PeerManager> peerman = PeerManager::make(*m_node.connman, *m_node.addrman, nullptr, *m_node.chainman, *m_node.mempool, *m_node.warnings, {});

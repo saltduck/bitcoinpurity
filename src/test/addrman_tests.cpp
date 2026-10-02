@@ -62,6 +62,51 @@ static std::vector<bool> FromBytes(std::span<const std::byte> source)
 
 BOOST_FIXTURE_TEST_SUITE(addrman_tests, BasicTestingSetup)
 
+BOOST_AUTO_TEST_CASE(addrman_purity_services)
+{
+    AddrMan addrman{EMPTY_NETGROUPMAN, DETERMINISTIC, GetCheckRatio(m_node)};
+    CAddress address{ResolveService("250.1.1.1", 8333), NODE_NETWORK};
+    address.nTime = Now<NodeSeconds>();
+    const auto source = ResolveIP("252.2.2.2");
+    BOOST_REQUIRE(addrman.Add({address}, source));
+    address.nServices = ServiceFlags(NODE_NETWORK | NODE_WITNESS | NODE_PURITY_ASERT);
+    BOOST_CHECK(!addrman.Add({address}, source));
+    BOOST_CHECK_EQUAL(addrman.Select().first.nServices, address.nServices);
+    BOOST_REQUIRE(addrman.Good(address));
+    DataStream stream;
+    stream << addrman;
+    AddrMan decoded{EMPTY_NETGROUPMAN, DETERMINISTIC, GetCheckRatio(m_node)};
+    stream >> decoded;
+    BOOST_CHECK_EQUAL(decoded.Select().first.nServices, address.nServices);
+    decoded.SetServices(address, NODE_NETWORK);
+    BOOST_CHECK_EQUAL(decoded.Select().first.nServices, NODE_NETWORK);
+    decoded.SetServices(address, address.nServices);
+    BOOST_CHECK_EQUAL(decoded.Select().first.nServices, address.nServices);
+}
+
+BOOST_AUTO_TEST_CASE(addrman_purity_preference_and_fallback)
+{
+    AddrMan addrman{EMPTY_NETGROUPMAN, DETERMINISTIC, GetCheckRatio(m_node)};
+    CAddress ordinary{ResolveService("250.1.1.1", 8333), ServiceFlags(NODE_NETWORK | NODE_WITNESS)};
+    ordinary.nTime = Now<NodeSeconds>();
+    CAddress purity{ResolveService("251.1.1.1", 8333), ServiceFlags(ordinary.nServices | NODE_PURITY_ASERT)};
+    purity.nTime = ordinary.nTime;
+    const auto source = ResolveIP("252.2.2.2");
+    BOOST_REQUIRE(addrman.Add({ordinary}, source));
+    BOOST_CHECK(addrman.Select(false, {}, NODE_PURITY_ASERT).first == ordinary);
+    BOOST_REQUIRE(addrman.Add({purity}, source));
+    BOOST_CHECK(addrman.Select(false, {}, NODE_PURITY_ASERT).first == purity);
+    BOOST_CHECK(addrman.Select(true, {NET_IPV4}, NODE_PURITY_ASERT).first == purity);
+    BOOST_CHECK(!addrman.Select(false, {NET_IPV6}, NODE_PURITY_ASERT).first.IsValid());
+    BOOST_REQUIRE(addrman.Good(purity));
+    BOOST_CHECK(addrman.Select(false, {}, NODE_PURITY_ASERT).first == purity);
+    BOOST_CHECK(addrman.Select(true, {}, NODE_PURITY_ASERT).first == ordinary);
+    addrman.Attempt(purity, false, ordinary.nTime);
+    BOOST_CHECK(addrman.Select(false, {}, NODE_PURITY_ASERT).second == ordinary.nTime);
+    addrman.SetServices(purity, ordinary.nServices);
+    BOOST_CHECK(!(addrman.Select(false, {}, NODE_PURITY_ASERT).first.nServices & NODE_PURITY_ASERT));
+}
+
 BOOST_AUTO_TEST_CASE(addrman_simple)
 {
     auto addrman = std::make_unique<AddrMan>(EMPTY_NETGROUPMAN, DETERMINISTIC, GetCheckRatio(m_node));

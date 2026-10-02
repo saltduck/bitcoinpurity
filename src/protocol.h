@@ -345,6 +345,11 @@ enum ServiceFlags : uint64_t {
 
     NODE_UTREEXO_TMP = (1 << 24),
 
+    // Experimental bit 25: claims support for the Bitcoin Purity ASERT chain.
+    // Only an unauthenticated discovery/capability hint; actual chain identity
+    // is verified separately by the existing block-961637 hash check.
+    NODE_PURITY_ASERT = (1ULL << 25),
+
     NODE_REPLACE_BY_FEE = (1 << 26),
 
     // NODE_REDUCED_DATA means the node enforces ReducedData rules as applicable

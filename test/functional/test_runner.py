@@ -105,6 +105,8 @@ BASE_SCRIPTS = [
     'wallet_conflicts.py --legacy-wallet',
     'wallet_conflicts.py --descriptors',
     'p2p_opportunistic_1p1c.py',
+    'p2p_purity_services.py --v1transport',
+    'p2p_purity_services.py --v2transport',
     'p2p_node_network_limited.py --v1transport',
     'p2p_node_network_limited.py --v2transport',
     # vv Tests less than 2m vv

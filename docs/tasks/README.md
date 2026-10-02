@@ -1,4 +1,4 @@
-# Embedded DATUM Task Index
+# Implementation Task Index
 
 - [TASK-001: Baseline provenance, minimal C source, and conditional build](TASK-001.md)
 - [TASK-002: Purity bridge, configuration, lifecycle, and refresh](TASK-002.md)
@@ -12,3 +12,5 @@
 - [TASK-010: Qt left navigation and mining dashboard](TASK-010.md)
 - [TASK-011: Mining dashboard data collection and calculations](TASK-011.md)
 - [TASK-012: Mining dashboard Best Share](TASK-012.md)
+
+- [TASK-013: Purity ASERT discovery service](TASK-013.md)

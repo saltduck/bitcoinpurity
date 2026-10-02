@@ -157,10 +157,12 @@ public:
      *                     guarantee a tried entry).
      * @param[in] networks Select only addresses of these networks (empty = all). Passing networks may
      *                     slow down the search.
+     * @param[in] preferred_services Prefer records with all these unauthenticated service hints.
+     *                               If none match, use normal selection. Never a requirement.
      * @return    CAddress The record for the selected peer.
      *            seconds  The last time we attempted to connect to that peer.
      */
-    std::pair<CAddress, NodeSeconds> Select(bool new_only = false, const std::unordered_set<Network>& networks = {}) const;
+    std::pair<CAddress, NodeSeconds> Select(bool new_only = false, const std::unordered_set<Network>& networks = {}, ServiceFlags preferred_services = NODE_NONE) const;
 
     /**
      * Return all or many randomly selected addresses, optionally by network.
