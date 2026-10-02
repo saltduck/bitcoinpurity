@@ -43,6 +43,7 @@ The new processing changes only add debug logs.
 | src/test/denialofservice_tests.cpp | Advertising bit 25 still fails conflicting activation-header validation and loses protection/slots. |
 | test/functional/p2p_purity_services.py | Local/pruned VERSION/RPC services, V1/V2 self-address and gossip, peers.dat restart, legacy inbound/outbound/feeler handshakes. |
 | test/functional/p2p_node_network_limited.py | Update expected pruned-node local services. |
+| test/functional/interface_bitcoin_cli.py | Account for the Purity `p` abbreviation in strict netinfo expectations and assert the full local service name. |
 | test/functional/test_framework/messages.py | Add the test-framework service constant. |
 | test/functional/test_runner.py | Register the new functional test for V1 and V2. |
 | input/requirements.md, docs/requirements/product-spec.md | Synchronize the discovery requirement without replacing existing DATUM requirements. |
@@ -81,4 +82,33 @@ using the existing pipe fallback; no compatibility source was changed. The
 functional runner must be invoked through build/test/functional so it finds the
 generated config.ini. The final linker emitted an existing duplicate-library
 warning. This verifies local regtest/network behavior; mainnet deployment,
-wallet/GUI/DATUM builds and the entire test suite were not run.
+GUI/DATUM builds and the entire test suite were not run. Wallet verification is recorded below.
+
+## CLI regression follow-up
+
+The existing interface_bitcoin_cli test expected `nwl2?4` at line 97. With bit 25
+advertised, netinfo correctly renders `nwlp4` (or `nwl2p4` with P2P V2), causing
+both wallet variants to fail the same assertion. The failure was reproduced
+locally before changing the test. Update the exact expectation to `nwl2?p4`
+and assert that the full local-services line includes `purity asert`.
+No CLI/network/wallet production behavior is changed.
+
+A local Debug build with SQLite and Berkeley DB 18.1 enabled passed. The legacy
+wallet tests use isolated temporary wallets; this is not a BDB 4.8 portability
+qualification. The existing HAVE_DECL_PIPE2=0 build override remains in effect.
+
+```sh
+cmake -S . -B build -U BerkeleyDB_LIBRARY -DENABLE_WALLET=ON -DWITH_SQLITE=ON -DWITH_BDB=ON -DWARN_INCOMPATIBLE_BDB=OFF -DBerkeleyDB_INCLUDE_DIR=/opt/homebrew/opt/berkeley-db@18/include -DBerkeleyDB_LIBRARY_RELEASE=/opt/homebrew/opt/berkeley-db@18/lib/libdb_cxx.dylib -DBerkeleyDB_LIBRARY_DEBUG=/opt/homebrew/opt/berkeley-db@18/lib/libdb_cxx.dylib
+cmake --build build --target bitcoind bitcoin-cli -j8
+python3 build/test/functional/test_runner.py interface_bitcoin_cli.py --jobs=2 --tmpdir=/private/tmp/purity-cli-wallet-v1
+python3 build/test/functional/test_runner.py interface_bitcoin_cli.py --v2transport --jobs=1 --tmpdir=/private/tmp/purity-cli-wallet-v2-final
+python3 -m py_compile test/functional/interface_bitcoin_cli.py
+git diff --check
+```
+
+Both descriptors and legacy-wallet cases passed for default and V2 transport:
+4/4 functional cases. Separate runners must run sequentially or use distinct
+caches/ports; an initial simultaneous V2 runner failed in shared-cache setup,
+then the sequential run passed. An intermediate run against a wallet-disabled
+binary and wallet-enabled config was discarded; final runs used the completed
+wallet build.
