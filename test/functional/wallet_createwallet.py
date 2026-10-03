@@ -214,7 +214,10 @@ class CreateWalletTest(BitcoinTestFramework):
             node.createwallet("version_check")
         wallet = node.get_wallet_rpc("version_check")
         wallet_version = wallet.getwalletinfo()["walletversion"]
-        client_version = node.getnetworkinfo()["version"]
+        # getnetworkinfo.version is upstream; wallet metadata stores the product version.
+        purity_version = node.getnetworkinfo()["subversion"].split("Purity:", 1)[1].split("/", 1)[0]
+        purity_major, purity_minor, purity_build = map(int, purity_version.split("."))
+        client_version = purity_major * 10000 + purity_minor * 100 + purity_build
         wallet.unloadwallet()
         with node.assert_debug_log(
             expected_msgs=[f"Last client version = {client_version}", f"Wallet file version = {wallet_version}"],
