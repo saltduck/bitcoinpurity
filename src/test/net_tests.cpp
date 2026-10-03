@@ -37,6 +37,24 @@ using util::ToString;
 
 BOOST_FIXTURE_TEST_SUITE(net_tests, RegTestingSetup)
 
+BOOST_AUTO_TEST_CASE(purity_service_names_and_address_roundtrip)
+{
+    BOOST_CHECK_EQUAL(NODE_PURITY_ASERT, 1ULL << 25);
+    const auto names = serviceFlagsToStr(NODE_NETWORK | NODE_PURITY_ASERT | (1ULL << 63));
+    const std::vector<std::string> expected{"NETWORK", "PURITY_ASERT", "UNKNOWN[2^63]"};
+    BOOST_CHECK_EQUAL_COLLECTIONS(names.begin(), names.end(), expected.begin(), expected.end());
+    CAddress address{CService{LookupHost("250.1.1.1", false).value(), 8333},
+                     ServiceFlags(NODE_NETWORK | NODE_WITNESS | NODE_PURITY_ASERT)};
+    address.nTime = Now<NodeSeconds>();
+    for (const auto params : {CAddress::V1_NETWORK, CAddress::V2_NETWORK, CAddress::V1_DISK, CAddress::V2_DISK}) {
+        DataStream stream;
+        stream << params(address);
+        CAddress decoded;
+        stream >> params(decoded);
+        BOOST_CHECK(decoded == address);
+    }
+}
+
 BOOST_AUTO_TEST_CASE(cnode_listen_port)
 {
     // test default

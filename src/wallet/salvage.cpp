@@ -13,6 +13,8 @@
 
 #include <db_cxx.h>
 
+#include <ios>
+
 namespace wallet {
 /* End of headers, beginning of key/value data */
 static const char *HEADER_END = "HEADER=END";
@@ -189,7 +191,12 @@ bool RecoverDatabaseFile(const ArgsManager& args, const fs::path& file_path, bil
         std::string strType, strErr;
 
         // We only care about KEY, MASTER_KEY, CRYPTED_KEY, and HDCHAIN types
-        ssKey >> strType;
+        try {
+            ssKey >> strType;
+        } catch (const std::ios_base::failure& e) {
+            warnings.emplace_back(Untranslated(strprintf("Salvage: Skipping malformed database key: %s", e.what())));
+            continue;
+        }
         bool fReadOK = false;
         if (strType == DBKeys::KEY) {
             fReadOK = LoadKey(&dummyWallet, ssKey, ssValue, strErr);

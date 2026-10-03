@@ -92,6 +92,7 @@ class CompactBlocksBlockReconstructionLimitTest(BitcoinTestFramework):
     def set_test_params(self):
         self.setup_clean_chain = True
         self.num_nodes = 1
+        self.rpc_timeout = 240
         self.extra_args = [[
             "-acceptnonstdtxn=0",
             "-incrementalrelayfee=0.00001",

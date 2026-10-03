@@ -28,6 +28,7 @@ class TransactionTimeRescanTest(BitcoinTestFramework):
     def set_test_params(self):
         self.setup_clean_chain = False
         self.num_nodes = 3
+        self.rpc_timeout = 240
         self.extra_args = [["-keypool=400"],
                            ["-keypool=400"],
                            []

@@ -3027,6 +3027,9 @@ void PeerManagerImpl::ProcessHeadersMessage(CNode& pfrom, Peer& peer,
     BlockValidationState state;
     if (!m_chainman.ProcessNewBlockHeaders(headers, /*min_pow_checked=*/true, state, &pindexLast)) {
         const bool purity_activation_mismatch{state.GetRejectReason() == "bad-purity-activation-block"};
+        if (purity_activation_mismatch && (peer.m_their_services & NODE_PURITY_ASERT)) {
+            LogDebug(BCLog::NET, "NODE_PURITY_ASERT peer=%d failed Purity activation block hash verification\n", pfrom.GetId());
+        }
         if (purity_activation_mismatch &&
             (pfrom.IsFullOutboundConn() || pfrom.IsBlockOnlyConn()) &&
             !pfrom.m_is_non_bip110_outbound) {
@@ -3516,6 +3519,9 @@ void PeerManagerImpl::ProcessMessage(CNode& pfrom, const std::string& msg_type, 
         bool fRelay = true;
 
         vRecv >> nVersion >> Using<CustomUintFormatter<8>>(nServices) >> nTime;
+        if (nServices & NODE_PURITY_ASERT) {
+            LogDebug(BCLog::NET, "peer=%d advertises NODE_PURITY_ASERT (unverified chain hint)\n", pfrom.GetId());
+        }
         if (nTime < 0) {
             nTime = 0;
         }

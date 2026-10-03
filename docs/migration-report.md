@@ -134,3 +134,12 @@ cmake -B build-win \
   -DBUILD_DATUM=ON -DBUILD_GUI=OFF -DENABLE_WALLET=OFF
 cmake --build build-win --target bitcoind -j2
 ```
+
+## Purity peer discovery service
+
+Add bit 25 without wire or address database migration. Legacy nodes remain
+eligible under existing policies; claims never replace the activation hash.
+Bounded service preference is scoped to automatic outbound selection and
+preserves AddrMan sampling, manual connections, anchors and feelers.
+Existing post-prefix NODE_REDUCED_DATA gating is retained.
+Validation is tracked in TASK-013.

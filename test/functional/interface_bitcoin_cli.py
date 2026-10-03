@@ -90,11 +90,12 @@ class TestBitcoinCli(BitcoinTestFramework):
         out = self.nodes[0].cli('-netinfo').send_cli().splitlines()
         assert out[0].startswith(f"{self.config['environment']['CLIENT_NAME']} client ")
         assert any(re.match(r"^Local services:.+network", line) for line in out)
+        assert any(re.match(r"^Local services:.+purity asert", line) for line in out)
 
         self.log.info("Test -netinfo local services are moved to header if details are requested")
         det = self.nodes[0].cli('-netinfo', '1').send_cli().splitlines()
         self.log.debug(f"Test -netinfo 1 header output: {det[0]}")
-        assert re.match(rf"^{re.escape(self.config['environment']['CLIENT_NAME'])} client.+services nwl2?4$", det[0])
+        assert re.match(rf"^{re.escape(self.config['environment']['CLIENT_NAME'])} client.+services nwl2?p4$", det[0])
         assert not any(line.startswith("Local services:") for line in det)
 
     def run_test(self):

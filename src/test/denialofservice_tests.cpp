@@ -175,7 +175,7 @@ BOOST_FIXTURE_TEST_CASE(purity_incompatible_outbound_is_demoted, RegTestingSetup
     connman->Handshake(
         *node,
         /*successfully_connected=*/true,
-        /*remote_services=*/ServiceFlags(NODE_NETWORK | NODE_WITNESS | NODE_REDUCED_DATA),
+        /*remote_services=*/ServiceFlags(NODE_NETWORK | NODE_WITNESS | NODE_REDUCED_DATA | NODE_PURITY_ASERT),
         /*local_services=*/ServiceFlags(NODE_NETWORK | NODE_WITNESS | NODE_REDUCED_DATA),
         /*version=*/PROTOCOL_VERSION,
         /*relay_txs=*/true);
@@ -310,7 +310,7 @@ BOOST_FIXTURE_TEST_CASE(purity_incompatible_outbound_disconnected_after_prefix, 
     connman->Handshake(
         *node,
         /*successfully_connected=*/true,
-        /*remote_services=*/ServiceFlags(NODE_NETWORK | NODE_WITNESS | NODE_REDUCED_DATA),
+        /*remote_services=*/ServiceFlags(NODE_NETWORK | NODE_WITNESS | NODE_REDUCED_DATA | NODE_PURITY_ASERT),
         /*local_services=*/ServiceFlags(NODE_NETWORK | NODE_WITNESS | NODE_REDUCED_DATA),
         /*version=*/PROTOCOL_VERSION,
         /*relay_txs=*/true);

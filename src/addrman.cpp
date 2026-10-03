@@ -710,11 +710,44 @@ void AddrManImpl::Attempt_(const CService& addr, bool fCountFailure, NodeSeconds
     }
 }
 
-std::pair<CAddress, NodeSeconds> AddrManImpl::Select_(bool new_only, const std::unordered_set<Network>& networks) const
+std::pair<CAddress, NodeSeconds> AddrManImpl::Select_(bool new_only, const std::unordered_set<Network>& networks, ServiceFlags preferred_services) const
 {
     AssertLockHeld(cs);
 
     if (vRandom.empty()) return {};
+
+    if (preferred_services != NODE_NONE) {
+        // Look in the existing tables so even sparse service hints get priority.
+        // No matches fall through to the unchanged bucket-based selection.
+        std::vector<const AddrInfo*> preferred_new;
+        std::vector<const AddrInfo*> preferred_tried;
+        for (const auto id : vRandom) {
+            const AddrInfo& info{mapInfo.at(id)};
+            if ((info.nServices & preferred_services) != preferred_services ||
+                (!networks.empty() && !networks.contains(info.GetNetwork()))) continue;
+            if (info.fInTried) {
+                if (!new_only) preferred_tried.push_back(&info);
+            } else if (info.nRefCount > 0) {
+                preferred_new.push_back(&info);
+            }
+        }
+        if (!preferred_new.empty() || !preferred_tried.empty()) {
+            // Retain the new/tried 50% split and penalize recent/failed attempts.
+            const bool search_tried{preferred_new.empty() ||
+                                    (!preferred_tried.empty() && insecure_rand.randbool())};
+            const auto& candidates{search_tried ? preferred_tried : preferred_new};
+            double chance_factor{1.0};
+            while (true) {
+                const AddrInfo& info{*candidates[insecure_rand.randrange(candidates.size())]};
+                const double multiplicity{search_tried ? 1.0 : double(info.nRefCount) / ADDRMAN_NEW_BUCKETS_PER_ADDRESS};
+                if (insecure_rand.randbits<30>() < chance_factor * info.GetChance() * multiplicity * (1 << 30)) {
+                    LogDebug(BCLog::ADDRMAN, "Selected service-preferred %s from %s\n", info.ToStringAddrPort(), search_tried ? "tried" : "new");
+                    return {info, info.m_last_try};
+                }
+                chance_factor *= 1.2;
+            }
+        }
+    }
 
     size_t new_count = nNew;
     size_t tried_count = nTried;
@@ -1217,11 +1250,11 @@ std::pair<CAddress, NodeSeconds> AddrManImpl::SelectTriedCollision()
     return ret;
 }
 
-std::pair<CAddress, NodeSeconds> AddrManImpl::Select(bool new_only, const std::unordered_set<Network>& networks) const
+std::pair<CAddress, NodeSeconds> AddrManImpl::Select(bool new_only, const std::unordered_set<Network>& networks, ServiceFlags preferred_services) const
 {
     LOCK(cs);
     Check();
-    auto addrRet = Select_(new_only, networks);
+    auto addrRet = Select_(new_only, networks, preferred_services);
     Check();
     return addrRet;
 }
@@ -1324,9 +1357,9 @@ std::pair<CAddress, NodeSeconds> AddrMan::SelectTriedCollision()
     return m_impl->SelectTriedCollision();
 }
 
-std::pair<CAddress, NodeSeconds> AddrMan::Select(bool new_only, const std::unordered_set<Network>& networks) const
+std::pair<CAddress, NodeSeconds> AddrMan::Select(bool new_only, const std::unordered_set<Network>& networks, ServiceFlags preferred_services) const
 {
-    return m_impl->Select(new_only, networks);
+    return m_impl->Select(new_only, networks, preferred_services);
 }
 
 std::vector<CAddress> AddrMan::GetAddr(size_t max_addresses, size_t max_pct, std::optional<Network> network, const bool filtered) const

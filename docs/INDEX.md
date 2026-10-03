@@ -6,3 +6,6 @@
 - [Migration report](migration-report.md)
 - [Task index](tasks/README.md)
 
+
+- [Purity peer discovery architecture](architecture/purity-peer-discovery.md)
+- [Purity P2P and RPC service contract](api/purity-peer-discovery.md)
