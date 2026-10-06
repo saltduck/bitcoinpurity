@@ -29,7 +29,14 @@ Rules are specified in [doc/purity-consensus.md](purity-consensus.md):
 - Reorgs deeper than 6 blocks are parked for manual `unparkblock` or
   `invalidateblock`. This is local chain-selection policy, not consensus;
   operators may override the threshold with `-parkreorgdepth=<n>` or
-  disable it with `-parkdeepreorg=0`.
+  disable it with `-parkdeepreorg=0`. Parking is decided when competing block
+  data is accepted, before candidate propagation, independently of body
+  delivery order and `ActivateBestChain`'s optional `pblock`. The first block
+  after the fork is the parked root. Consensus-valid parked branches remain
+  valid; `unparkblock` restores normal selection, with no automatic unparking.
+  Restart and `-reindex-chainstate` preserve parked status. Full `-reindex`
+  rebuilds local status from scratch and may select a previously parked branch;
+  enabling parking later does not retroactively park already stored bodies.
 
 There is no transaction-level replay protection.
 

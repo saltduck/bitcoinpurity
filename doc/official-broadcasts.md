@@ -106,3 +106,9 @@ Read notice IDs are stored under the Qt settings group `official_broadcasts`.
 2. Manifest signature is verified with the embedded secp256k1 public key
    (same key as official packages / software updates).
 3. Notice bodies are displayed as plain text only.
+
+Duplicate JSON keys at every depth, including notice objects within arrays,
+are invalid before canonicalization, signature verification or notice
+consumption. Decoded-equivalent keys are duplicates, and identical duplicate
+values are also invalid. The shared signed-manifest validator enforces this
+rule for notices, releases and official packages; JSON-RPC parsing is unchanged.

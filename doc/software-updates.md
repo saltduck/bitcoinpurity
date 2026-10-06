@@ -137,9 +137,20 @@ once every day unless the user chooses **Help → Check for Updates…**.
 
 1. Manifest must be fetched from `downloads.bitcoinpurity.org` (or a local file
    when using `LOCAL` trust policy in tests).
-2. Manifest signature is verified with the embedded secp256k1 public key.
-3. Artifact downloads must use HTTPS and an allowed host (`github.com`,
-   `release-assets.githubusercontent.com`, `objects.githubusercontent.com`, or
-   `downloads.bitcoinpurity.org`).
-4. Downloaded archives are verified against `archive_sha256` from the signed
-   manifest before the user is prompted to install manually.
+2. Duplicate JSON keys are invalid at every depth (including objects in arrays),
+   even when values are identical or key spellings use JSON escapes. The parsed
+   DOM is checked before canonicalization, signature verification and use. The
+   signature is then verified with the embedded secp256k1 public key.
+3. Artifact downloads require HTTPS. `github.com` is limited to the case-sensitive
+   `/saltduck/bitcoinpurity/releases/download/` namespace. The official download
+   host and the confirmed GitHub Release CDN `release-assets.githubusercontent.com`
+   remain allowed. `objects.githubusercontent.com` is not enabled without evidence
+   that an official artifact requires it. Userinfo, ports, misleading
+   hosts, dot path components, backslashes and percent-escaped paths are
+   rejected. Encoded CDN query parameters remain allowed for signed asset URLs.
+   Qt requests operator-independent programmatic approval for each redirect;
+   the same URI policy is checked before following it and again on the final URL.
+4. Downloads must match both `archive_size_bytes` and `archive_sha256` from the
+   signed manifest. SHA256 authenticity derives from that manifest signature;
+   there is no independent artifact signing system. The updater downloads and
+   verifies only; installation remains manual.

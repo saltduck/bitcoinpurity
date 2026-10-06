@@ -10,6 +10,7 @@
 
 #include <limits>
 #include <string>
+#include <vector>
 
 #include <test/util/setup_common.h>
 
@@ -87,6 +88,70 @@ BOOST_AUTO_TEST_CASE(purity_activation_height_enables_rdts)
     tip.pprev = nullptr;
     // Permanent RDTS activates via Purity height before BIP9 is consulted.
     BOOST_CHECK(DeploymentActiveAfter(&tip, consensus, Consensus::DEPLOYMENT_REDUCED_DATA, versionbitscache));
+}
+
+BOOST_AUTO_TEST_CASE(reduced_data_grandfather_height)
+{
+    auto params = CreateChainParams(m_args, ChainType::REGTEST)->GetConsensus();
+    params.nMinerConfirmationWindow = 10;
+    params.nRuleChangeActivationThreshold = 8;
+    auto& deployment = params.vDeployments[Consensus::DEPLOYMENT_REDUCED_DATA];
+    deployment.nStartTime = 0;
+    deployment.nTimeout = Consensus::BIP9Deployment::NO_TIMEOUT;
+    params.nPurityActivationHeight = 15;
+    params.nReducedDataGrandfatherHeight = 15;
+    params.nReducedDataGrandfatherFixHeight = 15;
+    VersionBitsCache cache;
+    std::vector<CBlockIndex> blocks(60);
+    for (int height = 0; height < 60; ++height) {
+        auto& block = blocks[height];
+        block.nHeight = height;
+        block.nTime = 1000 + height;
+        block.nVersion = VERSIONBITS_TOP_BITS | (height >= 20 ? (1 << deployment.bit) : 0);
+        block.pprev = height ? &blocks[height - 1] : nullptr;
+        block.BuildSkip();
+    }
+    BOOST_CHECK(cache.State(&blocks[19], params, Consensus::DEPLOYMENT_REDUCED_DATA) == ThresholdState::STARTED);
+    BOOST_CHECK(cache.State(&blocks[29], params, Consensus::DEPLOYMENT_REDUCED_DATA) == ThresholdState::LOCKED_IN);
+    BOOST_CHECK(cache.State(&blocks[39], params, Consensus::DEPLOYMENT_REDUCED_DATA) == ThresholdState::ACTIVE);
+    for (int height : {14, 15, 16, 20, 30, 40, 59}) {
+        BOOST_CHECK_EQUAL(GetReducedDataGrandfatherHeight(&blocks[height - 1], params, cache), height < 15 ? 0 : 15);
+    }
+    const int boundary = GetReducedDataGrandfatherHeight(&blocks[39], params, cache);
+    BOOST_CHECK(14 < boundary);
+    BOOST_CHECK(!(15 < boundary));
+    BOOST_CHECK(!(16 < boundary));
+
+    // No correction activation means deployed historical rules stay in force.
+    params.nReducedDataGrandfatherFixHeight = std::numeric_limits<int>::max();
+    BOOST_CHECK_EQUAL(GetReducedDataGrandfatherHeight(&blocks[19], params, cache), 10);
+    BOOST_CHECK_EQUAL(GetReducedDataGrandfatherHeight(&blocks[29], params, cache), 30);
+    BOOST_CHECK_EQUAL(GetReducedDataGrandfatherHeight(&blocks[39], params, cache), 40);
+    params.nReducedDataGrandfatherFixHeight = 45;
+    BOOST_CHECK_EQUAL(GetReducedDataGrandfatherHeight(&blocks[43], params, cache), 40);
+    BOOST_CHECK_EQUAL(GetReducedDataGrandfatherHeight(&blocks[44], params, cache), 15);
+
+    // Non-Purity BIP9 deployments retain their active/inactive and expiry rules.
+    params.nPurityActivationHeight = std::numeric_limits<int>::max();
+    BOOST_CHECK_EQUAL(GetReducedDataGrandfatherHeight(&blocks[19], params, cache), 0);
+    BOOST_CHECK_EQUAL(GetReducedDataGrandfatherHeight(&blocks[29], params, cache), 0);
+    BOOST_CHECK_EQUAL(GetReducedDataGrandfatherHeight(&blocks[39], params, cache), 40);
+    deployment.active_duration = 10;
+    BOOST_CHECK_EQUAL(GetReducedDataGrandfatherHeight(&blocks[49], params, cache), 0);
+}
+
+BOOST_AUTO_TEST_CASE(reduced_data_mainnet_correction_at_purity_activation)
+{
+    const auto params = CreateChainParams(m_args, ChainType::MAIN);
+    const auto& consensus = params->GetConsensus();
+    BOOST_CHECK_EQUAL(consensus.nReducedDataGrandfatherHeight, 961637);
+    BOOST_REQUIRE_EQUAL(consensus.nReducedDataGrandfatherFixHeight, 961637);
+    VersionBitsCache cache;
+    CBlockIndex previous;
+    for (int height : {961637, 961638, 965664, 967297, 970000}) {
+        previous.nHeight = height - 1;
+        BOOST_CHECK_EQUAL(GetReducedDataGrandfatherHeight(&previous, consensus, cache), 961637);
+    }
 }
 
 BOOST_AUTO_TEST_SUITE_END()

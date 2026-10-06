@@ -2922,13 +2922,13 @@ bool Chainstate::ConnectBlock(const CBlock& block, BlockValidationState& state, 
     std::vector<PrecomputedTransactionData> txsdata(block.vtx.size());
     CCheckQueueControl<CScriptCheck> control(fScriptChecks && parallel_script_checks ? &m_chainman.GetCheckQueue() : nullptr);
 
-    // For BIP9 deployments, get the activation height dynamically. When RDTS is
+    // Permanent Purity RDTS uses its fixed boundary after correction activation;
+    // historical and non-Purity BIP9 rules retain their deployed boundary. When RDTS is
     // inactive the start height is 0, so no input is treated as pre-activation and
     // flags_per_input stays empty (keeping the script-execution cache enabled).
     const bool reduced_data_active{DeploymentActiveAt(*pindex, m_chainman, Consensus::DEPLOYMENT_REDUCED_DATA)};
-    const auto reduced_data_start_height = reduced_data_active
-        ? m_chainman.m_versionbitscache.StateSinceHeight(pindex->pprev, params.GetConsensus(), Consensus::DEPLOYMENT_REDUCED_DATA)
-        : 0;
+    const int reduced_data_start_height = GetReducedDataGrandfatherHeight(
+        pindex->pprev, params.GetConsensus(), m_chainman.m_versionbitscache);
 
     const CheckTxInputsRules chk_input_rules{reduced_data_active ? CheckTxInputsRules::OutputSizeLimit : CheckTxInputsRules::None};
 
@@ -3917,27 +3917,6 @@ bool Chainstate::ActivateBestChain(BlockValidationState& state, std::shared_ptr<
                     break;
                 }
 
-                // Local policy, not consensus: park rather than automatically
-                // activate a competing chain whose rewind exceeds park_reorg_depth.
-                if (m_chainman.m_options.park_deep_reorg && m_chain.Tip() && pblock &&
-                    pblock->GetHash() == pindexMostWork->GetBlockHash()) {
-                    const CBlockIndex* fork = m_chain.FindFork(pindexMostWork);
-                    const int rewind = m_chain.Tip()->nHeight - (fork ? fork->nHeight : 0);
-                    if (rewind > m_chainman.m_options.park_reorg_depth) {
-                        CBlockIndex* to_park = pindexMostWork;
-                        if (fork) {
-                            to_park = pindexMostWork->GetAncestor(fork->nHeight + 1);
-                        }
-                        LogPrintf("Parking block %s at height %d (reorg depth %d exceeds %d); use unparkblock to accept or invalidateblock to reject\n",
-                                  to_park->GetBlockHash().ToString(), to_park->nHeight, rewind, m_chainman.m_options.park_reorg_depth);
-                        to_park->nStatus |= BLOCK_PARKED;
-                        m_blockman.m_dirty_blockindex.insert(to_park);
-                        setBlockIndexCandidates.erase(to_park);
-                        pindexMostWork = nullptr;
-                        continue;
-                    }
-                }
-
                 bool fInvalidFound = false;
                 std::shared_ptr<const CBlock> nullBlockPtr;
                 // BlockConnected signals must be sent for the original role;
@@ -4295,27 +4274,38 @@ void Chainstate::UnparkBlock(CBlockIndex* pindex)
 {
     AssertLockHeld(cs_main);
     const int nHeight = pindex->nHeight;
+    std::vector<CBlockIndex*> unparked;
     for (auto& [_, block_index] : m_blockman.m_block_index) {
         if (block_index.GetAncestor(nHeight) == pindex && (block_index.nStatus & BLOCK_PARKED_MASK)) {
             block_index.nStatus &= ~BLOCK_PARKED_MASK;
             m_blockman.m_dirty_blockindex.insert(&block_index);
-            TryAddBlockIndexCandidate(&block_index);
+            unparked.push_back(&block_index);
         }
     }
     while (pindex != nullptr) {
         if (pindex->nStatus & BLOCK_PARKED_MASK) {
             pindex->nStatus &= ~BLOCK_PARKED_MASK;
             m_blockman.m_dirty_blockindex.insert(pindex);
-            TryAddBlockIndexCandidate(pindex);
+            unparked.push_back(pindex);
         }
         pindex = pindex->pprev;
+    }
+    // Clear the entire parked ancestry before restoring descendant candidates.
+    for (CBlockIndex* block : unparked) {
+        if (block->HaveNumChainTxs()) TryAddBlockIndexCandidate(block);
     }
 }
 
 void Chainstate::TryAddBlockIndexCandidate(CBlockIndex* pindex)
 {
     AssertLockHeld(cs_main);
+    // Receipt and index loading process linked parents before their children.
+    if (pindex->pprev && (pindex->pprev->nStatus & BLOCK_PARKED_MASK)) {
+        pindex->nStatus |= BLOCK_PARKED_CHILD;
+        m_blockman.m_dirty_blockindex.insert(pindex);
+    }
     if (pindex->nStatus & BLOCK_PARKED_MASK) {
+        setBlockIndexCandidates.erase(pindex);
         return;
     }
     // The block only is a candidate for the most-work-chain if it has the same
@@ -5081,6 +5071,23 @@ bool ChainstateManager::AcceptBlock(const std::shared_ptr<const CBlock>& pblock,
             if (blockPos.IsNull()) {
                 state.Error(strprintf("%s: Failed to find position to write new block to disk", __func__));
                 return false;
+            }
+        }
+        // Park before this body can make unlinked descendants into candidates.
+        const CChain& active_chain = ActiveChain();
+        const CBlockIndex* active_tip = active_chain.Tip();
+        if (m_options.park_deep_reorg && active_tip) {
+            const CBlockIndex* fork = active_chain.FindFork(pindex);
+            if (fork && fork != pindex && active_tip->nHeight - fork->nHeight > m_options.park_reorg_depth) {
+                CBlockIndex* root = pindex->GetAncestor(fork->nHeight + 1);
+                if (!(root->nStatus & BLOCK_PARKED_MASK)) {
+                    root->nStatus |= BLOCK_PARKED;
+                    m_blockman.m_dirty_blockindex.insert(root);
+                    for (Chainstate* chainstate : GetAll()) chainstate->setBlockIndexCandidates.erase(root);
+                    LogPrintf("Parking block %s at height %d; active tip height=%d, fork height=%d, rewind=%d exceeds parkreorgdepth=%d; use unparkblock to accept or invalidateblock to reject\n",
+                              root->GetBlockHash().ToString(), root->nHeight, active_tip->nHeight, fork->nHeight,
+                              active_tip->nHeight - fork->nHeight, m_options.park_reorg_depth);
+                }
             }
         }
         ReceivedBlockTransactions(block, pindex, blockPos);

@@ -35,6 +35,19 @@ inline bool DeploymentActiveAfter(const CBlockIndex* pindexPrev, const Consensus
     return height < activation_height + deployment.active_duration;
 }
 
+/** UTXO creation boundary for RDTS spend-side exemptions in the next block. */
+inline int GetReducedDataGrandfatherHeight(const CBlockIndex* pindexPrev, const Consensus::Params& params, VersionBitsCache& versionbitscache)
+{
+    const int height = pindexPrev == nullptr ? 0 : pindexPrev->nHeight + 1;
+    if (!DeploymentActiveAfter(pindexPrev, params, Consensus::DEPLOYMENT_REDUCED_DATA, versionbitscache)) return 0;
+    // A fixed boundary changes historical consensus. Keep the deployed rule
+    // until an explicit correction height is selected after a chain audit.
+    if (height >= params.nPurityActivationHeight && height >= params.nReducedDataGrandfatherFixHeight) {
+        return params.nReducedDataGrandfatherHeight;
+    }
+    return versionbitscache.StateSinceHeight(pindexPrev, params, Consensus::DEPLOYMENT_REDUCED_DATA);
+}
+
 /** Determine if a deployment is active for this block */
 inline bool DeploymentActiveAt(const CBlockIndex& index, const Consensus::Params& params, Consensus::BuriedDeployment dep, [[maybe_unused]] VersionBitsCache& versionbitscache)
 {

@@ -112,6 +112,8 @@ public:
         consensus.nDAAHalfLife = 24 * 60 * 60;
         consensus.nAsertAnchorHeight = Consensus::MAINNET_ASERT_ANCHOR_HEIGHT;
         consensus.nPurityActivationHeight = Consensus::MAINNET_PURITY_ACTIVATION_HEIGHT;
+        consensus.nReducedDataGrandfatherHeight = consensus.nPurityActivationHeight;
+        consensus.nReducedDataGrandfatherFixHeight = consensus.nPurityActivationHeight;
         // First Purity consensus block. Consensus-pinned: a block at this
         // height with any other hash is invalid regardless of -checkpoints.
         consensus.hashPurityActivationBlock = uint256{"0000000000000000003ea74f4dafdda7ed4e02c4c1ccb9768e0ca4f9e1a35159"};
@@ -651,6 +653,16 @@ public:
         nPruneAfterHeight = opts.fastprune ? 100 : 1000;
         m_assumed_blockchain_size = 0;
         m_assumed_chain_state_size = 0;
+
+        if (opts.purity_activation_height) {
+            consensus.nPurityActivationHeight = *opts.purity_activation_height;
+            consensus.nReducedDataGrandfatherHeight = consensus.nPurityActivationHeight;
+            consensus.nAsertAnchorHeight = std::max(0, *opts.purity_activation_height - 1);
+        }
+
+        if (opts.reduced_data_grandfather_fix_height) {
+            consensus.nReducedDataGrandfatherFixHeight = *opts.reduced_data_grandfather_fix_height;
+        }
 
         for (const auto& [dep, height] : opts.activation_heights) {
             switch (dep) {

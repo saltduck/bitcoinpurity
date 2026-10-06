@@ -902,4 +902,16 @@ BOOST_FIXTURE_TEST_CASE(chainstatemanager_args, BasicTestingSetup)
     BOOST_CHECK_EQUAL(get_valid_opts({"-parkdeepreorg=0"}).park_deep_reorg, false);
 }
 
+BOOST_FIXTURE_TEST_CASE(parking_disabled_by_default_on_test_chains, BasicTestingSetup)
+{
+    for (const auto chain : {ChainType::REGTEST, ChainType::TESTNET, ChainType::TESTNET4, ChainType::SIGNET}) {
+        const auto params = CreateChainParams(*m_node.args, chain);
+        kernel::Notifications notifications;
+        ChainstateManager::Options options{.chainparams=*params, .datadir={}, .notifications=notifications};
+        BOOST_REQUIRE(node::ApplyArgsManOptions(*m_node.args, options));
+        BOOST_CHECK(!options.park_deep_reorg);
+        BOOST_CHECK_EQUAL(options.park_reorg_depth, 6);
+    }
+}
+
 BOOST_AUTO_TEST_SUITE_END()

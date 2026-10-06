@@ -109,3 +109,32 @@ verification criteria, and non-goals are normative in
 - Test service naming/value, local VERSION/address advertisement, V1/V2 and
   AddrMan persistence, deterministic preference/fallback, legacy handshakes
   and advertised-bit activation-hash mismatches.
+
+## Validation and signed-manifest corrections
+
+- Active-chain manual parking/rewind is deferred. `parkblock` rejects active
+  blocks without changing chain state; park-first ordering tests use inactive
+  branches. Existing automatic parking and state-independence coverage remains.
+- Automatic deep-reorg parking is decided in `AcceptBlock`, before block data
+  can propagate most-work candidates. The active-tip/fork rewind exceeding
+  `parkreorgdepth` parks the first competing block; headers may already exist
+  while its body is missing. Persisted parked ancestry excludes descendants.
+  `ActivateBestChain` has no automatic parking decision or approval override;
+  `unparkblock` clears flags and invokes normal activation. Delivery order and
+  `pblock` do not affect parking. `getchaintips.parked`, thresholds/defaults and
+  local-policy semantics are retained; no automatic unparking is implemented.
+  Restart and chainstate-only rebuild retain flags. Full reindex reconstructs
+  local status from scratch and may select a previously parked branch when
+  there is no deep rewind against an established active tip.
+- Permanent RDTS's intended grandfather boundary is fixed at activation
+  (mainnet 961637). The user selected correction activation at 961637 as well;
+  all mainnet blocks from that height use the fixed boundary. Earlier blocks
+  retain historical validation. Candidate screening through 967297 was reported
+  by the user; complete historical revalidation has not been established here.
+- Signed manifests reject duplicate keys recursively before verification/use.
+  GitHub release downloads are restricted to saltduck/bitcoinpurity; each
+  redirect and final URI are validated. Signature, size, SHA256, package-host
+  restrictions and manual installation remain enforced.
+- Scope excludes replay protection. Detailed
+  consensus compatibility and historical audit procedure are in
+  [purity-consensus.md](../../doc/purity-consensus.md).

@@ -14,6 +14,7 @@
 #include <vector>
 
 class ArgsManager;
+class UniValue;
 class CChainParams;
 class CPubKey;
 
@@ -75,6 +76,9 @@ bool IsOfficialDownloadUriAllowed(const std::string& uri, OfficialPackageTrustPo
  */
 bool IsOfficialSnapshotTrusted(
     const CChainParams& params, int snapshot_height, const uint256& base_blockhash);
+
+/** Reject ambiguous object keys recursively, including objects inside arrays. */
+bool JsonHasDuplicateKeys(const UniValue& value);
 
 /** SHA-256 digest of a manifest with any top-level signature field removed. */
 uint256 OfficialPackagesManifestDigest(const std::string& json_contents);

@@ -14,3 +14,11 @@
 - [TASK-012: Mining dashboard Best Share](TASK-012.md)
 
 - [TASK-013: Purity ASERT discovery service](TASK-013.md)
+
+- [TASK-014: Validation and signed-manifest corrections](TASK-014.md)
+
+- [TASK-015: Acceptance-time deep-reorg parking](TASK-015.md)
+
+- [TASK-016: Defer active-chain manual parking and align tests](TASK-016.md)
+
+- [TASK-017: Activate mainnet RDTS grandfather correction at 961637](TASK-017.md)

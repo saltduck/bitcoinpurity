@@ -4,6 +4,9 @@
 //
 #include <chainparams.h>
 #include <consensus/validation.h>
+#include <consensus/merkle.h>
+#include <pow.h>
+#include <script/script.h>
 #include <node/kernel_notifications.h>
 #include <random.h>
 #include <rpc/blockchain.h>
@@ -17,6 +20,7 @@
 #include <util/mempressure.h>
 #include <validation.h>
 
+#include <algorithm>
 #include <vector>
 
 #include <boost/test/unit_test.hpp>
@@ -148,6 +152,270 @@ BOOST_FIXTURE_TEST_CASE(chainstate_update_tip, TestChain100Setup)
     // validation chain.
     BOOST_CHECK(block_added);
     BOOST_CHECK_EQUAL(curr_tip, get_notify_tip());
+}
+
+
+struct DeepReorgTestingSetup : TestChain100Setup {
+    DeepReorgTestingSetup(const char* depth = "-parkreorgdepth=6", bool enabled = true)
+        : TestChain100Setup(ChainType::REGTEST, {.extra_args={
+              enabled ? "-parkdeepreorg=1" : "-parkdeepreorg=0",
+              depth}}) {}
+
+    std::pair<CBlockIndex*, CBlockIndex*> AcceptFork(int rewind, bool ancestor_last = false, CBlock* withheld = nullptr)
+    {
+        auto& chainman = *m_node.chainman;
+        auto& chainstate = chainman.ActiveChainstate();
+        auto* prev = WITH_LOCK(cs_main, return chainstate.m_chain.Tip()->GetAncestor(100 - rewind));
+        std::vector<CBlock> blocks;
+        for (int height = prev->nHeight + 1; height <= 101; ++height) {
+            CBlock block = CreateBlock({}, CScript() << OP_TRUE, chainstate);
+            block.hashPrevBlock = prev->GetBlockHash();
+            block.nTime = prev->GetBlockTime() + (ancestor_last ? 2 : 1);
+            CMutableTransaction coinbase(*block.vtx[0]);
+            coinbase.vin[0].scriptSig = CScript() << height << OP_0;
+            block.vtx[0] = MakeTransactionRef(coinbase);
+            block.hashMerkleRoot = BlockMerkleRoot(block);
+            block.nNonce = 0;
+            while (!CheckProofOfWork(block.GetHash(), block.nBits, chainman.GetConsensus())) ++block.nNonce;
+            BlockValidationState state;
+            const CBlockHeader header = block;
+            BOOST_REQUIRE(chainman.ProcessNewBlockHeaders({&header, 1}, true, state));
+            prev = WITH_LOCK(cs_main, return chainman.m_blockman.LookupBlockIndex(block.GetHash()));
+            blocks.push_back(std::move(block));
+        }
+        auto* first = WITH_LOCK(cs_main, return chainman.m_blockman.LookupBlockIndex(blocks.front().GetHash()));
+        if (ancestor_last) std::rotate(blocks.begin(), blocks.begin() + 1, blocks.end());
+        for (const auto& block : blocks) {
+            if (withheld && block.GetHash() == first->GetBlockHash()) {
+                *withheld = block;
+                continue;
+            }
+            BlockValidationState state;
+            LOCK(cs_main);
+            BOOST_REQUIRE_MESSAGE(chainman.AcceptBlock(std::make_shared<const CBlock>(block), state, nullptr, true, nullptr, nullptr, true), state.ToString());
+            // Acceptance must park before candidate propagation, without ABC.
+            if (chainman.m_options.park_deep_reorg && rewind > chainman.m_options.park_reorg_depth) {
+                BOOST_CHECK(first->nStatus & BLOCK_PARKED);
+                BOOST_CHECK(!chainstate.setBlockIndexCandidates.contains(prev));
+            }
+        }
+        return {first, prev};
+    }
+
+    // Adapted from ABC/BCHN abc[-_feature_]parkedchain.py state orderings:
+    // 4a9b35aa30806798214b5d4e33c577a4f16d9df5 and
+    // 3cc9d160357adca8e001539f45385197ccae4954. Use an inactive branch to
+    // isolate state independence from Purity's active-park RPC restriction.
+    void CheckStateOrder(std::initializer_list<char> actions)
+    {
+        auto& chainstate = m_node.chainman->ActiveChainstate();
+        auto* active_tip = WITH_LOCK(cs_main, return chainstate.m_chain.Tip());
+        auto [root, tip] = AcceptFork(7);
+        WITH_LOCK(cs_main, chainstate.UnparkBlock(root));
+        bool failed{false};
+        bool parked{false};
+        for (char action : actions) {
+            BlockValidationState state;
+            switch (action) {
+            case 'i':
+                BOOST_REQUIRE(chainstate.InvalidateBlock(state, root));
+                failed = true;
+                break;
+            case 'p':
+                BOOST_REQUIRE(chainstate.ParkBlock(state, root));
+                parked = true;
+                break;
+            case 'u':
+                WITH_LOCK(cs_main, chainstate.UnparkBlock(root));
+                parked = false;
+                break;
+            case 'r':
+                WITH_LOCK(cs_main, chainstate.ResetBlockFailureFlags(root));
+                failed = false;
+                break;
+            }
+            {
+                LOCK(cs_main);
+                BOOST_CHECK_EQUAL(bool(root->nStatus & BLOCK_FAILED_MASK), failed);
+                BOOST_CHECK_EQUAL(bool(root->nStatus & BLOCK_PARKED_MASK), parked);
+                BOOST_CHECK_EQUAL(root->IsValid(BLOCK_VALID_TRANSACTIONS), !failed);
+            }
+            BOOST_REQUIRE(chainstate.ActivateBestChain(state, nullptr));
+            BOOST_CHECK(WITH_LOCK(cs_main, return chainstate.m_chain.Tip()) == (failed || parked ? active_tip : tip));
+        }
+    }
+
+};
+
+struct CustomDepthTestingSetup : DeepReorgTestingSetup {
+    CustomDepthTestingSetup() : DeepReorgTestingSetup("-parkreorgdepth=4") {}
+};
+
+struct ParkingDisabledTestingSetup : DeepReorgTestingSetup {
+    ParkingDisabledTestingSetup() : DeepReorgTestingSetup("-parkreorgdepth=6", false) {}
+};
+
+BOOST_FIXTURE_TEST_CASE(deep_reorg_acceptance_threshold, DeepReorgTestingSetup)
+{
+    // ABC/BCHN deep-reorg scenarios, adapted to Purity's strict depth-6 rule.
+    for (int rewind : {1, 2, 5, 6, 7, 8, 20}) {
+        auto [root, tip] = AcceptFork(rewind);
+        LOCK(cs_main);
+        BOOST_CHECK_EQUAL(bool(root->nStatus & BLOCK_PARKED), rewind > 6);
+        BOOST_CHECK_EQUAL(bool(tip->nStatus & BLOCK_PARKED_MASK), rewind > 6);
+        BOOST_CHECK_EQUAL(m_node.chainman->ActiveChainstate().setBlockIndexCandidates.contains(tip), rewind <= 6);
+        BOOST_CHECK(!(root->nStatus & BLOCK_FAILED_MASK));
+    }
+}
+
+BOOST_FIXTURE_TEST_CASE(deep_reorg_custom_acceptance_threshold, CustomDepthTestingSetup)
+{
+    BOOST_CHECK_EQUAL(m_node.chainman->m_options.park_reorg_depth, 4);
+    for (int rewind : {4, 5}) {
+        auto [root, tip] = AcceptFork(rewind);
+        LOCK(cs_main);
+        BOOST_CHECK_EQUAL(bool(root->nStatus & BLOCK_PARKED), rewind > 4);
+        BOOST_CHECK_EQUAL(bool(tip->nStatus & BLOCK_PARKED_MASK), rewind > 4);
+    }
+}
+
+BOOST_FIXTURE_TEST_CASE(deep_reorg_acceptance_disabled, ParkingDisabledTestingSetup)
+{
+    auto [root, tip] = AcceptFork(20, true);
+    BOOST_CHECK(WITH_LOCK(cs_main, return !(root->nStatus & BLOCK_PARKED_MASK)));
+    BlockValidationState state;
+    BOOST_REQUIRE(m_node.chainman->ActiveChainstate().ActivateBestChain(state));
+    BOOST_CHECK(WITH_LOCK(cs_main, return m_node.chainman->ActiveChainstate().m_chain.Tip()) == tip);
+}
+
+BOOST_FIXTURE_TEST_CASE(deep_reorg_null_block_and_unpark, DeepReorgTestingSetup)
+{
+    auto& chainstate = m_node.chainman->ActiveChainstate();
+    auto* original_tip = WITH_LOCK(cs_main, return chainstate.m_chain.Tip());
+    auto [first, tip] = AcceptFork(7, true);
+    BlockValidationState state;
+    BOOST_REQUIRE(chainstate.ActivateBestChain(state, nullptr));
+    {
+        LOCK(cs_main);
+        BOOST_CHECK(chainstate.m_chain.Tip() == original_tip);
+        BOOST_CHECK(first->nStatus & BLOCK_PARKED);
+        BOOST_CHECK(tip->nStatus & BLOCK_PARKED_CHILD);
+        chainstate.TryAddBlockIndexCandidate(first);
+        chainstate.TryAddBlockIndexCandidate(tip);
+        BOOST_CHECK(!chainstate.setBlockIndexCandidates.contains(first));
+        BOOST_CHECK(!chainstate.setBlockIndexCandidates.contains(tip));
+        // Reprocessing a parked block does not clear its status.
+        CBlock block;
+        BOOST_REQUIRE(m_node.chainman->m_blockman.ReadBlock(block, *first));
+        BOOST_REQUIRE(m_node.chainman->AcceptBlock(std::make_shared<const CBlock>(block), state, nullptr, true, nullptr, nullptr, true));
+        BOOST_CHECK(first->nStatus & BLOCK_PARKED);
+        chainstate.UnparkBlock(first);
+        BOOST_CHECK(!(first->nStatus & BLOCK_PARKED_MASK));
+        BOOST_CHECK(!(tip->nStatus & BLOCK_PARKED_MASK));
+        BOOST_CHECK(chainstate.setBlockIndexCandidates.contains(tip));
+    }
+    // Normal null-body activation must honor manual unpark without an override.
+    BOOST_REQUIRE(chainstate.ActivateBestChain(state, nullptr));
+    BOOST_CHECK(WITH_LOCK(cs_main, return chainstate.m_chain.Tip()) == tip);
+}
+
+BOOST_FIXTURE_TEST_CASE(deep_reorg_delivery_order, DeepReorgTestingSetup)
+{
+    for (bool ancestor_last : {false, true}) {
+        auto [root, tip] = AcceptFork(7, ancestor_last);
+        LOCK(cs_main);
+        BOOST_CHECK(root->nStatus & BLOCK_PARKED);
+        BOOST_CHECK(tip->nStatus & BLOCK_PARKED_CHILD);
+        BOOST_CHECK(!m_node.chainman->ActiveChainstate().setBlockIndexCandidates.contains(tip));
+    }
+}
+
+BOOST_FIXTURE_TEST_CASE(deep_reorg_unpark_missing_body, DeepReorgTestingSetup)
+{
+    auto& chainman = *m_node.chainman;
+    auto& chainstate = chainman.ActiveChainstate();
+    CBlock missing;
+    auto [root, tip] = AcceptFork(7, true, &missing);
+    BlockValidationState state;
+    // Manual park of an unlinked descendant must also be safe to clear.
+    BOOST_REQUIRE(chainstate.ParkBlock(state, tip));
+    {
+        LOCK(cs_main);
+        BOOST_REQUIRE(root->nStatus & BLOCK_PARKED);
+        BOOST_REQUIRE(!(root->nStatus & BLOCK_HAVE_DATA));
+        chainstate.UnparkBlock(root);
+        // A parked header may be cleared, but is not a block-data candidate.
+        BOOST_REQUIRE(!chainstate.setBlockIndexCandidates.contains(root));
+        BOOST_REQUIRE(!chainstate.setBlockIndexCandidates.contains(tip));
+    }
+    BOOST_REQUIRE(chainstate.ActivateBestChain(state, nullptr));
+    BOOST_CHECK_EQUAL(WITH_LOCK(cs_main, return chainstate.m_chain.Height()), 100);
+    {
+        LOCK(cs_main);
+        // Newly accepted data is evaluated again against the current active tip.
+        BOOST_REQUIRE(chainman.AcceptBlock(std::make_shared<const CBlock>(missing), state, nullptr, true, nullptr, nullptr, true));
+        BOOST_REQUIRE(root->nStatus & BLOCK_PARKED);
+        BOOST_REQUIRE(!chainstate.setBlockIndexCandidates.contains(tip));
+        chainstate.UnparkBlock(root);
+    }
+    BOOST_REQUIRE(chainstate.ActivateBestChain(state, nullptr));
+    BOOST_CHECK(WITH_LOCK(cs_main, return chainstate.m_chain.Tip()) == tip);
+}
+
+BOOST_FIXTURE_TEST_CASE(deep_reorg_active_body_redownload, DeepReorgTestingSetup)
+{
+    auto& chainman = *m_node.chainman;
+    auto& chainstate = chainman.ActiveChainstate();
+    LOCK(cs_main);
+    CBlockIndex* ancestor = chainstate.m_chain[80];
+    CBlock body;
+    BOOST_REQUIRE(chainman.m_blockman.ReadBlock(body, *ancestor));
+    // Model the metadata left by pruning before accepting an active-chain body.
+    ancestor->nStatus &= ~(BLOCK_HAVE_DATA | BLOCK_HAVE_UNDO);
+    ancestor->nFile = 0;
+    ancestor->nDataPos = 0;
+    ancestor->nUndoPos = 0;
+    chainman.m_blockman.m_have_pruned = true;
+    BlockValidationState state;
+    BOOST_REQUIRE(chainman.AcceptBlock(std::make_shared<const CBlock>(body), state, nullptr, true, nullptr, nullptr, true));
+    BOOST_CHECK(!(ancestor->nStatus & BLOCK_PARKED_MASK));
+    BOOST_CHECK(ancestor->nStatus & BLOCK_HAVE_DATA);
+    BOOST_CHECK_EQUAL(chainstate.m_chain.Height(), 100);
+}
+
+BOOST_FIXTURE_TEST_CASE(parked_state_order_a, DeepReorgTestingSetup)
+{
+    CheckStateOrder({'i', 'p', 'u', 'r'});
+}
+
+BOOST_FIXTURE_TEST_CASE(parked_state_order_b, DeepReorgTestingSetup)
+{
+    CheckStateOrder({'p', 'i', 'r', 'u'});
+}
+
+BOOST_FIXTURE_TEST_CASE(parked_state_order_c, DeepReorgTestingSetup)
+{
+    CheckStateOrder({'i', 'p', 'r', 'u'});
+}
+
+BOOST_FIXTURE_TEST_CASE(parked_state_order_d, DeepReorgTestingSetup)
+{
+    CheckStateOrder({'p', 'i', 'u', 'r'});
+}
+
+// Marker invariant described by the ABC/BCHN fixes
+// 638c2fbd9748e9f7f7fddaba068b9f2b835695af and
+// 6cc62f82f9e17d6d4cebb649d959de9188017ba9 (neither added a new test).
+BOOST_FIXTURE_TEST_CASE(parked_root_child_markers, DeepReorgTestingSetup)
+{
+    auto [root, tip] = AcceptFork(7);
+    LOCK(cs_main);
+    BOOST_CHECK_EQUAL(root->nStatus & BLOCK_PARKED_MASK, BLOCK_PARKED);
+    for (auto* child = tip; child != root; child = child->pprev) {
+        BOOST_CHECK_EQUAL(child->nStatus & BLOCK_PARKED_MASK, BLOCK_PARKED_CHILD);
+    }
+    BOOST_CHECK(!(root->nStatus & BLOCK_FAILED_MASK));
+    BOOST_CHECK(!(tip->nStatus & BLOCK_FAILED_MASK));
 }
 
 BOOST_AUTO_TEST_SUITE_END()

@@ -116,6 +116,13 @@ BOOST_AUTO_TEST_CASE(parse_published_mainnet_manifest)
     BOOST_CHECK_EQUAL(packages[0].snapshot_height, 961814);
     BOOST_CHECK_EQUAL(packages[0].prune_mib, 10000);
     BOOST_CHECK_EQUAL(packages[0].archive_size_bytes, 30390803377ULL);
+    // Real embedded-key signature: duplicates must fail the remote consumer.
+    for (const std::string token : {"\"packages\":", "\"download_uri\":", "\"archive_sha256\":", "\"base_blockhash\":", "\"snapshot_height\":"}) {
+        std::string attack = published_json;
+        attack.insert(attack.find(token), token + "null,");
+        BOOST_CHECK(ParseOfficialDataPackagesFromJson(attack, "signed duplicate attack", OfficialPackageTrustPolicy::REMOTE_SIGNED).empty());
+        BOOST_CHECK(OfficialPackagesManifestDigest(attack).IsNull());
+    }
 }
 
 BOOST_AUTO_TEST_CASE(manifest_signature_roundtrip)
@@ -521,6 +528,33 @@ BOOST_AUTO_TEST_CASE(zip_extract_zip64_extra_after_other_extra)
     BOOST_CHECK_MESSAGE(ZipExtractTo(zip_path, dest, 0, {}, error), error);
     BOOST_CHECK(fs::exists(dest / "blocks" / "blk00000.dat"));
     BOOST_CHECK(fs::exists(dest / "chainstate" / "CURRENT"));
+}
+
+BOOST_AUTO_TEST_CASE(reject_duplicate_manifest_keys)
+{
+    const std::string unsigned_json = R"({"packages":[{"id":"fixture","snapshot_height":961814,"base_blockhash":"0000000000000000000000000000000000000000000000000000000000000001","download_uri":"https://downloads.bitcoinpurity.org/pkg.zip","archive_sha256":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","archive_size_bytes":123}]})";
+    BOOST_REQUIRE_EQUAL(ParseOfficialDataPackagesFromJson(unsigned_json, "fixture", OfficialPackageTrustPolicy::LOCAL).size(), 1U);
+    CKey key;
+    key.MakeNewKey(true);
+    const std::string signed_json = AddManifestSignature(unsigned_json, SignManifest(key, unsigned_json));
+    UniValue json;
+    BOOST_REQUIRE(json.read(signed_json));
+    for (const auto& object : {json, json.find_value("packages")[0]}) {
+        for (const auto& field : object.getKeys()) {
+            const std::string token = "\"" + field + "\":";
+            std::string attack = signed_json;
+            attack.insert(attack.find(token), token + object.find_value(field).write() + ",");
+            BOOST_TEST_CONTEXT(field) {
+                BOOST_CHECK(ParseOfficialDataPackagesFromJson(attack, "duplicate fixture", OfficialPackageTrustPolicy::LOCAL).empty());
+                BOOST_CHECK(ParseOfficialDataPackagesFromJson(attack, "duplicate fixture", OfficialPackageTrustPolicy::REMOTE_SIGNED).empty());
+                BOOST_CHECK(!VerifyOfficialPackagesManifestSignature(attack, key.GetPubKey()));
+            }
+        }
+    }
+    const std::string nested = R"({"extension":[{"nested":{"key":1,"key":2}}],"packages":[])";
+    BOOST_CHECK(OfficialPackagesManifestDigest(nested).IsNull());
+    const std::string escaped = R"({"schema":1,"\u0073chema":1})";
+    BOOST_CHECK(OfficialPackagesManifestDigest(escaped).IsNull());
 }
 
 BOOST_AUTO_TEST_SUITE_END()

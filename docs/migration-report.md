@@ -143,3 +143,50 @@ Bounded service preference is scoped to automatic outbound selection and
 preserves AddrMan sampling, manual connections, anchors and feelers.
 Existing post-prefix NODE_REDUCED_DATA gating is retained.
 Validation is tracked in TASK-013.
+
+## Validation and signed-manifest corrections
+
+Automatic parking is now decided in `AcceptBlock` before candidate propagation,
+using the active-chain fork and rewind. The intermediate `DeepReorgPolicy`
+activation override has been removed; manual unpark restores normal activation.
+Stored parked flags and thresholds are retained; `getchaintips.parked` is additive.
+No consensus rules, RDTS or manifest behavior change in this architecture follow-up.
+
+Restart and `-reindex-chainstate` preserve parking. Full `-reindex` reconstructs
+local status and may activate a previously parked branch, because unpruned
+import initially has only genesis active and therefore no deep rewind. Turning
+parking on after bodies were accepted does not retroactively classify branches.
+The functional test covers both rebuild modes and out-of-order `-loadblock`.
+Implementation and validation are tracked in TASK-015 and
+`doc/deep-reorg-parking-review.md`.
+
+Duplicate-key manifests formerly accepted are now invalid. Publishers must
+produce unique decoded object keys at every depth. Update release URI paths and
+redirects must obey the official namespace/host policy; archive verification
+and manual installation are unchanged.
+
+The initial RDTS correction gate retained deployed mainnet validation with an
+unset activation height. TASK-017 supersedes that parameter decision below.
+Regtest activation options affect no public network.
+
+## Deferred active-chain manual parking (TASK-016)
+
+The user deferred active-chain manual parking/rewind on 2026-10-06. Production
+behavior is unchanged. Replace the unsupported positive RPC scenario with an
+ancestor/tip rejection test checking unchanged chain state. Adapt B/D ordering
+tests to inactive branches while preserving all four state transitions and
+validity/parking assertions. Retain existing C++ and deep-reorg regressions.
+The old `--scenario=manual` test selector is replaced by
+`--scenario=active-park-rejected`; normal runner registration is updated.
+
+## Mainnet RDTS correction at 961637 (TASK-017)
+
+The user explicitly selected mainnet correction activation at Purity height
+961637 on 2026-10-06. Both the creation boundary and correction activation are
+now 961637. Historical validation before activation, temporary BIP9 behavior,
+other-network parameters and runtime RPC contracts are unchanged. Revalidation
+from activation uses the corrected rule; changing the parameter does not itself
+rebuild an existing chainstate. No production data rebuild or deployment was
+performed. The reported candidate scan through 967297 is not a complete
+historical consensus-validation result. See `doc/purity-consensus.md` for the
+isolated archival validation procedure.

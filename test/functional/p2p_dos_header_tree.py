@@ -54,6 +54,7 @@ class RejectLowDifficultyHeadersTest(BitcoinTestFramework):
             'hash': '000000002a936ca763904c3c35fce2f3556c559c0214345d31b1bcebf76acb70',
             'branchlen': 546,
             'status': 'headers-only',
+            'parked': False,
         } in self.nodes[0].getchaintips()
 
         self.log.info("Feed all fork headers (fails due to checkpoint)")
@@ -71,6 +72,7 @@ class RejectLowDifficultyHeadersTest(BitcoinTestFramework):
             "hash": "00000000b0494bd6c3d5ff79c497cfce40831871cbf39b1bc28bd1dac817dc39",
             "branchlen": 2,
             "status": "headers-only",
+            "parked": False,
         } in self.nodes[0].getchaintips()
 
         # On node 1 it succeeds because no checkpoint has been reached yet by a chain tip
@@ -81,6 +83,7 @@ class RejectLowDifficultyHeadersTest(BitcoinTestFramework):
             "hash": "00000000b0494bd6c3d5ff79c497cfce40831871cbf39b1bc28bd1dac817dc39",
             "branchlen": 2,
             "status": "headers-only",
+            "parked": False,
         } in self.nodes[1].getchaintips()
 
         self.log.info("Feed checkpoint-violating block (succeeds up until the checkpoint mismatch, then fails)")
@@ -238,6 +241,7 @@ class RejectLowDifficultyHeadersTest(BitcoinTestFramework):
             "hash": "000000008ce04625549eb92726e39fe6de52cd44df861bbd477f9ada8bc30efc",
             "branchlen": 545,
             "status": "headers-only",
+            "parked": False,
         } in self.nodes[1].getchaintips()
 
 if __name__ == '__main__':
