@@ -18,6 +18,8 @@ unsigned int GetNextWorkRequired(const CBlockIndex* pindexLast, const CBlockHead
     assert(pindexLast != nullptr);
 
     if (pindexLast->nHeight + 1 >= params.nPurityActivationHeight) {
+        // Regtest can exercise permanent RDTS while retaining fixed difficulty.
+        if (params.fPowNoRetargeting) return pindexLast->nBits;
         return GetNextASERTWorkRequired(pindexLast, pblock, params);
     }
 

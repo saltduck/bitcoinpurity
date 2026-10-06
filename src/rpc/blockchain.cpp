@@ -1974,6 +1974,7 @@ static RPCHelpMan getchaintips()
                             {RPCResult::Type::NUM, "height", "height of the chain tip"},
                             {RPCResult::Type::STR_HEX, "hash", "block hash of the tip"},
                             {RPCResult::Type::NUM, "branchlen", "zero for main chain, otherwise length of branch connecting the tip to the main chain"},
+                            {RPCResult::Type::BOOL, "parked", "whether this tip or an ancestor is parked by local policy"},
                             {RPCResult::Type::STR, "status", "status of the chain, \"active\" for the main chain\n"
             "Possible values for status:\n"
             "1.  \"invalid\"               This branch contains at least one invalid block\n"
@@ -2050,6 +2051,14 @@ static RPCHelpMan getchaintips()
             status = "unknown";
         }
         obj.pushKV("status", status);
+        bool parked{false};
+        for (const CBlockIndex* ancestor = block; ancestor; ancestor = ancestor->pprev) {
+            if (ancestor->nStatus & BLOCK_PARKED_MASK) {
+                parked = true;
+                break;
+            }
+        }
+        obj.pushKV("parked", parked);
 
         res.push_back(std::move(obj));
     }
@@ -2250,7 +2259,7 @@ static RPCHelpMan unparkblock()
         chainman.RecalculateBestHeader();
     }
     BlockValidationState state;
-    chainman.ActiveChainstate().ActivateBestChain(state);
+    chainman.ActiveChainstate().ActivateBestChain(state, nullptr);
     if (!state.IsValid()) {
         throw JSONRPCError(RPC_DATABASE_ERROR, state.ToString());
     }

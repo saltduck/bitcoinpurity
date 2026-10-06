@@ -253,7 +253,9 @@ private Q_SLOTS:
         const bool cancelled = m_cancelled;
         const QNetworkReply::NetworkError error = m_reply->error();
         const QString error_string = m_reply->errorString();
-        const bool http_ok = HttpStatusOk(m_reply);
+        const bool destination_allowed = IsSoftwareUpdateDownloadUriAllowed(
+            m_reply->url().toString(QUrl::FullyEncoded).toStdString(), SoftwareUpdateTrustPolicy::REMOTE_SIGNED);
+        const bool http_ok = HttpStatusOk(m_reply) && destination_allowed;
         const auto http_status = HttpStatusCode(m_reply);
 
         if (m_output.isOpen()) {
@@ -312,6 +314,7 @@ private:
 
         QNetworkRequest request(QUrl(QString::fromStdString(m_artifact.download_uri)));
         ConfigureUpdateRequest(request);
+        request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::UserVerifiedRedirectPolicy);
 
         m_output.setFileName(GUIUtil::PathToQString(m_download_path));
         if (!m_output.open(QIODevice::WriteOnly)) {
@@ -320,6 +323,14 @@ private:
         }
 
         m_reply = m_manager->get(request);
+        connect(m_reply, &QNetworkReply::redirected, this, [this](const QUrl& target) {
+            const auto policy = target.isRelative() ? m_reply->url().resolved(target) : target;
+            if (!IsSoftwareUpdateDownloadUriAllowed(policy.toString(QUrl::FullyEncoded).toStdString(), SoftwareUpdateTrustPolicy::REMOTE_SIGNED)) {
+                m_reply->abort();
+                return;
+            }
+            m_reply->redirectAllowed();
+        });
         connect(m_reply, &QNetworkReply::readyRead, this, &SoftwareUpdateDownloadDialog::onReadyRead);
         connect(m_reply, &QNetworkReply::finished, this, &SoftwareUpdateDownloadDialog::onFinished);
         connect(m_reply, &QNetworkReply::downloadProgress, this, [this](qint64 received, qint64 total) {

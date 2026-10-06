@@ -57,19 +57,6 @@ std::string ToLowerAscii(std::string_view input)
     return out;
 }
 
-std::optional<std::string_view> ExtractUriHost(std::string_view uri)
-{
-    constexpr std::string_view HTTPS_PREFIX{"https://"};
-    if (!uri.starts_with(HTTPS_PREFIX)) return std::nullopt;
-    uri.remove_prefix(HTTPS_PREFIX.size());
-
-    if (uri.find('@') != std::string_view::npos) return std::nullopt;
-    const size_t slash = uri.find('/');
-    const size_t colon = uri.find(':');
-    const size_t end = std::min(slash, colon);
-    if (end == 0) return std::nullopt;
-    return uri.substr(0, end);
-}
 
 
 bool IsAllowedArtifactHost(std::string_view host)
@@ -78,7 +65,6 @@ bool IsAllowedArtifactHost(std::string_view host)
         "downloads.bitcoinpurity.org",
         "github.com",
         "release-assets.githubusercontent.com",
-        "objects.githubusercontent.com",
     };
     const std::string lowered = ToLowerAscii(host);
     for (const auto allowed : ALLOWED_HOSTS) {
@@ -269,7 +255,7 @@ std::optional<SoftwareReleaseInfo> ParseSoftwareReleaseManifest(
     SoftwareUpdateTrustPolicy trust_policy)
 {
     UniValue json;
-    if (!json.read(json_contents) || !json.isObject()) {
+    if (!json.read(json_contents) || !json.isObject() || JsonHasDuplicateKeys(json)) {
         LogPrintf("Software updates: failed to parse JSON from %s\n", source_label);
         return std::nullopt;
     }
@@ -340,7 +326,29 @@ bool IsSoftwareUpdateDownloadUriAllowed(const std::string& uri, SoftwareUpdateTr
         return uri.starts_with("https://") || uri.starts_with("http://");
     }
 
-    const auto host = ExtractUriHost(uri);
-    if (!host) return false;
-    return IsAllowedArtifactHost(*host);
+    constexpr std::string_view prefix{"https://"};
+    const std::string_view url{uri};
+    if (!url.starts_with(prefix)) return false;
+    const auto rest = url.substr(prefix.size());
+    const auto slash = rest.find('/');
+    if (slash == std::string_view::npos) return false;
+    const auto host = rest.substr(0, slash);
+    // No userinfo, ports, escapes, whitespace or browser path normalization.
+    if (!IsAllowedArtifactHost(host) || url.find_first_of("\\\r\n\t ") != std::string_view::npos) return false;
+    const auto path_end = rest.find_first_of("?#", slash);
+    const auto path = rest.substr(slash, path_end == std::string_view::npos ? path_end : path_end - slash);
+    if (path.find('%') != std::string_view::npos) return false;
+    size_t start = 0;
+    while (start < path.size()) {
+        const auto end = path.find('/', start);
+        const auto component = path.substr(start, end == std::string_view::npos ? end : end - start);
+        if (component == "." || component == "..") return false;
+        if (end == std::string_view::npos) break;
+        start = end + 1;
+    }
+    if (ToLowerAscii(host) == "github.com") {
+        return path.starts_with("/saltduck/bitcoinpurity/releases/download/") &&
+               path.size() > std::string_view{"/saltduck/bitcoinpurity/releases/download/"}.size();
+    }
+    return true;
 }

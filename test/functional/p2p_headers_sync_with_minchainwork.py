@@ -70,6 +70,7 @@ class RejectLowDifficultyHeadersTest(BitcoinTestFramework):
                 'hash': tip_hash,
                 'branchlen': height,
                 'status': 'headers-only',
+                'parked': False,
             } in node3_chaintips
 
         check_node3_chaintips(2, self.nodes[0].getbestblockhash(), NODE1_BLOCKS_REQUIRED-1)
@@ -82,6 +83,7 @@ class RejectLowDifficultyHeadersTest(BitcoinTestFramework):
                 'hash': '0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206',
                 'branchlen': 0,
                 'status': 'active',
+                'parked': False,
             } in chaintips
 
         self.log.info("Generate more blocks to satisfy node1's minchainwork requirement, and verify node2 still has no new headers in headers tree")
@@ -94,6 +96,7 @@ class RejectLowDifficultyHeadersTest(BitcoinTestFramework):
             'hash': '0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206',
             'branchlen': 0,
             'status': 'active',
+            'parked': False,
         } in self.nodes[2].getchaintips()
 
         assert len(self.nodes[2].getchaintips()) == 1

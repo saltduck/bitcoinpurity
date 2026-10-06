@@ -101,7 +101,7 @@ std::optional<std::vector<OfficialBroadcastNotice>> ParseOfficialBroadcastsManif
     OfficialBroadcastTrustPolicy trust_policy)
 {
     UniValue json;
-    if (!json.read(json_contents) || !json.isObject()) {
+    if (!json.read(json_contents) || !json.isObject() || JsonHasDuplicateKeys(json)) {
         LogPrintf("Official broadcasts: failed to parse JSON from %s\n", source_label);
         return std::nullopt;
     }

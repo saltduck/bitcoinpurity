@@ -135,11 +135,15 @@ struct Params {
     /**
      * Height at which Purity hard-fork rules (permanent RDTS + aserti3-1d) begin.
      * Mainnet uses MAINNET_PURITY_ACTIVATION_HEIGHT. Unset on other chains =>
-     * never activates. When set, must be greater than MAINNET_ASERT_ANCHOR_HEIGHT
+     * never activates. When set, must be greater than nAsertAnchorHeight
      * so GetNextASERTWorkRequired can resolve the anchor as an ancestor of the
      * last pre-fork block.
      */
     int nPurityActivationHeight{std::numeric_limits<int>::max()};
+    /** Fixed UTXO creation boundary for permanent RDTS. */
+    int nReducedDataGrandfatherHeight{std::numeric_limits<int>::max()};
+    /** Correction activation; unset preserves historical validation pending a consensus decision. */
+    int nReducedDataGrandfatherFixHeight{std::numeric_limits<int>::max()};
     /**
      * Hash of the Purity activation block (the block at nPurityActivationHeight).
      * When non-null, any block at that height with a different hash is invalid

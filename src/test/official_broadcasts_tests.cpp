@@ -131,4 +131,25 @@ BOOST_AUTO_TEST_CASE(default_url)
         "https://downloads.bitcoinpurity.org/broadcasts.json");
 }
 
+BOOST_AUTO_TEST_CASE(reject_duplicate_manifest_keys)
+{
+    CKey key;
+    key.MakeNewKey(true);
+    const std::string signed_json = AddManifestSignature(SAMPLE_UNSIGNED_MANIFEST, SignManifest(key, SAMPLE_UNSIGNED_MANIFEST));
+    UniValue json;
+    BOOST_REQUIRE(json.read(signed_json));
+    for (const auto& object : {json, json.find_value("notices")[0]}) {
+        for (const auto& field : object.getKeys()) {
+            const std::string token = "\"" + field + "\":";
+            std::string attack = signed_json;
+            attack.insert(attack.find(token), token + object.find_value(field).write() + ",");
+            BOOST_TEST_CONTEXT(field) {
+                BOOST_CHECK(!ParseOfficialBroadcastsManifest(attack, "duplicate fixture", OfficialBroadcastTrustPolicy::LOCAL));
+                BOOST_CHECK(!ParseOfficialBroadcastsManifest(attack, "duplicate fixture", OfficialBroadcastTrustPolicy::REMOTE_SIGNED));
+                BOOST_CHECK(!VerifyOfficialPackagesManifestSignature(attack, key.GetPubKey()));
+            }
+        }
+    }
+}
+
 BOOST_AUTO_TEST_SUITE_END()

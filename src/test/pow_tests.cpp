@@ -333,4 +333,15 @@ BOOST_AUTO_TEST_CASE(asert_at_purity_activation_uses_anchor)
     BOOST_CHECK_EQUAL(GetNextWorkRequired(&blocks.back(), nullptr, params), asert_nbits);
 }
 
+BOOST_AUTO_TEST_CASE(purity_regtest_retains_no_retargeting)
+{
+    auto params = CreateChainParams(*m_node.args, ChainType::REGTEST)->GetConsensus();
+    params.nPurityActivationHeight = 200;
+    CBlockIndex previous;
+    previous.nHeight = 199;
+    previous.nBits = 0x207fffff;
+    CBlockHeader next;
+    BOOST_CHECK_EQUAL(GetNextWorkRequired(&previous, &next, params), previous.nBits);
+}
+
 BOOST_AUTO_TEST_SUITE_END()

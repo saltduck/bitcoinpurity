@@ -201,3 +201,33 @@ precedence chain.
 - Test service naming/value, local VERSION/address advertisement, V1/V2 and
   AddrMan persistence, deterministic preference/fallback, legacy handshakes
   and advertised-bit activation-hash mismatches.
+
+## Validation and signed-manifest corrections
+
+- Active-chain manual parking/rewind is deferred. Retain the
+  existing RPC rejection and test that it leaves chain state unchanged.
+  Run park-first state-order tests on inactive branches; retain validity,
+  descendant, restart and automatic deep-reorg coverage. No production change.
+- Deep-reorg parking is determined in `AcceptBlock`, after contextual checks
+  and before `ReceivedBlockTransactions` can propagate candidates. Use the
+  active tip and fork point; park the first competing block when rewind exceeds
+  `parkreorgdepth` (default 6), independently of delivery order and `pblock`.
+  Persist the root status, exclude parked descendants, and retain the additive
+  `getchaintips.parked` boolean. `unparkblock` restores normal activation without
+  a special `ActivateBestChain` approval mode. Parking remains local policy;
+  no automatic unparking or consensus changes. Cover boundaries, out-of-order
+  receipt/import, restart, index rebuild and disabled policy. RDTS and manifests
+  are unchanged by this parking architecture follow-up.
+- Permanent RDTS uses a fixed UTXO grandfather boundary (mainnet 961637),
+  distinct from temporary BIP9. The user selected mainnet correction activation
+  at 961637, so blocks from Purity activation use the fixed boundary. Retain
+  historical pre-activation and other-network behavior. The reported scan to
+  tip 967297 is candidate-screening evidence, not complete historical consensus
+  revalidation. Add mainnet parameter/helper regression coverage.
+- Reject duplicate keys recursively before signed-manifest verification or use.
+  Restrict GitHub update artifacts to saltduck/bitcoinpurity releases and check
+  redirects. Preserve package URI policy, signatures, size/SHA256 verification
+  and manual installation.
+- Add failing regression tests first, then narrow fixes, unit/functional
+  verification and consensus/security documentation. Replay protection is
+  out of scope.

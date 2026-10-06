@@ -20,6 +20,7 @@
 #include <limits>
 #include <map>
 #include <optional>
+#include <set>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -285,6 +286,24 @@ bool IsOfficialSnapshotTrusted(
     return true;
 }
 
+bool JsonHasDuplicateKeys(const UniValue& value)
+{
+    if (value.isObject()) {
+        std::set<std::string> keys;
+        for (const auto& key : value.getKeys()) {
+            if (!keys.insert(key).second) return true;
+        }
+    }
+    if (value.isObject() || value.isArray()) {
+        for (const auto& child : value.getValues()) {
+            if (JsonHasDuplicateKeys(child)) return true;
+        }
+    }
+    return false;
+}
+
+namespace {
+
 void CanonicalizeJsonValue(UniValue& value)
 {
     if (value.isObject()) {
@@ -314,12 +333,10 @@ void CanonicalizeJsonValue(UniValue& value)
     }
 }
 
-namespace {
-
 std::string OfficialPackagesManifestPayload(const std::string& json_contents)
 {
     UniValue json;
-    if (!json.read(json_contents) || !json.isObject()) {
+    if (!json.read(json_contents) || !json.isObject() || JsonHasDuplicateKeys(json)) {
         return {};
     }
 
@@ -357,8 +374,8 @@ bool VerifyOfficialPackagesManifestSignature(
     if (!signing_pubkey.IsFullyValid()) return false;
 
     UniValue json;
-    if (!json.read(json_contents) || !json.isObject()) return false;
-    if (!json.exists("signature")) return false;
+    if (!json.read(json_contents) || !json.isObject() || JsonHasDuplicateKeys(json)) return false;
+    if (!json.find_value("signature").isStr()) return false;
 
     const std::string signature_b64 = json.find_value("signature").get_str();
     const auto signature_bytes = DecodeBase64(signature_b64);
@@ -415,7 +432,7 @@ std::vector<OfficialDataPackage> ParseOfficialDataPackagesFromJson(
         LogPrintf("Official packages config: failed to parse JSON from %s\n", source_label);
         return packages;
     }
-    if (!json.isObject()) {
+    if (!json.isObject() || JsonHasDuplicateKeys(json)) {
         LogPrintf("Official packages config: expected JSON object from %s\n", source_label);
         return packages;
     }

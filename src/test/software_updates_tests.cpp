@@ -10,6 +10,7 @@
 
 #include <univalue.h>
 
+#include <map>
 #include <string>
 
 #include <test/util/setup_common.h>
@@ -214,6 +215,75 @@ BOOST_AUTO_TEST_CASE(archive_sha256_uses_standard_byte_order)
     BOOST_REQUIRE(artifact);
     BOOST_CHECK_EQUAL(artifact->archive_sha256, *parsed);
     BOOST_CHECK(artifact->archive_sha256 != uint256::FromUserHex(hex).value());
+}
+
+BOOST_AUTO_TEST_CASE(reject_duplicate_manifest_keys)
+{
+    CKey key;
+    key.MakeNewKey(true);
+    const std::string signed_json = AddManifestSignature(SAMPLE_UNSIGNED_MANIFEST, SignManifest(key, SAMPLE_UNSIGNED_MANIFEST));
+    UniValue json;
+    BOOST_REQUIRE(json.read(signed_json));
+    for (const auto& object : {json, json.find_value("latest"), json.find_value("latest").find_value("artifacts")[0]}) {
+        for (const auto& field : object.getKeys()) {
+            const std::string token = "\"" + field + "\":";
+            std::string attack = signed_json;
+            attack.insert(attack.find(token), token + object.find_value(field).write() + ",");
+            BOOST_TEST_CONTEXT(field) {
+                BOOST_CHECK(!ParseSoftwareReleaseManifest(attack, "duplicate fixture", SoftwareUpdateTrustPolicy::LOCAL));
+                BOOST_CHECK(!ParseSoftwareReleaseManifest(attack, "duplicate fixture", SoftwareUpdateTrustPolicy::REMOTE_SIGNED));
+                BOOST_CHECK(!VerifyOfficialPackagesManifestSignature(attack, key.GetPubKey()));
+                BOOST_CHECK(OfficialPackagesManifestDigest(attack).IsNull());
+            }
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(duplicate_first_value_signature_exploit)
+{
+    CKey key;
+    key.MakeNewKey(true);
+    const std::string signed_json = AddManifestSignature(SAMPLE_UNSIGNED_MANIFEST, SignManifest(key, SAMPLE_UNSIGNED_MANIFEST));
+    BOOST_REQUIRE(VerifyOfficialPackagesManifestSignature(signed_json, key.GetPubKey()));
+    std::string attack = signed_json;
+    std::string attacker_payload = SAMPLE_UNSIGNED_MANIFEST;
+    attacker_payload.replace(attacker_payload.find("1.0.1"), 5, "9.9.9");
+    UniValue attacker;
+    BOOST_REQUIRE(attacker.read(attacker_payload));
+    attack.insert(attack.find("\"latest\":"), "\"latest\":" + attacker.find_value("latest").write() + ",");
+    UniValue json;
+    BOOST_REQUIRE(json.read(attack));
+    BOOST_CHECK_EQUAL(json.find_value("latest").find_value("version").get_str(), "9.9.9");
+    std::map<std::string, UniValue> fields;
+    json.getObjMap(fields);
+    BOOST_CHECK_EQUAL(fields.at("latest").find_value("version").get_str(), "1.0.1");
+    UniValue collapsed(UniValue::VOBJ);
+    for (const auto& [field, value] : fields) collapsed.pushKV(field, value);
+    BOOST_CHECK(OfficialPackagesManifestDigest(collapsed.write()) == OfficialPackagesManifestDigest(signed_json));
+    BOOST_CHECK(!VerifyOfficialPackagesManifestSignature(attack, key.GetPubKey()));
+    BOOST_CHECK(!ParseSoftwareReleaseManifest(attack, "attack fixture", SoftwareUpdateTrustPolicy::LOCAL));
+}
+
+BOOST_AUTO_TEST_CASE(reject_unofficial_release_uris)
+{
+    for (const std::string uri : {
+        "https://github.com/attacker/repo/releases/download/v1/pkg.zip",
+        "https://github.com/saltduck/otherrepo/releases/download/v1/pkg.zip",
+        "https://github.com/saltduck/bitcoinpurity/releases.evil/pkg.zip",
+        "https://github.com/saltduck/bitcoinpurity/releases/../../otherrepo/pkg.zip",
+        "https://github.com/saltduck/bitcoinpurity/releases/%2e%2e/evil/pkg.zip",
+        "https://github.com/saltduck/bitcoinpurity/releases/\\evil/pkg.zip",
+        "https://github.com@evil.example/saltduck/bitcoinpurity/releases/pkg.zip",
+        "https://github.com.evil.example/saltduck/bitcoinpurity/releases/pkg.zip",
+        "https://github.com:evil/saltduck/bitcoinpurity/releases/pkg.zip",
+        "https://github.com:443/saltduck/bitcoinpurity/releases/pkg.zip",
+        "https://github.com?x=/saltduck/bitcoinpurity/releases/pkg.zip"}) {
+        BOOST_TEST_CONTEXT(uri) {
+            BOOST_CHECK(!IsSoftwareUpdateDownloadUriAllowed(uri, SoftwareUpdateTrustPolicy::REMOTE_SIGNED));
+        }
+    }
+    BOOST_CHECK(IsSoftwareUpdateDownloadUriAllowed("https://release-assets.githubusercontent.com/github-production-release-asset/pkg.zip?rscd=attachment%3B%20filename%3Dpkg.zip", SoftwareUpdateTrustPolicy::REMOTE_SIGNED));
+    BOOST_CHECK(!IsSoftwareUpdateDownloadUriAllowed("https://objects.githubusercontent.com/github-production-release-asset/pkg.zip", SoftwareUpdateTrustPolicy::REMOTE_SIGNED));
 }
 
 BOOST_AUTO_TEST_SUITE_END()

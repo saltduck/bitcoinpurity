@@ -246,6 +246,8 @@ ChainTestingSetup::ChainTestingSetup(const ChainType chainType, TestOpts opts)
             .signals = m_node.validation_signals.get(),
             .worker_threads_num = 2,
         };
+        chainman_opts.park_deep_reorg = m_node.args->GetBoolArg("-parkdeepreorg", false);
+        chainman_opts.park_reorg_depth = m_node.args->GetIntArg("-parkreorgdepth", DEFAULT_PARK_REORG_DEPTH);
         if (opts.min_validation_cache) {
             chainman_opts.script_execution_cache_bytes = 0;
             chainman_opts.signature_cache_bytes = 0;

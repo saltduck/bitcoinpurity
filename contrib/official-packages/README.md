@@ -167,3 +167,14 @@ When adding a new package:
 1. Build and verify the archive on a clean machine.
 2. Update the remote `official-packages-<chain>.json` on downloads.bitcoinpurity.org.
 3. Publish the archive to the matching download URI.
+
+### Unambiguous signed JSON
+
+Duplicate object keys are invalid recursively, including objects inside arrays
+and decoded-equivalent keys such as `schema` and `\u0073chema`. The shared
+manifest path rejects them before canonicalization, signature verification or
+package consumption. This also applies to local fixtures so all consumers use
+an unambiguous DOM. JSON-RPC parsing is unchanged. Remote package downloads
+continue to require `https://downloads.bitcoinpurity.org`; this policy is not
+expanded by the software updater's GitHub release allowlist. Archive SHA256
+authenticity derives from the signed manifest.
