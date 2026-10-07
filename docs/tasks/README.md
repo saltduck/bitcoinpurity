@@ -14,3 +14,5 @@
 - [TASK-012: Mining dashboard Best Share](TASK-012.md)
 
 - [TASK-013: Purity ASERT discovery service](TASK-013.md)
+
+- [TASK-014: Read-only RDTS grandfather audit](TASK-014.md)

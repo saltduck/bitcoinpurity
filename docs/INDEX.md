@@ -9,3 +9,6 @@
 
 - [Purity peer discovery architecture](architecture/purity-peer-discovery.md)
 - [Purity P2P and RPC service contract](api/purity-peer-discovery.md)
+
+- [RDTS grandfather audit architecture](architecture/rdts-grandfather-audit.md)
+- [RDTS grandfather audit RPC contract](api/rdts-grandfather-audit.md)

@@ -143,3 +143,13 @@ Bounded service preference is scoped to automatic outbound selection and
 preserves AddrMan sampling, manual connections, anchors and feelers.
 Existing post-prefix NODE_REDUCED_DATA gating is retained.
 Validation is tracked in TASK-013.
+
+## RDTS grandfather diagnostic (v1.0.0 baseline)
+
+Add only a hidden read-only RPC and testable helper. Reuse existing block flags,
+versionbits, block/undo readers and native script checks. No persistent format,
+startup, consensus, policy, wallet, peer or chain-selection migration occurs.
+The dynamic grandfather boundary is retained. No reindex or activation/fix
+height is introduced. Operator deployment replaces the executable normally;
+audit invocation then uses existing historical data. Local regression tests
+prove interpreter comparison and RPC read-only behavior, not mainnet history.

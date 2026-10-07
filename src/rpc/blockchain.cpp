@@ -37,6 +37,7 @@
 #include <node/warnings.h>
 #include <primitives/transaction.h>
 #include <policy/settings.h>
+#include <rpc/rdtsgrandfather.h>
 #include <rpc/server.h>
 #include <rpc/server_util.h>
 #include <rpc/util.h>
@@ -53,6 +54,7 @@
 #include <util/fs.h>
 #include <util/strencodings.h>
 #include <util/string.h>
+#include <util/signalinterrupt.h>
 #include <util/syserror.h>
 #include <validation.h>
 
@@ -4218,6 +4220,226 @@ static RPCHelpMan getblocklocations()
 }
 
 
+static RPCHelpMan auditrdtsgrandfather()
+{
+    return RPCHelpMan{
+        "auditrdtsgrandfather",
+        "\nDebug/diagnostic read-only audit of historical RDTS grandfathered inputs.\n"
+        "Compares v1.0.0 dynamic grandfather flags with strict RDTS for post-Purity Coins.\n"
+        "Requires stored block and undo data; missing/corrupt data or interruption makes complete=false.\n"
+        "No reindex is required. Results describe the active-chain snapshot at RPC start.\n"
+        "Use -rpcclienttimeout=0 for a long audit. This does not change consensus or node databases.\n",
+        {
+            {"start_height", RPCArg::Type::NUM, RPCArg::DefaultHint{"Purity activation height"}, "First block height (inclusive)"},
+            {"end_height", RPCArg::Type::NUM, RPCArg::DefaultHint{"active-chain tip"}, "Last block height (inclusive)"},
+            {"max_failures", RPCArg::Type::NUM, RPCArg::Default{1000}, "Maximum failure details returned (0-10000); totals are never capped"},
+        },
+        RPCResult{RPCResult::Type::OBJ, "", "Snapshot audit results", {
+            {RPCResult::Type::NUM, "start_height", "First requested height"},
+            {RPCResult::Type::NUM, "end_height", "Last requested height"},
+            {RPCResult::Type::NUM, "fixed_boundary", "Intended nPurityActivationHeight grandfather boundary"},
+            {RPCResult::Type::NUM, "snapshot_tip_height", "Active tip height at RPC start"},
+            {RPCResult::Type::STR_HEX, "snapshot_tip_hash", "Active tip hash at RPC start"},
+            {RPCResult::Type::NUM, "blocks_scanned", "Blocks with readable, structurally consistent block and undo data"},
+            {RPCResult::Type::NUM, "transactions_scanned", "Transactions in those blocks, including coinbases"},
+            {RPCResult::Type::NUM, "inputs_scanned", "Non-coinbase inputs examined"},
+            {RPCResult::Type::NUM, "candidate_inputs", "Post-Purity inputs missing old effective RDTS flags"},
+            {RPCResult::Type::NUM, "old_pass_strict_pass", "Candidates passing both checks"},
+            {RPCResult::Type::NUM, "old_pass_strict_fail", "Candidates accepted by old flags but rejected by strict RDTS"},
+            {RPCResult::Type::NUM, "old_fail_strict_fail", "Candidates rejected by both checks (anomalies)"},
+            {RPCResult::Type::NUM, "old_fail_strict_pass", "Candidates rejected by old flags only (anomalies)"},
+            {RPCResult::Type::NUM, "missing_block_data", "Blocks unavailable or unreadable"},
+            {RPCResult::Type::NUM, "missing_undo_data", "Undo records unavailable or unreadable, including genesis if requested"},
+            {RPCResult::Type::NUM, "invalid_undo_data", "Blocks with inconsistent transaction/undo relationships or Coins"},
+            {RPCResult::Type::BOOL, "complete", "Every requested block/input examined using available, consistent data"},
+            {RPCResult::Type::BOOL, "interrupted", "Stopped early due to RPC/node shutdown"},
+            {RPCResult::Type::BOOL, "chain_changed_during_scan", "Active tip differs from snapshot tip at completion"},
+            {RPCResult::Type::NUM, "failures_returned", "Number of detailed failures returned"},
+            {RPCResult::Type::NUM, "failures_total", "Total incompatible inputs plus old-check anomalies"},
+            {RPCResult::Type::BOOL, "failures_truncated", "More failures exist than returned details"},
+            {RPCResult::Type::ARR, "failures", "Incompatible inputs and old-check anomalies", {
+                {RPCResult::Type::OBJ, "", "", {
+                    {RPCResult::Type::STR, "classification", "Old/strict check outcome"},
+                    {RPCResult::Type::NUM, "block_height", "Audited block height"},
+                    {RPCResult::Type::STR_HEX, "block_hash", "Audited block hash"},
+                    {RPCResult::Type::STR_HEX, "txid", "Spending transaction id"},
+                    {RPCResult::Type::NUM, "vin", "Input index"},
+                    {RPCResult::Type::STR_HEX, "prevout_txid", "Spent transaction id"},
+                    {RPCResult::Type::NUM, "prevout_vout", "Spent output index"},
+                    {RPCResult::Type::NUM, "prevout_height", "Historical Coin creation height"},
+                    {RPCResult::Type::NUM, "old_boundary", "Dynamic StateSinceHeight boundary"},
+                    {RPCResult::Type::NUM, "fixed_boundary", "Intended Purity boundary"},
+                    {RPCResult::Type::NUM, "old_flags", "Old effective script flags"},
+                    {RPCResult::Type::NUM, "strict_flags", "Old flags OR all RDTS mandatory flags"},
+                    {RPCResult::Type::NUM, "old_script_error", "Old ScriptError enum value (OK=0)"},
+                    {RPCResult::Type::STR, "old_script_error_string", "Old ScriptErrorString"},
+                    {RPCResult::Type::NUM, "strict_script_error", "Strict ScriptError enum value (OK=0)"},
+                    {RPCResult::Type::STR, "strict_script_error_string", "Strict ScriptErrorString"},
+                }},
+            }},
+        }},
+        RPCExamples{HelpExampleCli("-rpcclienttimeout=0 auditrdtsgrandfather", "961637 967297")},
+        [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue {
+            NodeContext& node{EnsureAnyNodeContext(request.context)};
+            ChainstateManager& chainman{EnsureChainman(node)};
+            const auto& consensus{chainman.GetConsensus()};
+            const int fixed_boundary{consensus.nPurityActivationHeight};
+            const int start{request.params[0].isNull() ? fixed_boundary : request.params[0].getInt<int>()};
+            const int max_failures{self.Arg<int>("max_failures")};
+            if (start < 0) throw JSONRPCError(RPC_INVALID_PARAMETER, "start_height must be non-negative");
+            if (max_failures < 0 || max_failures > 10000) throw JSONRPCError(RPC_INVALID_PARAMETER, "max_failures must be between 0 and 10000");
+
+            std::vector<const CBlockIndex*> snapshot;
+            const CBlockIndex* snapshot_tip;
+            int end;
+            {
+                LOCK(cs_main);
+                const CChain& chain{chainman.ActiveChain()};
+                snapshot_tip = chain.Tip();
+                end = request.params[1].isNull() ? chain.Height() : request.params[1].getInt<int>();
+                if (end < start) throw JSONRPCError(RPC_INVALID_PARAMETER, "end_height must be at least start_height");
+                if (end > chain.Height()) throw JSONRPCError(RPC_INVALID_PARAMETER, "end_height exceeds snapshot tip");
+                // BlockMap only inserts entries; unordered_map rehash preserves pointers.
+                // Heights, hashes and ancestry stay immutable until node teardown after RPC stop.
+                snapshot.reserve(static_cast<size_t>(end) - start + 1);
+                for (int64_t height{start}; height <= end; ++height) snapshot.push_back(chain[height]);
+            }
+
+            uint64_t blocks{0}, transactions{0}, inputs{0}, candidates{0};
+            uint64_t missing_blocks{0}, missing_undo{0}, invalid_undo{0}, failures_total{0};
+            uint64_t outcomes[4]{};
+            bool interrupted{false};
+            UniValue failures{UniValue::VARR};
+            // cacheStore=false erases shared signature-cache hits. A private empty
+            // cache prevents consuming validation cache entries or inserting audit results.
+            SignatureCache signature_cache{0};
+            VersionBitsCache versionbitscache;
+            const auto should_interrupt = [&] {
+                return !IsRPCRunning() || (node.shutdown_signal && bool(*node.shutdown_signal));
+            };
+            size_t attempted{0};
+            for (const CBlockIndex* index : snapshot) {
+                if (should_interrupt()) { interrupted = true; break; }
+                ++attempted;
+                CBlock block;
+                CBlockUndo undo;
+                const bool have_block{chainman.m_blockman.ReadBlock(block, *index)};
+                const bool have_undo{index->pprev && chainman.m_blockman.ReadBlockUndo(undo, *index)};
+                if (!have_block) ++missing_blocks;
+                if (!have_undo) ++missing_undo;
+                if (!have_block || !have_undo) {
+                    LogInfo("RDTS-GRANDFATHER-AUDIT missing-data height=%d hash=%s block=%d undo=%d", index->nHeight, index->GetBlockHash().ToString(), have_block, have_undo);
+                } else {
+                    bool valid{!block.vtx.empty() && block.vtx[0]->IsCoinBase() && undo.vtxundo.size() == block.vtx.size() - 1};
+                    for (size_t i{1}; valid && i < block.vtx.size(); ++i) {
+                        const auto& tx{*block.vtx[i]};
+                        const auto& txundo{undo.vtxundo[i - 1]};
+                        valid = !tx.IsCoinBase() && txundo.vprevout.size() == tx.vin.size();
+                        for (const Coin& coin : txundo.vprevout) {
+                            if (coin.IsSpent() || coin.nHeight > static_cast<uint32_t>(index->nHeight) || !MoneyRange(coin.out.nValue)) valid = false;
+                        }
+                    }
+                    if (!valid) {
+                        ++invalid_undo;
+                        LogInfo("RDTS-GRANDFATHER-AUDIT inconsistent-data height=%d hash=%s", index->nHeight, index->GetBlockHash().ToString());
+                    } else {
+                        ++blocks;
+                        ++transactions; // coinbase has no spent inputs
+                        const auto normal_flags{GetBlockScriptFlags(*index, chainman)};
+                        const bool active{DeploymentActiveAt(*index, consensus, Consensus::DEPLOYMENT_REDUCED_DATA, versionbitscache)};
+                        const int old_boundary{active ? versionbitscache.StateSinceHeight(index->pprev, consensus, Consensus::DEPLOYMENT_REDUCED_DATA) : 0};
+                        for (size_t i{1}; i < block.vtx.size(); ++i) {
+                            if (should_interrupt()) { interrupted = true; break; }
+                            const CTransaction& tx{*block.vtx[i]};
+                            const auto& coins{undo.vtxundo[i - 1].vprevout};
+                            ++transactions;
+                            inputs += tx.vin.size();
+                            bool has_candidate{false};
+                            for (const Coin& coin : coins) {
+                                const auto old_flags{rdts_audit::OldFlags(normal_flags, coin.nHeight, old_boundary)};
+                                has_candidate |= rdts_audit::IsCandidate(coin.nHeight, fixed_boundary, old_flags);
+                            }
+                            if (!has_candidate) continue;
+                            std::vector<CTxOut> spent_outputs;
+                            spent_outputs.reserve(coins.size());
+                            for (const Coin& coin : coins) spent_outputs.push_back(coin.out);
+                            PrecomputedTransactionData txdata;
+                            txdata.Init(tx, std::move(spent_outputs));
+                            for (size_t vin{0}; vin < tx.vin.size(); ++vin) {
+                                if (should_interrupt()) { interrupted = true; break; }
+                                const Coin& coin{coins[vin]};
+                                const auto old_flags{rdts_audit::OldFlags(normal_flags, coin.nHeight, old_boundary)};
+                                if (!rdts_audit::IsCandidate(coin.nHeight, fixed_boundary, old_flags)) continue;
+                                const auto comparison{rdts_audit::CompareInput(coin.out, tx, signature_cache, vin, old_flags, txdata)};
+                                ++candidates;
+                                const auto outcome{comparison.GetOutcome()};
+                                ++outcomes[static_cast<size_t>(outcome)];
+                                if (outcome == rdts_audit::Outcome::OLD_PASS_STRICT_PASS) continue;
+                                ++failures_total;
+                                if (failures.size() >= static_cast<size_t>(max_failures)) continue;
+                                UniValue failure{UniValue::VOBJ};
+                                static constexpr const char* names[]{"OLD_PASS_STRICT_PASS", "OLD_PASS_STRICT_FAIL", "OLD_FAIL_STRICT_FAIL", "OLD_FAIL_STRICT_PASS"};
+                                failure.pushKV("classification", names[static_cast<size_t>(outcome)]);
+                                failure.pushKV("block_height", index->nHeight);
+                                failure.pushKV("block_hash", index->GetBlockHash().ToString());
+                                failure.pushKV("txid", tx.GetHash().ToString());
+                                failure.pushKV("vin", vin);
+                                failure.pushKV("prevout_txid", tx.vin[vin].prevout.hash.ToString());
+                                failure.pushKV("prevout_vout", tx.vin[vin].prevout.n);
+                                failure.pushKV("prevout_height", coin.nHeight);
+                                failure.pushKV("old_boundary", old_boundary);
+                                failure.pushKV("fixed_boundary", fixed_boundary);
+                                failure.pushKV("old_flags", old_flags);
+                                failure.pushKV("strict_flags", rdts_audit::StrictFlags(old_flags));
+                                const auto old_error{comparison.old_error ? comparison.old_error->first : SCRIPT_ERR_OK};
+                                const auto strict_error{comparison.strict_error ? comparison.strict_error->first : SCRIPT_ERR_OK};
+                                failure.pushKV("old_script_error", static_cast<int>(old_error));
+                                failure.pushKV("old_script_error_string", ScriptErrorString(old_error));
+                                failure.pushKV("strict_script_error", static_cast<int>(strict_error));
+                                failure.pushKV("strict_script_error_string", ScriptErrorString(strict_error));
+                                failures.push_back(std::move(failure));
+                            }
+                            if (interrupted) break;
+                        }
+                    }
+                }
+                if (attempted % 100 == 0) {
+                    LogInfo("RDTS-GRANDFATHER-AUDIT progress height=%d blocks=%u txs=%u candidates=%u incompatible=%u", index->nHeight, blocks, transactions, candidates, outcomes[1]);
+                }
+                if (interrupted) break;
+            }
+            const bool complete{rdts_audit::IsComplete(missing_blocks, missing_undo, invalid_undo, interrupted)};
+            const bool chain_changed{WITH_LOCK(cs_main, return chainman.ActiveChain().Tip() != snapshot_tip)};
+            LogInfo("RDTS-GRANDFATHER-AUDIT SUMMARY start=%d end=%d candidates=%u old_pass_strict_fail=%u complete=%s", start, end, candidates, outcomes[1], complete ? "true" : "false");
+            UniValue result{UniValue::VOBJ};
+            result.pushKV("start_height", start);
+            result.pushKV("end_height", end);
+            result.pushKV("fixed_boundary", fixed_boundary);
+            result.pushKV("snapshot_tip_height", snapshot_tip->nHeight);
+            result.pushKV("snapshot_tip_hash", snapshot_tip->GetBlockHash().ToString());
+            result.pushKV("blocks_scanned", blocks);
+            result.pushKV("transactions_scanned", transactions);
+            result.pushKV("inputs_scanned", inputs);
+            result.pushKV("candidate_inputs", candidates);
+            result.pushKV("old_pass_strict_pass", outcomes[0]);
+            result.pushKV("old_pass_strict_fail", outcomes[1]);
+            result.pushKV("old_fail_strict_fail", outcomes[2]);
+            result.pushKV("old_fail_strict_pass", outcomes[3]);
+            result.pushKV("missing_block_data", missing_blocks);
+            result.pushKV("missing_undo_data", missing_undo);
+            result.pushKV("invalid_undo_data", invalid_undo);
+            result.pushKV("complete", complete);
+            result.pushKV("interrupted", interrupted);
+            result.pushKV("chain_changed_during_scan", chain_changed);
+            result.pushKV("failures_returned", failures.size());
+            result.pushKV("failures_total", failures_total);
+            result.pushKV("failures_truncated", failures_total > failures.size());
+            result.pushKV("failures", std::move(failures));
+            return result;
+        },
+    };
+}
+
 void RegisterBlockchainRPCCommands(CRPCTable& t)
 {
     static const CRPCCommand commands[]{
@@ -4249,6 +4471,7 @@ void RegisterBlockchainRPCCommands(CRPCTable& t)
         {"blockchain", &dumptxoutset},
         {"blockchain", &loadtxoutset},
         {"blockchain", &getchainstates},
+        {"hidden", &auditrdtsgrandfather},
         {"hidden", &getblockfileinfo},
         {"hidden", &invalidateblock},
         {"hidden", &reconsiderblock},

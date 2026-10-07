@@ -201,3 +201,21 @@ precedence chain.
 - Test service naming/value, local VERSION/address advertisement, V1/V2 and
   AddrMan persistence, deterministic preference/fallback, legacy handshakes
   and advertised-bit activation-hash mismatches.
+
+## RDTS grandfather diagnostic audit
+
+- Base exactly on `v1.0.0` (`09a69c0e560f5dc6cbc5167b69a0eaf8d38d0fe1`).
+- Add only hidden/debug read-only RPC `auditrdtsgrandfather (start_height end_height max_failures)`.
+- Preserve dynamic `StateSinceHeight()` grandfathering and all existing validation,
+  policy, startup, wallet, peer, chain selection and persistent state behavior.
+- Snapshot the active-chain range and tip, then read blocks and historical Coins
+  from `BlockManager::ReadBlock()` / `ReadBlockUndo()` outside long-held locks.
+- Compare native `CScriptCheck` old versus old OR all RDTS mandatory flags only
+  for post-Purity Coins whose old effective flags omit RDTS rules. Precompute
+  all spent outputs, preserve per-input exemptions, and isolate signature caches.
+- Report four outcome totals, detailed failures with a bounded explicit cap,
+  missing/corrupt data, interruption, completeness and changed snapshot tip.
+- Log every 100 attempted blocks and a final `RDTS-GRANDFATHER-AUDIT SUMMARY`.
+- No reindex, database migration, startup audit or mainnet compatibility claim.
+- Require helper/interpreter unit tests and wallet-free read-only RPC coverage;
+  run existing feature_rdts.py, feature_rdts_ignore_rejects.py, rpc_blockchain.py.

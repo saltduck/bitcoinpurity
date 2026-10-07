@@ -260,6 +260,7 @@ BASE_SCRIPTS = [
     'p2p_disconnect_ban.py --v2transport',
     'feature_posix_fs_permissions.py',
     'rpc_decodescript.py',
+    'rpc_auditrdtsgrandfather.py',
     'rpc_blockchain.py --v1transport',
     'rpc_blockchain.py --v2transport',
     'rpc_deprecated.py',

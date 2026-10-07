@@ -109,3 +109,19 @@ verification criteria, and non-goals are normative in
 - Test service naming/value, local VERSION/address advertisement, V1/V2 and
   AddrMan persistence, deterministic preference/fallback, legacy handshakes
   and advertised-bit activation-hash mismatches.
+
+## RDTS grandfather audit
+
+The hidden diagnostic RPC `auditrdtsgrandfather` audits an immutable active-chain
+snapshot using stored blocks and undo Coins. Its default range is the network's
+`nPurityActivationHeight` through the snapshot tip. It compares old v1.0.0 input
+flags with those flags plus all RDTS mandatory flags only for post-Purity Coins
+missing old effective RDTS flags. All four outcomes are counted, and incompatible
+inputs and old-check anomalies include reproduction details. Failure details are
+bounded (default 1000, configurable 0-10000) without capping total counts.
+
+Missing/unreadable blocks or undo, inconsistent data, and shutdown produce
+`complete=false`. The result reports whether the active tip changed. Script and
+disk work runs outside `cs_main`, using an isolated signature cache. Consensus,
+dynamic grandfathering, policy, startup, wallet, databases and block status are
+unchanged. No reindex or data migration is required.

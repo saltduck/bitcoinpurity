@@ -1404,6 +1404,9 @@ public:
     ~ChainstateManager();
 };
 
+/** Script flags used by block validation, also exposed for read-only diagnostics. */
+unsigned int GetBlockScriptFlags(const CBlockIndex& block_index, const ChainstateManager& chainman);
+
 /** Deployment* info via ChainstateManager */
 template<typename DEP>
 bool DeploymentActiveAfter(const CBlockIndex* pindexPrev, const ChainstateManager& chainman, DEP dep)
