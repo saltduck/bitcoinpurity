@@ -138,3 +138,23 @@ verification criteria, and non-goals are normative in
 - Scope excludes replay protection. Detailed
   consensus compatibility and historical audit procedure are in
   [purity-consensus.md](../../doc/purity-consensus.md).
+
+## CoinStatsIndex overflow correction
+
+The optional CoinStatsIndex follows the selective Core #30469 backport specified
+in `input/requirements.md`. Three cumulative transaction-flow amounts use
+`arith_uint256` and the upstream fixed-width DBVal wire format. The current
+Purity BaseIndex, Chain, undo and BIP30 interfaces remain in place.
+
+The new optional database is `indexes/coinstatsindex/db/`. Enabled startup warns
+about a legacy `indexes/coinstats/` without reading, renaming or deleting it.
+The new index synchronizes from genesis using available local block data.
+Disabled startup (the default) does not inspect either optional database, start
+index work, require history downloads, migration or reindex. This applies to
+full and pruned nodes.
+
+Ordinary gettxoutsetinfo output and non-indexed scans retain their contracts.
+Unspendable totals are derived from constituent amounts. Indexed RPC rejects
+per-block flow differences above INT64_MAX instead of returning truncated
+amounts. See [architecture](../architecture/coinstatsindex.md),
+[RPC/upgrade contract](../api/coinstatsindex.md) and [TASK-018](../tasks/TASK-018.md).

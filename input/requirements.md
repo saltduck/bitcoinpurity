@@ -231,3 +231,27 @@ precedence chain.
 - Add failing regression tests first, then narrow fixes, unit/functional
   verification and consensus/security documentation. Replay protection is
   out of scope.
+
+## CoinStatsIndex cumulative amount overflow backport
+
+- Selectively backport Bitcoin Core PR #30469 (merge
+  `1861030bea7f55d08173c34d6fa11a16e6eff454`) onto Purity master.
+- Track cumulative spent prevouts, non-coinbase outputs and coinbase outputs
+  with `arith_uint256`; use wide intermediate reward arithmetic and upstream
+  DBVal serialization, deriving unspendable totals from their constituents.
+- Use `indexes/coinstatsindex/db/`; warn about but never modify or deserialize
+  legacy `indexes/coinstats/`. Preserve downgrade data. Rebuild only the new
+  optional index using existing infrastructure and available historical blocks.
+- Keep `-coinstatsindex=0` as the default. Disabled startup must not construct
+  the index, inspect legacy data, create directories or start background sync.
+  Full and pruned nodes with the index disabled need no migration or reindex.
+- Preserve BaseIndex, current Chain/undo/BIP30 APIs, Purity consensus, validation,
+  parking, earlier backports and non-indexed UTXO scans. Do not import #32694.
+- Preserve ordinary gettxoutsetinfo field names and numeric amounts. Reject
+  per-block flow differences exceeding CAmount rather than silently truncate.
+- Cover disabled/pruned startup, genuine >INT64_MAX cumulative values, DB
+  round trips/reload, reward identities, RPC parity, reorg/re-append/restart,
+  legacy coexistence and post-activation permitted unspendable scripts.
+- Document that a new index cannot rebuild from missing pruned history; never
+  automatically download history, delete old data, migrate in place or force a
+  global reindex. Do not commit or modify production data.
