@@ -4221,6 +4221,7 @@ void Chainstate::SetBlockFailureFlags(CBlockIndex* invalid_block)
         if (invalid_block != &block_index && block_index.GetAncestor(invalid_block->nHeight) == invalid_block) {
             block_index.nStatus = (block_index.nStatus & ~BLOCK_FAILED_VALID) | BLOCK_FAILED_CHILD;
             m_blockman.m_dirty_blockindex.insert(&block_index);
+            m_chainman.m_failed_blocks.erase(&block_index);
         }
     }
 }
@@ -4244,6 +4245,13 @@ void Chainstate::ResetBlockFailureFlags(CBlockIndex *pindex) {
                 m_chainman.m_best_invalid = nullptr;
             }
             m_chainman.m_failed_blocks.erase(&block_index);
+        } else if ((block_index.nStatus & BLOCK_FAILED_MASK) == BLOCK_FAILED_CHILD &&
+                   pindex->GetAncestor(block_index.nHeight - 1) == block_index.pprev) {
+            // Sibling branches remain invalid when their shared ancestor is reconsidered.
+            // Preserve that restriction with a failure root instead of an orphaned child flag.
+            block_index.nStatus = (block_index.nStatus & ~BLOCK_FAILED_CHILD) | BLOCK_FAILED_VALID;
+            m_blockman.m_dirty_blockindex.insert(&block_index);
+            m_chainman.m_failed_blocks.insert(&block_index);
         }
     }
 }

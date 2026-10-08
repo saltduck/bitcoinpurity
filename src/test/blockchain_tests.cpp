@@ -360,6 +360,49 @@ BOOST_FIXTURE_TEST_CASE(reconsider_header_restores_ancestors, TestChain100Setup)
     }
 }
 
+BOOST_FIXTURE_TEST_CASE(reconsider_preserves_invalid_sibling, FailureFlagsTestingSetup)
+{
+    auto& chainman = *m_node.chainman;
+    auto& chainstate = chainman.ActiveChainstate();
+    auto [root, tip] = AcceptFork();
+    auto* active_tip = WITH_LOCK(cs_main, return chainstate.m_chain.Tip());
+    BlockValidationState state;
+    BOOST_REQUIRE(chainstate.InvalidateBlock(state, tip));
+    BOOST_REQUIRE(chainstate.InvalidateBlock(state, root->pprev));
+    {
+        LOCK(cs_main);
+        BOOST_REQUIRE_EQUAL(root->nStatus & BLOCK_FAILED_MASK, BLOCK_FAILED_CHILD);
+        BOOST_REQUIRE_EQUAL(tip->nStatus & BLOCK_FAILED_MASK, BLOCK_FAILED_CHILD);
+        BOOST_CHECK(!chainman.m_failed_blocks.contains(tip));
+        chainstate.ResetBlockFailureFlags(active_tip);
+        BOOST_REQUIRE_EQUAL(root->nStatus & BLOCK_FAILED_MASK, BLOCK_FAILED_VALID);
+        BOOST_CHECK_EQUAL(tip->nStatus & BLOCK_FAILED_MASK, BLOCK_FAILED_CHILD);
+        BOOST_CHECK(chainman.m_failed_blocks.contains(root));
+        BOOST_CHECK(!chainman.m_failed_blocks.contains(tip));
+        BOOST_CHECK_EQUAL(root->pprev->nStatus & BLOCK_FAILED_MASK, 0);
+        chainman.RecalculateBestHeader();
+    }
+    BOOST_REQUIRE(chainstate.ActivateBestChain(state));
+    BOOST_CHECK(WITH_LOCK(cs_main, return chainstate.m_chain.Tip()) == active_tip);
+    {
+        LOCK(cs_main);
+        const auto root_status = root->nStatus;
+        chainstate.ResetBlockFailureFlags(active_tip);
+        BOOST_CHECK_EQUAL(root->nStatus, root_status);
+        BOOST_REQUIRE(chainman.m_blockman.WriteBlockIndexDB());
+        CDiskBlockIndex disk_index;
+        BOOST_REQUIRE(chainman.m_blockman.m_block_tree_db->Read(std::make_pair(uint8_t{'b'}, root->GetBlockHash()), disk_index));
+        BOOST_CHECK_EQUAL(disk_index.nStatus, root_status);
+        chainstate.ResetBlockFailureFlags(tip);
+        BOOST_CHECK_EQUAL(root->nStatus & BLOCK_FAILED_MASK, 0);
+        BOOST_CHECK_EQUAL(tip->nStatus & BLOCK_FAILED_MASK, 0);
+        BOOST_CHECK(!chainman.m_failed_blocks.contains(root));
+        chainman.RecalculateBestHeader();
+    }
+    BOOST_REQUIRE(chainstate.ActivateBestChain(state));
+    BOOST_CHECK(WITH_LOCK(cs_main, return chainstate.m_chain.Tip()) == tip);
+}
+
 BOOST_FIXTURE_TEST_CASE(reconsider_parked_header, FailureFlagsTestingSetup)
 {
     auto& chainman = *m_node.chainman;
@@ -411,6 +454,39 @@ BOOST_FIXTURE_TEST_CASE(reconsider_parked_header, FailureFlagsTestingSetup)
         BOOST_CHECK_EQUAL(root->nStatus & BLOCK_PARKED_MASK, 0);
         BOOST_CHECK_EQUAL(tip->nStatus & BLOCK_PARKED_MASK, 0);
     }
+}
+
+BOOST_FIXTURE_TEST_CASE(reconsider_preserves_parked_sibling, FailureFlagsTestingSetup)
+{
+    auto& chainman = *m_node.chainman;
+    auto& chainstate = chainman.ActiveChainstate();
+    auto [root, tip] = AcceptFork();
+    auto* active_tip = WITH_LOCK(cs_main, return chainstate.m_chain.Tip());
+    BlockValidationState state;
+    BOOST_REQUIRE(chainstate.ParkBlock(state, root));
+    BOOST_REQUIRE(chainstate.InvalidateBlock(state, root->pprev));
+    {
+        LOCK(cs_main);
+        chainstate.ResetBlockFailureFlags(active_tip);
+        BOOST_CHECK_EQUAL(root->nStatus & (BLOCK_FAILED_MASK | BLOCK_PARKED_MASK), BLOCK_FAILED_VALID | BLOCK_PARKED);
+        BOOST_CHECK_EQUAL(tip->nStatus & (BLOCK_FAILED_MASK | BLOCK_PARKED_MASK), BLOCK_FAILED_CHILD | BLOCK_PARKED_CHILD);
+        chainstate.UnparkBlock(tip);
+        BOOST_CHECK_EQUAL(root->nStatus & BLOCK_FAILED_MASK, BLOCK_FAILED_VALID);
+        BOOST_CHECK_EQUAL(tip->nStatus & BLOCK_FAILED_MASK, BLOCK_FAILED_CHILD);
+        BOOST_CHECK_EQUAL(root->nStatus & BLOCK_PARKED_MASK, 0);
+        BOOST_CHECK_EQUAL(tip->nStatus & BLOCK_PARKED_MASK, 0);
+        chainman.RecalculateBestHeader();
+    }
+    BOOST_REQUIRE(chainstate.ActivateBestChain(state));
+    BOOST_CHECK(WITH_LOCK(cs_main, return chainstate.m_chain.Tip()) == active_tip);
+    {
+        LOCK(cs_main);
+        chainstate.ResetBlockFailureFlags(tip);
+        BOOST_CHECK(!chainman.m_failed_blocks.contains(root));
+        chainman.RecalculateBestHeader();
+    }
+    BOOST_REQUIRE(chainstate.ActivateBestChain(state));
+    BOOST_CHECK(WITH_LOCK(cs_main, return chainstate.m_chain.Tip()) == tip);
 }
 
 BOOST_AUTO_TEST_SUITE_END()
