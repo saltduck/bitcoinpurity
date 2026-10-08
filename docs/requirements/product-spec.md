@@ -1,5 +1,16 @@
 # Bitcoin Purity Product Specification
 
+## Wallet transaction removal
+
+Backport Bitcoin Core PR #34358 as a standalone correctness fix. Removing a
+transaction preserves input spend records belonging to surviving conflicts,
+including multi-input replacements. In-memory cleanup remains exclusively in
+the successful database-commit callback. Existing uint256 interfaces, wallet
+formats, RPC errors, locks, notifications, consensus and mempool policy remain
+unchanged. Normal upgrades require no migration, rescan or reindex. Previously
+inconsistent runtime state is not automatically repaired. See
+[wallet transaction removal](../architecture/wallet-transaction-removal.md).
+
 ## Embedded solo mining
 
 Bitcoin Purity includes an optional embedded DATUM Gateway Stage 1 subsystem

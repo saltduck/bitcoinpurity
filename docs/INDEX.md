@@ -5,6 +5,8 @@
 - [Embedded DATUM RPC and configuration contract](api/datum.md)
 - [Migration report](migration-report.md)
 - [Task index](tasks/README.md)
+- [Wallet transaction-removal architecture](architecture/wallet-transaction-removal.md)
+- [Wallet transaction-removal RPC contract](api/wallet-transaction-removal.md)
 
 
 - [Purity peer discovery architecture](architecture/purity-peer-discovery.md)

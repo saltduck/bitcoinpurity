@@ -1,5 +1,16 @@
 # Embedded DATUM Solo Mining
 
+## Standalone wallet transaction-removal correction
+
+Backport only Bitcoin Core PR #34358's functional fix and regression scenario.
+Removing a wallet transaction must erase only its own input spend associations,
+preserving surviving conflicting transactions, including multiple inputs.
+Keep the existing uint256 interfaces, TxSpends container, wallet locks and
+database-commit callback. Preserve wallet formats, RPC behavior, consensus and
+mempool policy; no migration, rescan or reindex is required. Test replacement,
+confirmation, reload, non-conflicting removal and failed deletion. Existing
+inconsistent runtime state is not automatically repaired.
+
 ## Goal
 
 Embed the solo-mining and Stratum V1 functionality of DATUM Gateway in

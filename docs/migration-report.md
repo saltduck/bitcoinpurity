@@ -190,3 +190,26 @@ rebuild an existing chainstate. No production data rebuild or deployment was
 performed. The reported candidate scan through 967297 is not a complete
 historical consensus-validation result. See `doc/purity-consensus.md` for the
 isolated archival validation procedure.
+
+## Wallet transaction-removal backport (Core #34358)
+
+The merged upstream diff at `cd1af852fa5d919d8a6dc0a67cb10f0a5652fb77`
+changes only transaction-spend removal and its functional regression. Purity
+uses uint256 transaction identifiers and lacks upstream's m_txos bookkeeping;
+retain both properties. Its send RPC accepts explicit inputs in options, and
+its test framework lacks assert_not_equal; adapt the test to those interfaces.
+Do not import the Core 30.x backport #34283 or alter replacement policy.
+
+No wallet or chain database format changes, wallet migration, rescan, reindex
+or reindex-chainstate are needed. Rebuild and restart the node to run the new
+code. The patch prevents new corruption of input spend mappings during
+removal; it does not repair every previously inconsistent wallet state.
+Unload/load reconstructs spend mappings from remaining stored transactions,
+but this is not a guarantee of repairing unrelated or persistent corruption.
+
+During isolated testing, explicit abort after a successful RemoveTxs call
+exposed an existing empty on_abort listener: WalletBatch::TxnAbort invokes it
+and throws std::bad_function_call. This backport leaves that unrelated behavior
+unchanged. The regression checks commit deferral and abort after partial
+deletion failure, before listener registration; database commit/erase failure
+injection and a clean abort after listener registration are not covered.
