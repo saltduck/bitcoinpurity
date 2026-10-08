@@ -192,6 +192,8 @@ class WalletTaprootTest(BitcoinTestFramework):
 
     def set_test_params(self):
         self.num_nodes = 2
+        # Signing scripts with 999 public keys is slow in sanitizer builds.
+        self.rpc_timeout = 180
         self.setup_clean_chain = True
         self.extra_args = [['-keypool=100'], ['-keypool=100']]
         for ea in self.extra_args:
