@@ -13,6 +13,7 @@ from io import BytesIO
 from pathlib import Path
 import struct
 
+from test_framework.blocktools import create_block, create_coinbase
 from test_framework.messages import CBlock, CBlockHeader, MAGIC_BYTES, msg_block, msg_headers
 from test_framework.p2p import P2PInterface
 from test_framework.test_framework import BitcoinTestFramework
@@ -25,8 +26,8 @@ class ParkDeepReorgTest(BitcoinTestFramework):
         self.num_nodes = 2
         self.setup_clean_chain = True
         self.extra_args = [
-            ["-parkdeepreorg=1", "-parkreorgdepth=6"],
-            ["-parkdeepreorg=0"],
+            ["-parkdeepreorg=1", "-parkreorgdepth=6", "-checkblockindex=1"],
+            ["-parkdeepreorg=0", "-checkblockindex=1"],
         ]
 
     def setup_network(self):
@@ -116,7 +117,7 @@ class ParkDeepReorgTest(BitcoinTestFramework):
 
     def test_headers_first_missing_ancestor_last(self):
         self.log.info("Headers first, missing ancestor last: park independently of pblock")
-        self.restart_node(0, extra_args=["-parkdeepreorg=1", "-parkreorgdepth=6"])
+        self.restart_node(0, extra_args=["-parkdeepreorg=1", "-parkreorgdepth=6", "-checkblockindex=1"])
         self.connect_nodes(0, 1)
         self.sync_all()
         fork_hash, short_height, long_height = self._build_fork(0, 1, rewind=7)
@@ -160,13 +161,27 @@ class ParkDeepReorgTest(BitcoinTestFramework):
         competing_tip = self.nodes[1].getbestblockhash()
         self._connect_expect_parked(0, 1, short_height, competing_tip)
         self.disconnect_nodes(0, 1)
+        header_block = create_block(int(competing_tip, 16), create_coinbase(self.nodes[1].getblockcount() + 1), self.nodes[1].getblockheader(competing_tip)["time"] + 1, version=4)
+        header_block.solve()
+        self.nodes[0].submitheader(header_block.serialize().hex())
+        self.nodes[0].invalidateblock(competing_tip)
+        self.nodes[0].invalidateblock(fork_hash)
+        self.nodes[0].invalidateblock(competing_tip)
+        self.restart_node(0, extra_args=["-parkdeepreorg=1", "-parkreorgdepth=6", "-checkblockindex=1"])
+        tip = next(t for t in self.nodes[0].getchaintips() if t["hash"] == header_block.hash)
+        assert_equal(tip["status"], "invalid")
+        assert_equal(tip["parked"], True)
+        assert_equal(self.nodes[0].getbestblockhash(), original_tip)
         for extra_args in ([], ["-reindex-chainstate"]):
-            self.restart_node(0, extra_args=["-parkdeepreorg=1", "-parkreorgdepth=6", *extra_args])
+            self.restart_node(0, extra_args=["-parkdeepreorg=1", "-parkreorgdepth=6", "-checkblockindex=1", *extra_args])
             # reconsiderblock calls ABC(nullptr); clearing invalidity must not
             # clear the independent persisted parking decision.
-            self.nodes[0].reconsiderblock(fork_hash)
+            self.nodes[0].reconsiderblock(header_block.hash)
+            self.nodes[0].reconsiderblock(header_block.hash)
             assert_equal(self.nodes[0].getbestblockhash(), original_tip)
-            assert_equal(next(t for t in self.nodes[0].getchaintips() if t["hash"] == competing_tip)["parked"], True)
+            tip = next(t for t in self.nodes[0].getchaintips() if t["hash"] == header_block.hash)
+            assert_equal(tip["parked"], True)
+            assert tip["status"] != "invalid"
         self.nodes[0].unparkblock(fork_hash)
         assert_equal(self.nodes[0].getbestblockhash(), competing_tip)
         assert_equal(next(t for t in self.nodes[0].getchaintips() if t["status"] == "active")["parked"], False)
