@@ -19,7 +19,8 @@ from test_framework.util import (
 class InvalidateTest(BitcoinTestFramework):
     def set_test_params(self):
         self.setup_clean_chain = True
-        self.num_nodes = 3
+        self.num_nodes = 4
+        self.extra_args = [["-checkblockindex=1"] for _ in range(3)] + [["-checkblockindex=1", "-prune=1", "-fastprune"]]
 
     def setup_network(self):
         self.setup_nodes()
@@ -85,6 +86,17 @@ class InvalidateTest(BitcoinTestFramework):
         self.wait_until(lambda: self.nodes[0].getblockcount() == 4, timeout=5)
         self.wait_until(lambda: self.nodes[1].getblockcount() == 4, timeout=5)
 
+        self.log.info("Verify that reconsidering a header restores eligible ancestors")
+        self.nodes[0].invalidateblock(self.nodes[0].getblockhash(1))
+        self.nodes[0].reconsiderblock(tip)
+        blockhash_3 = self.nodes[0].getblockhash(3)
+        blockhash_4 = self.nodes[0].getblockhash(4)
+        blockhash_6 = self.nodes[0].getblockhash(6)
+        assert_equal(self.nodes[0].getbestblockhash(), blockhash_6)
+        self.nodes[0].invalidateblock(blockhash_4)
+        assert_equal(self.nodes[0].getbestblockhash(), blockhash_3)
+        assert_equal(self.nodes[0].getblockchaininfo()["headers"], 3)
+
         self.log.info("Verify that we reconsider all ancestors as well")
         blocks = self.generatetodescriptor(self.nodes[1], 10, ADDRESS_BCRT1_UNSPENDABLE_DESCRIPTOR, sync_fun=self.no_op)
         assert_equal(self.nodes[1].getbestblockhash(), blocks[-1])
@@ -111,9 +123,43 @@ class InvalidateTest(BitcoinTestFramework):
         # Should report consistent blockchain info
         assert_equal(self.nodes[1].getblockchaininfo()["headers"], self.nodes[1].getblockchaininfo()["blocks"])
 
+        self.nodes[0].reconsiderblock(block.hash)
+        assert_equal(self.nodes[0].getbestblockhash(), blockhash_6)
+        assert_equal(self.nodes[0].getblockchaininfo()["blocks"], 6)
+        assert_equal(self.nodes[0].getblockchaininfo()["headers"], 7)
+        chain_info = self.nodes[0].getblockchaininfo()
+        chain_tips = self.nodes[0].getchaintips()
+        for _ in range(3):
+            self.nodes[0].reconsiderblock(block.hash)
+            assert_equal(self.nodes[0].getblockchaininfo(), chain_info)
+            assert_equal(self.nodes[0].getchaintips(), chain_tips)
+        self.disconnect_nodes(0, 1)
+        self.restart_node(0)
+        assert_equal(self.nodes[0].getbestblockhash(), blockhash_6)
+        assert_equal(self.nodes[0].getblockchaininfo()["headers"], 7)
+
         self.log.info("Verify that invalidating an unknown block throws an error")
         assert_raises_rpc_error(-5, "Block not found", self.nodes[1].invalidateblock, "00" * 32)
         assert_equal(self.nodes[1].getbestblockhash(), blocks[-1])
+
+        self.log.info("Reconsidering a pruned higher-work branch must not activate it")
+        node = self.nodes[3]
+        old_blocks = self.generate(node, 600, sync_fun=self.no_op)
+        header_block = create_block(int(old_blocks[-1], 16), create_coinbase(601), node.getblockheader(old_blocks[-1])["time"] + 1, version=4)
+        header_block.solve()
+        node.submitheader(header_block.serialize().hex())
+        node.invalidateblock(old_blocks[0])
+        self.generatetodescriptor(node, 550, ADDRESS_BCRT1_UNSPENDABLE_DESCRIPTOR, sync_fun=self.no_op)
+        active_tip = node.getbestblockhash()
+        node.pruneblockchain(260)
+        assert_raises_rpc_error(-1, "Block not available (pruned data)", node.getblock, old_blocks[99])
+        node.getblock(old_blocks[-1])
+        node.reconsiderblock(header_block.hash)
+        assert_equal(node.getbestblockhash(), active_tip)
+        assert_equal(node.getblockchaininfo()["headers"], 601)
+        self.restart_node(3)
+        assert_equal(node.getbestblockhash(), active_tip)
+        assert_raises_rpc_error(-1, "Block not available (pruned data)", node.getblock, old_blocks[99])
 
 
 if __name__ == '__main__':

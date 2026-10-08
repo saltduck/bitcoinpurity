@@ -319,4 +319,98 @@ BOOST_FIXTURE_TEST_CASE(invalidate_with_parked_ancestor, FailureFlagsTestingSetu
     }
 }
 
+BOOST_FIXTURE_TEST_CASE(reconsider_header_restores_ancestors, TestChain100Setup)
+{
+    auto& chainman = *m_node.chainman;
+    auto& chainstate = chainman.ActiveChainstate();
+    auto& blockman = chainman.m_blockman;
+    auto* tip = WITH_LOCK(cs_main, return chainstate.m_chain.Tip());
+    const CBlockHeader header = CreateBlock({}, CScript() << OP_TRUE, chainstate);
+    BlockValidationState state;
+    BOOST_REQUIRE(chainman.ProcessNewBlockHeaders({&header, 1}, true, state));
+    auto* header_index = WITH_LOCK(cs_main, return blockman.LookupBlockIndex(header.GetHash()));
+    auto* target = tip->GetAncestor(90);
+    BOOST_REQUIRE(chainstate.InvalidateBlock(state, target));
+    {
+        LOCK(cs_main);
+        BOOST_REQUIRE(!chainstate.setBlockIndexCandidates.contains(tip));
+        BOOST_REQUIRE(blockman.WriteBlockIndexDB());
+        chainstate.ResetBlockFailureFlags(header_index);
+        BOOST_CHECK(chainstate.setBlockIndexCandidates.contains(tip));
+        BOOST_CHECK(!chainstate.setBlockIndexCandidates.contains(header_index));
+        BOOST_REQUIRE(blockman.WriteBlockIndexDB());
+        for (auto* block = header_index; block != target->pprev; block = block->pprev) {
+            BOOST_CHECK_EQUAL(block->nStatus & BLOCK_FAILED_MASK, 0);
+            BOOST_CHECK(!chainman.m_failed_blocks.contains(block));
+            CDiskBlockIndex disk_index;
+            BOOST_REQUIRE(blockman.m_block_tree_db->Read(std::make_pair(uint8_t{'b'}, block->GetBlockHash()), disk_index));
+            BOOST_CHECK_EQUAL(disk_index.nStatus, block->nStatus);
+        }
+        chainman.RecalculateBestHeader();
+    }
+    BOOST_REQUIRE(chainstate.ActivateBestChain(state));
+    BOOST_CHECK(WITH_LOCK(cs_main, return chainstate.m_chain.Tip()) == tip);
+    {
+        LOCK(cs_main);
+        const auto candidates = chainstate.setBlockIndexCandidates;
+        chainstate.ResetBlockFailureFlags(header_index);
+        chainstate.ResetBlockFailureFlags(header_index);
+        BOOST_CHECK(chainstate.setBlockIndexCandidates == candidates);
+        BOOST_CHECK_EQUAL(header_index->nStatus, BLOCK_VALID_TREE);
+    }
+}
+
+BOOST_FIXTURE_TEST_CASE(reconsider_parked_header, FailureFlagsTestingSetup)
+{
+    auto& chainman = *m_node.chainman;
+    auto& chainstate = chainman.ActiveChainstate();
+    auto [root, tip] = AcceptFork();
+    auto* active_tip = WITH_LOCK(cs_main, return chainstate.m_chain.Tip());
+    CBlockHeader header = CreateBlock({}, CScript() << OP_TRUE, chainstate);
+    header.hashPrevBlock = tip->GetBlockHash();
+    header.nTime = tip->GetBlockTime() + 1;
+    header.nNonce = 0;
+    while (!CheckProofOfWork(header.GetHash(), header.nBits, chainman.GetConsensus())) ++header.nNonce;
+    BlockValidationState state;
+    BOOST_REQUIRE(chainman.ProcessNewBlockHeaders({&header, 1}, true, state));
+    auto* header_index = WITH_LOCK(cs_main, return chainman.m_blockman.LookupBlockIndex(header.GetHash()));
+    BOOST_REQUIRE(chainstate.ParkBlock(state, root));
+    BOOST_REQUIRE(chainstate.InvalidateBlock(state, root));
+    {
+        LOCK(cs_main);
+        BOOST_REQUIRE(chainman.m_failed_blocks.contains(root));
+        BOOST_REQUIRE_EQUAL(root->nStatus & (BLOCK_FAILED_MASK | BLOCK_PARKED_MASK), BLOCK_FAILED_VALID | BLOCK_PARKED);
+        chainstate.UnparkBlock(root);
+        BOOST_CHECK_EQUAL(root->nStatus & BLOCK_FAILED_MASK, BLOCK_FAILED_VALID);
+        BOOST_CHECK_EQUAL(tip->nStatus & BLOCK_FAILED_MASK, BLOCK_FAILED_CHILD);
+        BOOST_CHECK(chainman.m_failed_blocks.contains(root));
+    }
+    BOOST_REQUIRE(chainstate.ActivateBestChain(state));
+    BOOST_CHECK(WITH_LOCK(cs_main, return chainstate.m_chain.Tip()) == active_tip);
+    BOOST_REQUIRE(chainstate.ParkBlock(state, root));
+    {
+        LOCK(cs_main);
+        BOOST_REQUIRE_EQUAL(tip->nStatus & BLOCK_PARKED_MASK, 0);
+        chainstate.ResetBlockFailureFlags(header_index);
+        BOOST_CHECK(!chainman.m_failed_blocks.contains(root));
+        BOOST_CHECK_EQUAL(root->nStatus & BLOCK_PARKED_MASK, BLOCK_PARKED);
+        BOOST_CHECK_EQUAL(tip->nStatus & BLOCK_PARKED_MASK, BLOCK_PARKED_CHILD);
+        for (auto* block = header_index; block != root->pprev; block = block->pprev) {
+            BOOST_CHECK_EQUAL(block->nStatus & BLOCK_FAILED_MASK, 0);
+            BOOST_CHECK(!chainstate.setBlockIndexCandidates.contains(block));
+        }
+    }
+    BOOST_REQUIRE(chainstate.ActivateBestChain(state));
+    BOOST_CHECK(WITH_LOCK(cs_main, return chainstate.m_chain.Tip()) == active_tip);
+    WITH_LOCK(cs_main, chainstate.UnparkBlock(header_index));
+    BOOST_CHECK(WITH_LOCK(cs_main, return chainstate.setBlockIndexCandidates.contains(tip)));
+    BOOST_REQUIRE(chainstate.ActivateBestChain(state));
+    {
+        LOCK(cs_main);
+        BOOST_CHECK(chainstate.m_chain.Tip() == tip);
+        BOOST_CHECK_EQUAL(root->nStatus & BLOCK_PARKED_MASK, 0);
+        BOOST_CHECK_EQUAL(tip->nStatus & BLOCK_PARKED_MASK, 0);
+    }
+}
+
 BOOST_AUTO_TEST_SUITE_END()
