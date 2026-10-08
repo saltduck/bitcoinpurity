@@ -60,15 +60,24 @@ FUZZ_TARGET(coins_view, .init = initialize_coins_view)
                 if (random_coin.IsSpent()) {
                     return;
                 }
+                COutPoint outpoint{random_out_point};
                 Coin coin = random_coin;
+                if (fuzzed_data_provider.ConsumeBool()) {
+                    coins_view_cache.EmplaceCoinInternalDANGER(std::move(outpoint), std::move(coin));
+                    return;
+                }
                 bool expected_code_path = false;
                 const bool possible_overwrite = fuzzed_data_provider.ConsumeBool();
+                const Coin original{coins_view_cache.AccessCoin(outpoint)};
+                const auto memory{coins_view_cache.DynamicMemoryUsage()};
                 try {
-                    coins_view_cache.AddCoin(random_out_point, std::move(coin), possible_overwrite);
+                    coins_view_cache.AddCoin(outpoint, std::move(coin), possible_overwrite);
                     expected_code_path = true;
                 } catch (const std::logic_error& e) {
                     if (e.what() == std::string{"Attempted to overwrite an unspent coin (when possible_overwrite is false)"}) {
                         assert(!possible_overwrite);
+                        assert(coins_view_cache.AccessCoin(outpoint) == original);
+                        assert(coins_view_cache.DynamicMemoryUsage() == memory);
                         expected_code_path = true;
                     }
                 }
@@ -141,10 +150,10 @@ FUZZ_TARGET(coins_view, .init = initialize_coins_view)
                         }
                         coins_cache_entry.coin = *opt_coin;
                     }
-                    auto it{coins_map.emplace(random_out_point, std::move(coins_cache_entry)).first};
+                    auto [it, inserted]{coins_map.emplace(random_out_point, std::move(coins_cache_entry))};
                     if (dirty) CCoinsCacheEntry::SetDirty(*it, sentinel);
                     if (fresh) CCoinsCacheEntry::SetFresh(*it, sentinel);
-                    usage += it->second.coin.DynamicMemoryUsage();
+                    if (inserted) usage += it->second.coin.DynamicMemoryUsage();
                 }
                 bool expected_code_path = false;
                 try {
@@ -158,6 +167,7 @@ FUZZ_TARGET(coins_view, .init = initialize_coins_view)
                 }
                 assert(expected_code_path);
             });
+        coins_view_cache.SanityCheck();
     }
 
     {
@@ -289,4 +299,5 @@ FUZZ_TARGET(coins_view, .init = initialize_coins_view)
                 (void)IsWitnessStandard(CTransaction{random_mutable_transaction}, coins_view_cache, "bad-witness-", reason);
             });
     }
+    coins_view_cache.SanityCheck();
 }
