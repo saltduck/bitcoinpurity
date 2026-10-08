@@ -153,7 +153,7 @@ class DatumTest(BitcoinTestFramework):
         try:
             extra = client.socket.recv(1)
             assert_equal(extra, b"")
-        except TimeoutError:
+        except socket.timeout:
             pass
         client.socket.settimeout(3)
         client.send(2, "mining.submit", ["miner.worker", "badjob", "0000000000000000", "00000000", "00000000"])
@@ -250,7 +250,7 @@ class DatumTest(BitcoinTestFramework):
     def _is_closed(sock):
         try:
             return sock.recv(1) == b""
-        except TimeoutError:
+        except socket.timeout:
             return False
         except ConnectionResetError:
             return True

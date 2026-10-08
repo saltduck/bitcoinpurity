@@ -54,7 +54,10 @@ class ParkDeepReorgTest(BitcoinTestFramework):
         original_tip = self.nodes[short_idx].getbestblockhash()
         with self.nodes[short_idx].assert_debug_log(["Parking block"], timeout=10):
             self.connect_nodes(short_idx, long_idx)
-        self.wait_until(lambda: any(t["hash"] == competing_tip for t in self.nodes[short_idx].getchaintips()), timeout=10)
+        # Headers expose the tip before all bodies arrive. Wait for the full
+        # branch so a later body cannot park it again after unparkblock.
+        self.wait_until(lambda: any(t["hash"] == competing_tip and t["status"] == "valid-headers"
+                                   for t in self.nodes[short_idx].getchaintips()), timeout=10)
         assert_equal(self.nodes[short_idx].getblockcount(), expected_height)
         assert_equal(self.nodes[short_idx].getbestblockhash(), original_tip)
         assert_equal(next(t for t in self.nodes[short_idx].getchaintips() if t["hash"] == competing_tip)["parked"], True)

@@ -24,3 +24,5 @@
 - [TASK-017: Activate mainnet RDTS grandfather correction at 961637](TASK-017.md)
 
 - [TASK-018: CoinStatsIndex cumulative overflow backport](TASK-018.md)
+
+- [TASK-019: Standalone Core #34358 wallet removal fix](TASK-019.md)

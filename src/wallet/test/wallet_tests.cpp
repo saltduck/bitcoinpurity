@@ -987,6 +987,60 @@ BOOST_FIXTURE_TEST_CASE(RemoveTxs, TestChain100Setup)
     TestUnloadWallet(std::move(wallet));
 }
 
+BOOST_FIXTURE_TEST_CASE(RemoveTxs_conflicting, TestingSetup)
+{
+    m_args.ForceSetArg("-unsafesqlitesync", "1");
+    WalletContext context;
+    context.args = &m_args;
+    context.chain = m_node.chain.get();
+    auto wallet = TestLoadWallet(context);
+
+    {
+        LOCK(wallet->cs_wallet);
+        CMutableTransaction tx;
+        tx.vin.emplace_back(Txid::FromUint256(m_rng.rand256()), 0);
+        tx.vin.emplace_back(Txid::FromUint256(m_rng.rand256()), 1);
+        tx.vout.emplace_back(COIN, CScript() << OP_TRUE);
+        std::vector<uint256> txids;
+        for (int i = 0; i < 3; ++i) {
+            tx.vout[0].nValue -= 1;
+            txids.push_back(wallet->AddToWallet(MakeTransactionRef(tx), TxStateInMempool{})->GetHash());
+        }
+        std::vector<uint256> to_remove{txids[0]};
+        WalletBatch batch(wallet->GetDatabase());
+        BOOST_CHECK(!wallet->RemoveTxs(batch, to_remove));
+
+        // Abort after a valid deletion followed by a missing transaction.
+        to_remove.push_back(m_rng.rand256());
+        BOOST_REQUIRE(batch.TxnBegin());
+        BOOST_CHECK(!wallet->RemoveTxs(batch, to_remove));
+        BOOST_REQUIRE(batch.TxnAbort());
+        BOOST_CHECK_EQUAL(wallet->mapWallet.size(), 3U);
+        BOOST_CHECK_EQUAL(wallet->GetConflicts(txids[0]).size(), 3U);
+        for (const auto& input : tx.vin) {
+            BOOST_CHECK(wallet->IsSpent(input.prevout));
+        }
+
+        for (size_t i = 0; i < txids.size(); ++i) {
+            to_remove = {txids[i]};
+            BOOST_REQUIRE(batch.TxnBegin());
+            BOOST_REQUIRE(wallet->RemoveTxs(batch, to_remove));
+            BOOST_CHECK_EQUAL(wallet->mapWallet.count(txids[i]), 1U);
+            for (const auto& input : tx.vin) {
+                BOOST_CHECK(wallet->IsSpent(input.prevout));
+            }
+            BOOST_REQUIRE(batch.TxnCommit());
+            BOOST_CHECK_EQUAL(wallet->mapWallet.count(txids[i]), 0U);
+            BOOST_CHECK_EQUAL(wallet->GetConflicts(txids.back()).size(), i == 0 ? 2U : 0U);
+            BOOST_CHECK_EQUAL(wallet->GetConflicts(txids.back()).count(txids[i]), 0U);
+            for (const auto& input : tx.vin) {
+                BOOST_CHECK_EQUAL(wallet->IsSpent(input.prevout), i + 1 < txids.size());
+            }
+        }
+    }
+    TestUnloadWallet(std::move(wallet));
+}
+
 /**
  * Checks a wallet invalid state where the inputs (prev-txs) of a new arriving transaction are not marked dirty,
  * while the transaction that spends them exist inside the in-memory wallet tx map (not stored on db due a db write failure).

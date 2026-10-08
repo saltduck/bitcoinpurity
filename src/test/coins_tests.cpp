@@ -1099,4 +1099,159 @@ BOOST_AUTO_TEST_CASE(coins_resource_is_used)
     PoolResourceTester::CheckAllDataAccountedFor(resource);
 }
 
+BOOST_AUTO_TEST_CASE(ccoins_addcoin_exception_keeps_usage_balanced)
+{
+    CCoinsView root;
+    CCoinsViewCacheTest cache{&root};
+    const COutPoint outpoint{Txid::FromUint256(m_rng.rand256()), 0};
+    const Coin coin1{CTxOut{10, CScript{} << m_rng.randbytes(CScriptBase::STATIC_SIZE + 1)}, 1, false};
+    const Coin coin2{CTxOut{20, CScript{} << m_rng.randbytes(CScriptBase::STATIC_SIZE + 65)}, 2, false};
+    BOOST_REQUIRE_GT(coin1.DynamicMemoryUsage(), 0U);
+    cache.AddCoin(outpoint, Coin{coin1}, /*possible_overwrite=*/false);
+    cache.SelfTest();
+    const auto usage{cache.usage()};
+    const auto memory{cache.DynamicMemoryUsage()};
+
+    BOOST_CHECK_THROW(cache.AddCoin(outpoint, Coin{coin2}, /*possible_overwrite=*/false), std::logic_error);
+    BOOST_CHECK(cache.AccessCoin(outpoint) == coin1);
+    BOOST_CHECK_EQUAL(cache.GetCacheSize(), 1U);
+    BOOST_CHECK(cache.map().at(outpoint).IsFresh());
+    BOOST_CHECK(cache.map().at(outpoint).IsDirty());
+    BOOST_CHECK_EQUAL(cache.usage(), usage);
+    BOOST_CHECK_EQUAL(cache.DynamicMemoryUsage(), memory);
+    cache.SelfTest();
+
+    cache.AddCoin(outpoint, Coin{coin2}, /*possible_overwrite=*/true);
+    BOOST_CHECK(cache.AccessCoin(outpoint) == coin2);
+    BOOST_CHECK_EQUAL(cache.usage(), coin2.DynamicMemoryUsage());
+    cache.SelfTest();
+    BOOST_CHECK(cache.SpendCoin(outpoint));
+    BOOST_CHECK_EQUAL(cache.usage(), 0U);
+    cache.SelfTest();
+}
+
+BOOST_AUTO_TEST_CASE(ccoins_emplace_duplicate_keeps_usage_balanced)
+{
+    CCoinsView root;
+    CCoinsViewCacheTest cache{&root};
+    const COutPoint outpoint{Txid::FromUint256(m_rng.rand256()), 0};
+    const Coin coin1{CTxOut{10, CScript{} << m_rng.randbytes(CScriptBase::STATIC_SIZE + 1)}, 1, false};
+    const Coin coin2{CTxOut{20, CScript{} << m_rng.randbytes(CScriptBase::STATIC_SIZE + 65)}, 2, false};
+    BOOST_REQUIRE_GT(coin1.DynamicMemoryUsage(), 0U);
+    BOOST_REQUIRE_NE(coin1.DynamicMemoryUsage(), coin2.DynamicMemoryUsage());
+    cache.EmplaceCoinInternalDANGER(COutPoint{outpoint}, Coin{coin1});
+    cache.SelfTest();
+    const auto memory{cache.DynamicMemoryUsage()};
+
+    cache.EmplaceCoinInternalDANGER(COutPoint{outpoint}, Coin{coin2});
+    BOOST_CHECK(cache.AccessCoin(outpoint) == coin1);
+    BOOST_CHECK_EQUAL(cache.GetCacheSize(), 1U);
+    BOOST_CHECK_EQUAL(cache.usage(), coin1.DynamicMemoryUsage());
+    BOOST_CHECK_EQUAL(cache.DynamicMemoryUsage(), memory);
+    BOOST_CHECK(cache.map().at(outpoint).IsDirty());
+    BOOST_CHECK(!cache.map().at(outpoint).IsFresh());
+    cache.SelfTest();
+}
+
+BOOST_AUTO_TEST_CASE(ccoins_flush_success_resets_usage)
+{
+    CCoinsView root;
+    CCoinsViewCacheTest parent{&root};
+    CCoinsViewCacheTest cache{&parent};
+    const COutPoint outpoint{Txid::FromUint256(m_rng.rand256()), 0};
+    const COutPoint other{outpoint.hash, 1};
+    const Coin coin{CTxOut{10, CScript{} << m_rng.randbytes(CScriptBase::STATIC_SIZE + 1)}, 1, false};
+    cache.AddCoin(outpoint, Coin{coin}, /*possible_overwrite=*/false);
+    BOOST_REQUIRE(cache.Sync());
+    cache.SelfTest();
+    parent.SelfTest();
+    cache.AddCoin(other, Coin{coin}, /*possible_overwrite=*/false);
+    const auto best_block{m_rng.rand256()};
+    cache.SetBestBlock(best_block);
+
+    BOOST_CHECK(cache.Flush());
+    BOOST_CHECK_EQUAL(cache.GetCacheSize(), 0U);
+    BOOST_CHECK_EQUAL(cache.usage(), 0U);
+    BOOST_CHECK(parent.AccessCoin(outpoint) == coin);
+    BOOST_CHECK(parent.AccessCoin(other) == coin);
+    BOOST_CHECK(parent.GetBestBlock() == best_block);
+    cache.SelfTest();
+    parent.SelfTest();
+}
+
+BOOST_AUTO_TEST_CASE(ccoins_flush_failure_keeps_usage)
+{
+    class FailingView : public CCoinsView {
+        bool BatchWrite(CoinsViewCacheCursor&, const uint256&) override { return false; }
+    } root;
+    CCoinsViewCacheTest cache{&root};
+    const COutPoint outpoint{Txid::FromUint256(m_rng.rand256()), 0};
+    const Coin coin{CTxOut{10, CScript{} << m_rng.randbytes(CScriptBase::STATIC_SIZE + 1)}, 1, false};
+    cache.AddCoin(outpoint, Coin{coin}, /*possible_overwrite=*/false);
+    cache.SelfTest();
+    const auto usage{cache.usage()};
+
+    // This mock fails before touching the cursor; partial writes still leave undefined state.
+    BOOST_CHECK(!cache.Flush());
+    BOOST_CHECK_EQUAL(cache.usage(), usage);
+    cache.SelfTest();
+}
+
+BOOST_AUTO_TEST_CASE(ccoins_layered_accounting_repeated_operations)
+{
+    CCoinsViewTest root{m_rng};
+    CCoinsViewCacheTest parent{&root};
+    CCoinsViewCacheTest cache{&parent};
+    const COutPoint outpoint{Txid::FromUint256(m_rng.rand256()), 0};
+
+    for (int i{0}; i < 16; ++i) {
+        const Coin coin{CTxOut{i, CScript{} << m_rng.randbytes(CScriptBase::STATIC_SIZE + 1 + i)}, i, false};
+        cache.AddCoin(outpoint, Coin{coin}, /*possible_overwrite=*/false);
+        cache.SelfTest();
+        BOOST_REQUIRE(cache.Sync());
+        cache.SelfTest();
+        parent.SelfTest();
+        BOOST_REQUIRE(parent.Flush());
+        parent.SelfTest();
+        const auto stored{root.GetCoin(outpoint)};
+        BOOST_REQUIRE(stored);
+        BOOST_CHECK(*stored == coin);
+
+        BOOST_REQUIRE(cache.SpendCoin(outpoint));
+        BOOST_CHECK_EQUAL(cache.usage(), 0U);
+        BOOST_CHECK_EQUAL(cache.GetCacheSize(), 1U);
+        cache.SelfTest();
+        cache.AddCoin(outpoint, Coin{coin}, /*possible_overwrite=*/false);
+        BOOST_CHECK(!cache.map().at(outpoint).IsFresh());
+        cache.SelfTest();
+        BOOST_REQUIRE(cache.SpendCoin(outpoint));
+        cache.SelfTest();
+        BOOST_REQUIRE(cache.Sync());
+        BOOST_CHECK_EQUAL(cache.GetCacheSize(), 0U);
+        BOOST_CHECK_EQUAL(cache.usage(), 0U);
+        cache.SelfTest();
+        parent.SelfTest();
+        BOOST_REQUIRE(parent.Flush());
+        parent.SelfTest();
+        BOOST_CHECK(root.GetCoin(outpoint).value_or(Coin{}).IsSpent());
+
+        cache.EmplaceCoinInternalDANGER(COutPoint{outpoint}, Coin{coin});
+        cache.SelfTest();
+        BOOST_REQUIRE(cache.Flush());
+        cache.SelfTest();
+        parent.SelfTest();
+        BOOST_CHECK(cache.AccessCoin(outpoint) == coin);
+        cache.SelfTest();
+        cache.Uncache(outpoint);
+        BOOST_CHECK_EQUAL(cache.GetCacheSize(), 0U);
+        BOOST_CHECK_EQUAL(cache.usage(), 0U);
+        cache.SelfTest();
+        BOOST_REQUIRE(parent.SpendCoin(outpoint));
+        parent.SelfTest();
+        BOOST_REQUIRE(parent.Sync());
+        parent.SelfTest();
+        BOOST_CHECK(root.GetCoin(outpoint).value_or(Coin{}).IsSpent());
+    }
+}
+
 BOOST_AUTO_TEST_SUITE_END()
