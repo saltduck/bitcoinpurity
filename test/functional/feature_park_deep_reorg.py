@@ -160,13 +160,23 @@ class ParkDeepReorgTest(BitcoinTestFramework):
         competing_tip = self.nodes[1].getbestblockhash()
         self._connect_expect_parked(0, 1, short_height, competing_tip)
         self.disconnect_nodes(0, 1)
+        self.nodes[0].invalidateblock(competing_tip)
+        self.nodes[0].invalidateblock(fork_hash)
+        self.nodes[0].invalidateblock(competing_tip)
+        self.restart_node(0, extra_args=["-parkdeepreorg=1", "-parkreorgdepth=6"])
+        tip = next(t for t in self.nodes[0].getchaintips() if t["hash"] == competing_tip)
+        assert_equal(tip["status"], "invalid")
+        assert_equal(tip["parked"], True)
+        assert_equal(self.nodes[0].getbestblockhash(), original_tip)
         for extra_args in ([], ["-reindex-chainstate"]):
             self.restart_node(0, extra_args=["-parkdeepreorg=1", "-parkreorgdepth=6", *extra_args])
             # reconsiderblock calls ABC(nullptr); clearing invalidity must not
             # clear the independent persisted parking decision.
             self.nodes[0].reconsiderblock(fork_hash)
             assert_equal(self.nodes[0].getbestblockhash(), original_tip)
-            assert_equal(next(t for t in self.nodes[0].getchaintips() if t["hash"] == competing_tip)["parked"], True)
+            tip = next(t for t in self.nodes[0].getchaintips() if t["hash"] == competing_tip)
+            assert_equal(tip["parked"], True)
+            assert tip["status"] != "invalid"
         self.nodes[0].unparkblock(fork_hash)
         assert_equal(self.nodes[0].getbestblockhash(), competing_tip)
         assert_equal(next(t for t in self.nodes[0].getchaintips() if t["status"] == "active")["parked"], False)
