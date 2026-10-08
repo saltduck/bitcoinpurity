@@ -755,7 +755,7 @@ public:
     /** Set invalidity status to all descendants of a block */
     void SetBlockFailureFlags(CBlockIndex* pindex) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
 
-    /** Remove invalidity status from a block and its descendants. */
+    /** Remove invalidity status from a block, its ancestors and descendants, restoring eligible candidates. */
     void ResetBlockFailureFlags(CBlockIndex* pindex) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
 
     /** Park a block so it is not selected as most-work (local policy). */

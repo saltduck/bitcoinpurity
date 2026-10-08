@@ -1,7 +1,5 @@
 # Implementation Task Index
 
-- [TASK-018: Standalone Core #34358 wallet removal fix](TASK-018.md)
-
 - [TASK-001: Baseline provenance, minimal C source, and conditional build](TASK-001.md)
 - [TASK-002: Purity bridge, configuration, lifecycle, and refresh](TASK-002.md)
 - [TASK-003: Stratum authorization and bounded public-port security](TASK-003.md)
@@ -24,3 +22,7 @@
 - [TASK-016: Defer active-chain manual parking and align tests](TASK-016.md)
 
 - [TASK-017: Activate mainnet RDTS grandfather correction at 961637](TASK-017.md)
+
+- [TASK-018: CoinStatsIndex cumulative overflow backport](TASK-018.md)
+
+- [TASK-019: Standalone Core #34358 wallet removal fix](TASK-019.md)

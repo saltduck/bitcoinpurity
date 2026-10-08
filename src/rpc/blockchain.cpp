@@ -74,6 +74,7 @@
 
 #include <condition_variable>
 #include <iterator>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -1463,8 +1464,6 @@ static RPCHelpMan gettxoutsetinfo()
             ret.pushKV("transactions", static_cast<int64_t>(stats.nTransactions));
             ret.pushKV("disk_size", stats.nDiskSize);
         } else {
-            ret.pushKV("total_unspendable_amount", ValueFromAmount(stats.total_unspendable_amount));
-
             CCoinsStats prev_stats{};
             if (pindex->nHeight > 0) {
                 const std::optional<CCoinsStats> maybe_prev_stats = GetUTXOStats(coins_view, *blockman, hash_type, node.rpc_interruption_point, pindex->pprev, index_requested);
@@ -1474,11 +1473,25 @@ static RPCHelpMan gettxoutsetinfo()
                 prev_stats = maybe_prev_stats.value();
             }
 
+            const CAmount total_unspendable{stats.total_unspendables_genesis_block + stats.total_unspendables_bip30 +
+                                            stats.total_unspendables_scripts + stats.total_unspendables_unclaimed_rewards};
+            const CAmount prev_total_unspendable{prev_stats.total_unspendables_genesis_block + prev_stats.total_unspendables_bip30 +
+                                                 prev_stats.total_unspendables_scripts + prev_stats.total_unspendables_unclaimed_rewards};
+            ret.pushKV("total_unspendable_amount", ValueFromAmount(total_unspendable));
+
+            const arith_uint256 diff_prevout{stats.total_prevout_spent_amount - prev_stats.total_prevout_spent_amount};
+            const arith_uint256 diff_coinbase{stats.total_coinbase_amount - prev_stats.total_coinbase_amount};
+            const arith_uint256 diff_outputs{stats.total_new_outputs_ex_coinbase_amount - prev_stats.total_new_outputs_ex_coinbase_amount};
+            const arith_uint256 max_amount{uint64_t(std::numeric_limits<CAmount>::max())};
+            if (diff_prevout > max_amount || diff_coinbase > max_amount || diff_outputs > max_amount) {
+                throw JSONRPCError(RPC_INTERNAL_ERROR, "CoinStatsIndex per-block amounts exceed the RPC amount range");
+            }
+
             UniValue block_info(UniValue::VOBJ);
-            block_info.pushKV("prevout_spent", ValueFromAmount(stats.total_prevout_spent_amount - prev_stats.total_prevout_spent_amount));
-            block_info.pushKV("coinbase", ValueFromAmount(stats.total_coinbase_amount - prev_stats.total_coinbase_amount));
-            block_info.pushKV("new_outputs_ex_coinbase", ValueFromAmount(stats.total_new_outputs_ex_coinbase_amount - prev_stats.total_new_outputs_ex_coinbase_amount));
-            block_info.pushKV("unspendable", ValueFromAmount(stats.total_unspendable_amount - prev_stats.total_unspendable_amount));
+            block_info.pushKV("prevout_spent", ValueFromAmount(static_cast<CAmount>(diff_prevout.GetLow64())));
+            block_info.pushKV("coinbase", ValueFromAmount(static_cast<CAmount>(diff_coinbase.GetLow64())));
+            block_info.pushKV("new_outputs_ex_coinbase", ValueFromAmount(static_cast<CAmount>(diff_outputs.GetLow64())));
+            block_info.pushKV("unspendable", ValueFromAmount(total_unspendable - prev_total_unspendable));
 
             UniValue unspendables(UniValue::VOBJ);
             unspendables.pushKV("genesis_block", ValueFromAmount(stats.total_unspendables_genesis_block - prev_stats.total_unspendables_genesis_block));

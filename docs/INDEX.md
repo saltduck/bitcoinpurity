@@ -17,3 +17,7 @@
 - [Validation corrections and verification](../doc/validation-issues.md)
 
 - [Acceptance-time parking implementation and verification](../doc/deep-reorg-parking-review.md)
+
+- [CoinStatsIndex overflow architecture](architecture/coinstatsindex.md)
+- [CoinStatsIndex RPC and upgrade contract](api/coinstatsindex.md)
+- [CoinStatsIndex backport verification](../doc/coinstatsindex-backport.md)

@@ -191,6 +191,25 @@ performed. The reported candidate scan through 967297 is not a complete
 historical consensus-validation result. See `doc/purity-consensus.md` for the
 isolated archival validation procedure.
 
+## CoinStatsIndex #30469 selective backport
+
+- Baseline master b9a1bfddca has the Core v29.4 CoinStatsIndex implementation.
+  Core v30.0 contains #30469 and newer Index interfaces introduced by #32694.
+- Adopt upstream three arith_uint256 counters, DBVal field order/conversions,
+  derived unspendable totals, current-block-hash continuity and DB-based counter
+  restoration during MuHash rewind. Retain Purity's current undo/BIP30 and
+  CustomRewind APIs. Do not import BaseIndex changes or the unrelated fuzz cleanup.
+- Legacy/new index databases have incompatible record widths (128/192 bytes);
+  directory separation preserves legacy bytes and downgrade availability.
+  Warning text refers to pre-backport Purity, not Bitcoin Core version numbers.
+- The enabled index alone needs local reconstruction. Disabled full/pruned nodes
+  require no migration or reindex. Missing pruned history prevents a fresh index
+  rebuild; no automatic recovery/download is introduced.
+- RPC adds an explicit CAmount range rejection before GetLow64. Upstream only
+  assumed ordinary per-block values fit; no public fields are redesigned.
+- Test and implementation evidence is recorded in TASK-018 and the
+  [backport report](../doc/coinstatsindex-backport.md).
+
 ## Wallet transaction-removal backport (Core #34358)
 
 The merged upstream diff at `cd1af852fa5d919d8a6dc0a67cb10f0a5652fb77`
