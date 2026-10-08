@@ -22,3 +22,5 @@
 - [TASK-016: Defer active-chain manual parking and align tests](TASK-016.md)
 
 - [TASK-017: Activate mainnet RDTS grandfather correction at 961637](TASK-017.md)
+
+- [TASK-018: CoinStatsIndex cumulative overflow backport](TASK-018.md)
