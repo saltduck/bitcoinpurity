@@ -40,6 +40,31 @@ struct CoinStatsRecord {
 
 BOOST_AUTO_TEST_SUITE(coinstatsindex_tests)
 
+BOOST_FIXTURE_TEST_CASE(coinstatsindex_rpc_syncing, TestChain100Setup)
+{
+    auto index{std::make_unique<CoinStatsIndex>(interfaces::MakeChain(m_node), 1 << 20, true)};
+    BOOST_REQUIRE(index->Init());
+    BOOST_REQUIRE(!g_coin_stats_index);
+    g_coin_stats_index.swap(index);
+    JSONRPCRequest request;
+    request.context = &m_node;
+    request.strMethod = "gettxoutsetinfo";
+    request.params = UniValue{UniValue::VARR};
+    request.params.push_back("none");
+    if (RPCIsInWarmup(nullptr)) SetRPCWarmupFinished();
+    BOOST_CHECK_EXCEPTION(tableRPC.execute(request), UniValue, [](const UniValue& error) {
+        return error.find_value("code").getInt<int>() == -32603 &&
+               error.find_value("message").get_str() == "Unable to read UTXO set";
+    });
+    request.params.push_back(100);
+    BOOST_CHECK_EXCEPTION(tableRPC.execute(request), UniValue, [](const UniValue& error) {
+        return error.find_value("code").getInt<int>() == -32603 &&
+               error.find_value("message").get_str().starts_with("Unable to get data because coinstatsindex is still syncing.");
+    });
+    g_coin_stats_index.swap(index);
+    index->Stop();
+}
+
 BOOST_FIXTURE_TEST_CASE(coinstatsindex_initial_sync, TestChain100Setup)
 {
     CoinStatsIndex coin_stats_index{interfaces::MakeChain(m_node), 1 << 20, true};

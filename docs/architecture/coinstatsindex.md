@@ -39,4 +39,26 @@ DEFAULT_COINSTATSINDEX remains false. The unchanged init.cpp conditional is the
 only normal startup constructor gate. Directory detection/creation resides in
 the constructor, so disabled startup does not inspect legacy index data. No
 chainstate, block-index, wallet, validation or chain-selection source is altered.
-ComputeUTXOStats remains unchanged; the widened fields are index-only.
+The widened accounting fields are index-only.
+
+## UTXO statistics snapshot consistency (#34451 / #34908)
+
+The current-tip RPC leaves pindex null; only an explicit height/hash fills it.
+Index sync checks guard that pointer. Indexed per-block deltas resolve the
+parent from stats.hashBlock, preserving all wide arithmetic and range checks.
+
+ComputeUTXOStats creates a single LevelDB cursor and resolves its block index
+from the cursor's best block in one cs_main critical section. The lengthy scan
+runs after releasing that locally acquired lock. #34451 first passes this
+cursor to the existing bool helper; #34908 subsequently makes the template
+construct and return optional<CCoinsStats> and simplifies the public dispatcher.
+The public header, hashing, serialization, accumulation and disk-size estimate
+stay unchanged. Recursive callers that already hold cs_main retain their lock
+throughout the scan, as before (including background AssumeUTXO validation).
+
+The cursor owns its iterator/snapshot throughout the scan. Block index entries
+and the selected coins database retain the existing node/chainstate lifetime
+assumptions. No additional database or chainstate lifetime protection is added;
+this selective backport does not redesign AssumeUTXO chainstate replacement.
+The added acquisition uses the same cs_main -> coins DB order as existing
+flush/scan callers. No chain-selection or validation implementation changes.
