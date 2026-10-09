@@ -20,7 +20,7 @@ historical index synchronization check, and uses stats.hashBlock to find the
 indexed result's parent. Cursor acquisition and lookup of its recorded block
 are performed in one cs_main critical section, before scanning the cursor.
 
-#34908 (planned next commit) moves cursor creation, block lookup and CCoinsStats construction into
+#34908 moves cursor creation, block lookup and CCoinsStats construction into
 the internal template, which returns optional<CCoinsStats>. The public function
 dispatches the three hash modes; the RPC pindex declaration moves to its first
 use. Cursor read failures remain nullopt, interruptions propagate exceptions,
@@ -68,7 +68,7 @@ remains applicable. No deployment or remote push is part of this task.
 
 ## Validation
 
-Stage one is locally validated. Stage two is pending. Build configuration: macOS arm64, RelWithDebInfo,
+Both stages are independently built and locally validated. Build configuration: macOS arm64, RelWithDebInfo,
 wallet/SQLite, DATUM, UPnP, ZMQ and tests enabled; GUI/BDB disabled. Configure
 with HAVE_DECL_PIPE2=0 to use the existing macOS-compatible fallback. Production
 sources contain no platform workaround or scheduling delay.
@@ -96,25 +96,25 @@ existing feature_utxo_set_hash passed before production changes.
 
 | Check | #34451 stage | #34908 stage |
 | --- | --- | --- |
-| bitcoind, bitcoin-cli, test_bitcoin build | Passed | Pending |
-| coinstats_tests, coinstatsindex_tests, blockfilter_index_tests, txindex_tests, coins_tests, validation_chainstate_tests, validation_chainstatemanager_tests | 50 cases passed | Pending |
-| feature_utxostats_race | Passed | Pending |
-| rpc_blockchain --v1transport / --v2transport | Both passed | Pending |
-| feature_utxo_set_hash | Passed | Pending |
-| feature_coinstatsindex | Passed | Pending |
-| feature_coinstatsindex_purity | Passed | Pending |
-| feature_coinstatsindex_compatibility | Passed | Pending |
-| feature_index_prune | Passed | Pending |
-| feature_assumeutxo | Passed | Pending |
-| rpc_dumptxoutset | Passed | Pending |
-| git diff --check | Passed | Pending |
+| bitcoind, bitcoin-cli, test_bitcoin build | Passed | Passed |
+| coinstats_tests, coinstatsindex_tests, blockfilter_index_tests, txindex_tests, coins_tests, validation_chainstate_tests, validation_chainstatemanager_tests | 50 cases passed | 50 cases passed |
+| feature_utxostats_race | Passed | Passed |
+| rpc_blockchain --v1transport / --v2transport | Both passed | Both passed |
+| feature_utxo_set_hash | Passed | Passed |
+| feature_coinstatsindex | Passed | Passed |
+| feature_coinstatsindex_purity | Passed | Passed |
+| feature_coinstatsindex_compatibility | Passed | Passed |
+| feature_index_prune | Passed | Passed |
+| feature_assumeutxo | Passed | Passed |
+| rpc_dumptxoutset | Passed | Passed |
+| git diff --check | Passed | Passed |
 
 The first combined functional run had nine successful tests and one launch
 failure: feature_utxostats_race was added after CMake's initial configure-time
 file glob, so its build-directory link did not exist. Reconfigured/rebuilt;
 the new test then passed through test_runner. No RPC errors were ignored.
 
-Fixed UTXO commitments match before/after #34451:
+Fixed UTXO commitments match on the baseline, #34451 and #34908:
 hash_serialized_3 = d1c7fec1c0623f6793839878cbe2a531eb968b50b27edd6e2a57077a5aed6094;
 MuHash = d1725b2fe3ef43e55aa4907480aea98d406fc9e0bf8f60169e2305f1fbf5961b.
 The independent Python MuHash calculation also agrees. The full AssumeUTXO
@@ -155,3 +155,24 @@ Validation is local macOS arm64/regtest. Linux/Windows, production mainnet
 replay, an external legacy executable and a fuzz/sanitizer campaign were not
 run. No tests in the targeted group were intentionally skipped. This does not
 prove the absence of all scheduling or lifetime races beyond these two PRs.
+
+## Delivery and source audit
+
+Commit one: 777bf0a158, `kernel, rpc: backport Bitcoin Core #34451
+gettxoutsetinfo race fix`. Commit two follows directly, `kernel, rpc: backport
+Bitcoin Core #34908 coinstats refactor`; its only production changes are the
+upstream optional-returning template/dispatcher and pindex scope cleanup.
+The second commit updates this verification report and TASK-021 status.
+
+Final source audit compares the RPC amount calculation block byte-for-byte
+with the baseline and confirms the public header, index implementation/header,
+init.cpp, validation.cpp and txdb.cpp are unchanged. Both full hash helpers and
+FinalizeHash remain unchanged; each committed patch passes whitespace checks.
+No consensus change, database format change, migration or reindex requirement.
+
+A read-only remote check during validation found origin/master at
+4915d100572729f39fa10c0544808cbe1879f0af, the unrelated walletdb #34759 fix
+(#28). The task remains based on the originally supplied worktree HEAD
+789f3781a7. That newer remote change was not integrated and no remote push or
+history rewrite was performed. Integration against the newer master was not
+tested; no claim is made about that combined tree.

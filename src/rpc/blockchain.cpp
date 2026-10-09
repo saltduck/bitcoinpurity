@@ -1400,7 +1400,6 @@ static RPCHelpMan gettxoutsetinfo()
 {
     UniValue ret(UniValue::VOBJ);
 
-    const CBlockIndex* pindex{nullptr};
     const CoinStatsHashType hash_type{request.params[0].isNull() ? CoinStatsHashType::HASH_SERIALIZED : ParseHashType(request.params[0].get_str())};
     bool index_requested = request.params[2].isNull() || request.params[2].get_bool();
 
@@ -1417,6 +1416,7 @@ static RPCHelpMan gettxoutsetinfo()
         blockman = &active_chainstate.m_blockman;
     }
 
+    const CBlockIndex* pindex{nullptr};
     if (!request.params[1].isNull()) {
         if (!g_coin_stats_index) {
             throw JSONRPCError(RPC_INVALID_PARAMETER, "Querying specific block heights requires coinstatsindex");
