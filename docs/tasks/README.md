@@ -30,3 +30,6 @@
 - [TASK-020: Core #34451 UTXO statistics race fix](TASK-020.md)
 
 - [TASK-021: Core #34908 UTXO statistics refactor](TASK-021.md)
+
+- [TASK-022: Seven-day default maximum tip age](TASK-022.md)
+  (includes minimum-chain-work test isolation from the changed default).
