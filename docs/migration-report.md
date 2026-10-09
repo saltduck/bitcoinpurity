@@ -1,5 +1,15 @@
 # Embedded DATUM Migration Report
 
+## Node configuration default updates
+
+TASK-021 updates wallet fallback, relay, incremental replacement, mining fee,
+block-template capacity, mainnet assumevalid and DATUM share difficulty
+defaults. Rebuild and restart to adopt omitted defaults; explicit settings
+remain authoritative. DATUM Qt settings use the daemon's shared difficulty
+constant. No data-format migration, reindex or rescan is required. Existing
+fee-estimator buckets, minimum chain work and consensus rules are unchanged.
+Block size is measured in bytes; block weight is measured in weight units.
+
 ## Default maximum tip age
 
 Change the omitted `maxtipage` value from 86400 to 604800 seconds (7 days).

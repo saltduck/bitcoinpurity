@@ -1,5 +1,9 @@
 # Embedded DATUM Architecture
 
+`mining::DEFAULT_DATUM_DIFFICULTY` in `datum_bridge.h` defines the fixed
+share-difficulty default of 262144 for runtime configuration, daemon help and
+the Qt settings field. Explicit configuration and hot updates take precedence.
+
 ## Stage 1 boundary
 
 ```text

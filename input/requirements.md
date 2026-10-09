@@ -1,5 +1,19 @@
 # Embedded DATUM Solo Mining
 
+## Node configuration defaults
+
+- `fallbackfee`: 0.00001 coin/kvB (1 sat/vB).
+- `blockmaxsize`: 3985000 bytes; `blockmaxweight`: 3985000 weight units.
+- Mainnet `assumevalid`: block 961631,
+  `00000000000000000000807f9dc917442a67910426d79ebb2f8aa2149327ce8a`.
+- `minrelaytxfee`: 0.1 sat/vB; `incrementalrelayfee`: 0.01 sat/vB;
+  `blockmintxfee`: 0.4 sat/vB.
+- `datumdiff`: 262144, including the Qt settings default.
+
+Explicit overrides and the opt-in `corepolicy` profile keep their existing
+behavior. Do not alter `minimumchainwork`, fee-estimator buckets, wallet
+`mintxfee`, block reservation, or consensus limits.
+
 ## Default maximum tip age
 
 Default `maxtipage` to 604800 seconds (7 days), replacing 86400 seconds.
@@ -123,7 +137,7 @@ When `datum=1`, support these settings:
 | `datummaxclients` | `32` | Strict global connection bound. |
 | `datummaxperip` | `4` | Strict per-IP connection bound. |
 | `datumaddress` | empty | Required valid Purity payout address. |
-| `datumdiff` | `65536` | Positive fixed initial/share difficulty; never changes consensus target. |
+| `datumdiff` | `262144` | Positive fixed initial/share difficulty; never changes consensus target. |
 | `datumcoinbasetag` | `Bitcoin Purity` | Optional operator-controlled coinbase tag. |
 | `datumrpcuser` | empty | Explicit localhost RPC credential, with safe `rpcuser` fallback. |
 | `datumrpcpassword` | empty | Explicit localhost RPC credential, with safe `rpcpassword` fallback. |

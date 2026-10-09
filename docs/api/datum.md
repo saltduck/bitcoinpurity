@@ -18,7 +18,7 @@ the file).
 | `datummaxclients` | `32` | Positive bounded implementation limit. |
 | `datummaxperip` | `4` | Positive and no greater than global maximum. |
 | `datumaddress` | empty | Required and valid for the active Purity network. |
-| `datumdiff` | `65536` | Positive integer share difficulty. |
+| `datumdiff` | `262144` | Positive integer share difficulty. |
 | `datumcoinbasetag` | `Bitcoin Purity` | Must fit the baseline coinbase-tag limit. |
 | `datumrpcuser` | empty | Sensitive; may fall back to configured `rpcuser`. |
 | `datumrpcpassword` | empty | Sensitive; may fall back to configured `rpcpassword`. |

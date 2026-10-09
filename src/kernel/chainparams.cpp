@@ -143,7 +143,7 @@ public:
         consensus.vDeployments[Consensus::DEPLOYMENT_REDUCED_DATA].threshold = 1109; // 55% of 2016
 
         consensus.nMinimumChainWork = uint256{"0000000000000000000000000000000000000000dee8e2a309ad8a9820433c68"};
-        consensus.defaultAssumeValid = uint256{"00000000000000000000611fd22f2df7c8fbd0688745c3a6c3bb5109cc2a12cb"}; // 912683
+        consensus.defaultAssumeValid = uint256{"00000000000000000000807f9dc917442a67910426d79ebb2f8aa2149327ce8a"}; // 961631
 
         /**
          * The message start string is designed to be unlikely to occur in normal data.
