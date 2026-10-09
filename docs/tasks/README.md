@@ -26,3 +26,5 @@
 - [TASK-018: CoinStatsIndex cumulative overflow backport](TASK-018.md)
 
 - [TASK-019: Standalone Core #34358 wallet removal fix](TASK-019.md)
+
+- [TASK-020: Seven-day default maximum tip age](TASK-020.md)

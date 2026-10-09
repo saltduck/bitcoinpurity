@@ -1,5 +1,11 @@
 # Embedded DATUM Solo Mining
 
+## Default maximum tip age
+
+Default `maxtipage` to 604800 seconds (7 days), replacing 86400 seconds.
+Users need not set the option to obtain this tolerance. Explicit configuration
+and command-line overrides retain their existing behavior.
+
 ## Standalone wallet transaction-removal correction
 
 Backport only Bitcoin Core PR #34358's functional fix and regression scenario.

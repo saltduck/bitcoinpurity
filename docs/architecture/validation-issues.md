@@ -1,5 +1,11 @@
 # Validation and signed-manifest architecture
 
+`DEFAULT_MAX_TIP_AGE` is 168 hours (604800 seconds). It initializes
+`ChainstateManagerOpts::max_tip_age` and supplies the debug help default.
+`node::ApplyArgsManOptions` retains explicit `-maxtipage` overrides.
+`UpdateIBDStatus` retains its existing age comparison, other conditions
+and latch behavior; only the default age changes.
+
 `ChainstateManager::AcceptBlock` evaluates the active-chain fork depth after
 contextual checks and successful block storage, immediately before
 `ReceivedBlockTransactions`. It marks the first competing header index

@@ -1,5 +1,13 @@
 # Embedded DATUM Migration Report
 
+## Default maximum tip age
+
+Change the omitted `maxtipage` value from 86400 to 604800 seconds (7 days).
+Rebuild and restart to use the new default. Existing explicit settings remain
+authoritative; no persistent-format migration, rescan or reindex is needed.
+Update `feature_maxtipage.py` to exercise the seven-day default boundary and
+retain the old one-day behavior as an explicit override. See TASK-020.
+
 ## Baseline and current state
 
 - Purity already provides GBT, submitblock, mempool, block assembly, validation,

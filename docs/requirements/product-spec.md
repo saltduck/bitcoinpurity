@@ -1,5 +1,11 @@
 # Bitcoin Purity Product Specification
 
+## Default maximum tip age
+
+The default `maxtipage` is 604800 seconds (7 days). Nodes use this tolerance
+without an explicit setting; configuration and command-line overrides remain
+available. Other initial block download conditions remain unchanged.
+
 ## Wallet transaction removal
 
 Backport Bitcoin Core PR #34358 as a standalone correctness fix. Removing a
