@@ -1,5 +1,15 @@
 # Embedded DATUM Migration Report
 
+## Activation-block mismatch logging (issue #32)
+
+Change only the received-header diagnostic from unconditional logging with an
+ERROR prefix to validation-category DEBUG. Rebuild and restart to use the new
+logging behavior; enable `-debug=validation` to inspect expected chain splits.
+Consensus rejection, peer handling and the local-index startup ERROR remain
+unchanged. No database format change, migration, rescan or reindex is required
+for this logging change. An existing conflicting index still requires the
+previously documented recovery. Regression evidence is recorded in TASK-023.
+
 ## Default maximum tip age
 
 Change the omitted `maxtipage` value from 86400 to 604800 seconds (7 days).

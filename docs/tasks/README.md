@@ -33,3 +33,5 @@
 
 - [TASK-022: Seven-day default maximum tip age](TASK-022.md)
   (includes minimum-chain-work test isolation from the changed default).
+
+- [TASK-023: Activation-block mismatch DEBUG logging](TASK-023.md)

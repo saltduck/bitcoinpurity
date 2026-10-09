@@ -115,6 +115,10 @@ verification criteria, and non-goals are normative in
 - The bit is an unauthenticated discovery hint. The existing block hash at
   height 961637 remains authoritative and must also reject a conflicting
   chain advertised by a bit-25 peer.
+- Issue #32: log a received activation-block hash mismatch at DEBUG in the
+  validation category, including height and both hashes. Preserve the rejection
+  reason and peer handling. A conflicting activation block already stored in
+  the local block index must still produce an ERROR and prevent startup.
 - Automatic outbound selection prefers known bit-25 records in the existing
   AddrMan for the first 20 attempts. If there are no matching records, use normal
   selection immediately; after 20 ineligible draws, return to normal selection.
