@@ -21,3 +21,5 @@
 - [CoinStatsIndex overflow architecture](architecture/coinstatsindex.md)
 - [CoinStatsIndex RPC and upgrade contract](api/coinstatsindex.md)
 - [CoinStatsIndex backport verification](../doc/coinstatsindex-backport.md)
+
+- [UTXO statistics backport verification](../doc/utxostats-backport.md)

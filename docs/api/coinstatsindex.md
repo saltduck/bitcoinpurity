@@ -28,3 +28,15 @@ returns RPC_INTERNAL_ERROR (-32603), with message:
 truncate or wrap the amount. Internal indexing continues to support wide
 flows. This preserves the existing amount API without redesigning it.
 Non-indexed hash_serialized_3/none/MuHash scans retain their behavior.
+
+## UTXO statistics race backport
+
+Core #34451 and #34908 preserve the public ComputeUTXOStats signature and every
+gettxoutsetinfo argument, result field, numeric format and hash mode. Current-tip
+scans report the cursor snapshot's height/bestblock. Historical indexed queries
+keep their validation and synchronization errors; block_info uses that result's
+actual parent. No index is required for ordinary scans or use_index=false.
+
+This update changes no index/chainstate/block-index format, index directory or
+legacy policy. Existing nodes, including pruned/disabled-index nodes, need no
+reindex, chainstate rebuild or database migration for these two backports.

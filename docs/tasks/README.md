@@ -26,3 +26,7 @@
 - [TASK-018: CoinStatsIndex cumulative overflow backport](TASK-018.md)
 
 - [TASK-019: Standalone Core #34358 wallet removal fix](TASK-019.md)
+
+- [TASK-020: Core #34451 UTXO statistics race fix](TASK-020.md)
+
+- [TASK-021: Core #34908 UTXO statistics refactor](TASK-021.md)
