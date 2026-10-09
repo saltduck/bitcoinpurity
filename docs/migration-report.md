@@ -7,6 +7,10 @@ Rebuild and restart to use the new default. Existing explicit settings remain
 authoritative; no persistent-format migration, rescan or reindex is needed.
 Update `feature_maxtipage.py` to exercise the seven-day default boundary and
 retain the old one-day behavior as an explicit override. See TASK-020.
+The full functional suite exposed a one-day default assumption in
+`feature_minchainwork.py`: a two-day clock offset no longer keeps node2 in
+IBD. Set `-maxtipage=86400` explicitly on that node to preserve the regression
+scenario without changing production behavior.
 
 ## Baseline and current state
 

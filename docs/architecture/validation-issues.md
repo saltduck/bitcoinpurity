@@ -5,6 +5,8 @@
 `node::ApplyArgsManOptions` retains explicit `-maxtipage` overrides.
 `UpdateIBDStatus` retains its existing age comparison, other conditions
 and latch behavior; only the default age changes.
+`feature_minchainwork.py` pins node2 to `-maxtipage=86400` so its two-day
+clock offset continues to keep it in IBD after the minimum work is reached.
 
 `ChainstateManager::AcceptBlock` evaluates the active-chain fork depth after
 contextual checks and successful block storage, immediately before

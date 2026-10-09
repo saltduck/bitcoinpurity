@@ -32,7 +32,7 @@ class MinimumChainWorkTest(BitcoinTestFramework):
         self.setup_clean_chain = True
         self.num_nodes = 3
 
-        self.extra_args = [[], ["-minimumchainwork=0x65"], ["-minimumchainwork=0x65"]]
+        self.extra_args = [[], ["-minimumchainwork=0x65"], ["-minimumchainwork=0x65", "-maxtipage=86400"]]
         self.node_min_work = [0, 101, 101]
 
     def setup_network(self):
@@ -45,7 +45,8 @@ class MinimumChainWorkTest(BitcoinTestFramework):
         for i in range(self.num_nodes-1):
             self.connect_nodes(i+1, i)
 
-        # Set clock of node2 2 days ahead, to keep it in IBD during this test.
+        # Set clock of node2 2 days ahead of its explicit one-day tip-age
+        # tolerance, to keep it in IBD during this test.
         self.nodes[2].setmocktime(int(time.time()) + 48*60*60)
 
     def run_test(self):

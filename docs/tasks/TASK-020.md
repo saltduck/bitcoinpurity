@@ -34,3 +34,25 @@ TEST_RUNNER_PORT_MIN=31000 python3 test/functional/feature_maxtipage.py --config
 build/bin/bitcoind -datadir=/tmp/purity-maxtipage-help -nosettings -help-debug
 git diff --check
 ```
+
+## Minimum-chain-work regression follow-up
+
+The full functional suite reported that `feature_minchainwork.py` no longer
+kept node2 in IBD after all nodes reached height 50. Reproduced the same
+`False == True` assertion failure with the current binary before editing.
+The test advances node2's clock by two days, which exceeds the original
+one-day tolerance but is within the new seven-day default.
+
+Explicitly set `-maxtipage=86400` only on node2, retaining the original time
+offset and IBD assertion. No production code changes are needed.
+`feature_minchainwork.py`, `feature_maxtipage.py` and
+`p2p_headers_sync_with_minchainwork.py` all passed together (3/3).
+`git diff --check` passed. The complete 364-test suite was not rerun.
+
+```sh
+TEST_RUNNER_PORT_MIN=35000 python3 build/test/functional/test_runner.py --jobs=2 --tmpdirprefix=/tmp/purity-minchainwork-green feature_minchainwork.py feature_maxtipage.py p2p_headers_sync_with_minchainwork.py
+```
+
+Failure log:
+`/tmp/purity-minchainwork-red/test_runner_₿_🏃_20261009_133250/feature_minchainwork_0/test_framework.log`.
+Passing log: `/tmp/purity-minchainwork-green.log`.

@@ -5,6 +5,8 @@
 Default `maxtipage` to 604800 seconds (7 days), replacing 86400 seconds.
 Users need not set the option to obtain this tolerance. Explicit configuration
 and command-line overrides retain their existing behavior.
+The minimum-chain-work regression must explicitly keep its final node in IBD,
+independently of the default tip-age tolerance.
 
 ## Standalone wallet transaction-removal correction
 
