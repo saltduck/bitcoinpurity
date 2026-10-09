@@ -105,7 +105,8 @@ class DatumTest(BitcoinTestFramework):
 
         self.log.info("Authentication is disabled by default")
         default_base = [arg for arg in base if not arg.startswith("-datumuser=") and not arg.startswith("-datumpassword=")]
-        self.start_node(0, extra_args=["-server=1", "-datum=1", "-datumdiff=1", *default_base])
+        self.start_node(0, extra_args=["-server=1", "-datum=1", *default_base])
+        assert_equal(node.getdatuminfo()["share_difficulty"], 262144)
         self.wait_until(lambda: self._can_connect(), timeout=10)
         anonymous_client = self.connect()
         self.wait_until(lambda: node.getdatuminfo()["authorized_clients"] == 1, timeout=5)

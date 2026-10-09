@@ -33,3 +33,5 @@
 
 - [TASK-022: Seven-day default maximum tip age](TASK-022.md)
   (includes minimum-chain-work test isolation from the changed default).
+
+- [TASK-023: Node configuration default updates](TASK-023.md)

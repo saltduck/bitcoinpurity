@@ -1,5 +1,16 @@
 # Bitcoin Purity Product Specification
 
+## Node configuration defaults
+
+The wallet fallback fee is 1 sat/vB. Mining templates default to 3985000 bytes
+and 3985000 weight units, retaining the existing block reservation. Mainnet
+assumevalid is block 961631:
+`00000000000000000000807f9dc917442a67910426d79ebb2f8aa2149327ce8a`.
+Default relay, incremental replacement and mining fee rates are respectively
+0.1, 0.01 and 0.4 sat/vB. The DATUM fixed share difficulty defaults to 262144
+in both the daemon and Qt settings. Explicit overrides and the opt-in
+`corepolicy` profile retain their existing behavior. See TASK-023.
+
 ## Default maximum tip age
 
 The default `maxtipage` is 604800 seconds (7 days). Nodes use this tolerance

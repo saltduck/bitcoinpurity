@@ -18,6 +18,13 @@
 
 BOOST_FIXTURE_TEST_SUITE(chainparams_tests, BasicTestingSetup)
 
+BOOST_AUTO_TEST_CASE(mainnet_assumevalid_default)
+{
+    const auto params = CreateChainParams(m_args, ChainType::MAIN);
+    BOOST_CHECK_EQUAL(params->GetConsensus().defaultAssumeValid,
+                      uint256{"00000000000000000000807f9dc917442a67910426d79ebb2f8aa2149327ce8a"});
+}
+
 BOOST_AUTO_TEST_CASE(purity_activation_height_mainnet)
 {
     ArgsManager args;

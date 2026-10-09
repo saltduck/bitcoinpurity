@@ -55,7 +55,6 @@ namespace {
 constexpr int64_t DEFAULT_DATUM_PORT{23334};
 constexpr int64_t DEFAULT_DATUM_MAX_CLIENTS{32};
 constexpr int64_t DEFAULT_DATUM_MAX_PER_IP{4};
-constexpr int64_t DEFAULT_DATUM_DIFFICULTY{65536};
 constexpr int64_t DEFAULT_DATUM_AUTH_TIMEOUT{10};
 constexpr int MAX_DATUM_DIFFICULTY{2147483647};
 constexpr bool DEFAULT_DATUM_AUTH{false};
@@ -376,7 +375,7 @@ void SetupDatumArgs(ArgsManager& argsman)
     argsman.AddArg("-datummaxclients=<n>", "Maximum embedded Stratum clients (default: 32)", ArgsManager::ALLOW_ANY, OptionsCategory::BLOCK_CREATION);
     argsman.AddArg("-datummaxperip=<n>", "Maximum embedded Stratum clients per IP (default: 4)", ArgsManager::ALLOW_ANY, OptionsCategory::BLOCK_CREATION);
     argsman.AddArg("-datumaddress=<address>", "Fixed operator-controlled Purity payout address", ArgsManager::ALLOW_ANY | ArgsManager::NETWORK_ONLY, OptionsCategory::BLOCK_CREATION);
-    argsman.AddArg("-datumdiff=<n>", "Fixed Stratum share difficulty (default: 65536)", ArgsManager::ALLOW_ANY, OptionsCategory::BLOCK_CREATION);
+    argsman.AddArg("-datumdiff=<n>", strprintf("Fixed Stratum share difficulty (default: %d)", DEFAULT_DATUM_DIFFICULTY), ArgsManager::ALLOW_ANY, OptionsCategory::BLOCK_CREATION);
     argsman.AddArg("-datumcoinbasetag=<tag>", strprintf("Embedded DATUM coinbase tag (default: %s)", DEFAULT_DATUM_COINBASE_TAG), ArgsManager::ALLOW_ANY, OptionsCategory::BLOCK_CREATION);
     argsman.AddArg("-datumrpcuser=<user>", "Username for embedded DATUM localhost RPC", ArgsManager::ALLOW_ANY | ArgsManager::SENSITIVE, OptionsCategory::RPC);
     argsman.AddArg("-datumrpcpassword=<password>", "Password for embedded DATUM localhost RPC", ArgsManager::ALLOW_ANY | ArgsManager::SENSITIVE, OptionsCategory::RPC);
