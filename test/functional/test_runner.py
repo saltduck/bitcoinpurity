@@ -365,6 +365,8 @@ BASE_SCRIPTS = [
     'p2p_leak.py',
     'wallet_encryption.py --legacy-wallet',
     'wallet_encryption.py --descriptors',
+    'wallet_key_checksum.py --legacy-wallet',
+    'wallet_key_checksum.py --descriptors',
     'feature_dersig.py',
     'feature_reindex_init.py',
     'feature_cltv.py',
