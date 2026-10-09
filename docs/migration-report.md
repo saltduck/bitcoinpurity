@@ -6,7 +6,7 @@ Change the omitted `maxtipage` value from 86400 to 604800 seconds (7 days).
 Rebuild and restart to use the new default. Existing explicit settings remain
 authoritative; no persistent-format migration, rescan or reindex is needed.
 Update `feature_maxtipage.py` to exercise the seven-day default boundary and
-retain the old one-day behavior as an explicit override. See TASK-020.
+retain the old one-day behavior as an explicit override. See TASK-022.
 The full functional suite exposed a one-day default assumption in
 `feature_minchainwork.py`: a two-day clock offset no longer keeps node2 in
 IBD. Set `-maxtipage=86400` explicitly on that node to preserve the regression
@@ -244,3 +244,23 @@ and throws std::bad_function_call. This backport leaves that unrelated behavior
 unchanged. The regression checks commit deferral and abort after partial
 deletion failure, before listener registration; database commit/erase failure
 injection and a clean abort after listener registration are not covered.
+
+## UTXO statistics race and refactoring (TASK-020 / TASK-021)
+
+Baseline: master 789f3781a79174bbb4a9fa75efa21c1e0a58f30b, clean detached
+worktree. #30469 is present in cbe4e29c3a. Neither race backport was applied.
+Reviewed exact merged patches in chronological order:
+#34451 merge 4169e72d9ed6320251feea821eb7c047793a50bc (two constituent patches),
+#34908 merge b6d1b65062ab123248e4f209fe3f63118f03bad6 (one follow-up patch).
+
+Production scope: kernel/coinstats.cpp and rpc/blockchain.cpp only. Retain
+Knots 29.4's ApplyStats(stats, prevkey, outputs), RPC request parameter parsing,
+existing index interfaces and #30469 accounting/range checks. Upstream uses
+newer ApplyStats and RPC argument APIs; those unrelated changes are excluded.
+The header, FinalizeHash, UTXO ordering, consensus and snapshot formats stay
+unchanged. No #34521, new dependencies, index format change or migration.
+
+Add deterministic cursor-acquisition tests before fixing production code, then
+concurrent RPC/full/pruned/index tests and existing hash/AssumeUTXO/reorg suites.
+Each logical stage is independently built and validated before its commit.
+See doc/utxostats-backport.md for executed results and lifetime-review limits.

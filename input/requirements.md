@@ -274,3 +274,22 @@ precedence chain.
 - Document that a new index cannot rebuild from missing pruned history; never
   automatically download history, delete old data, migrate in place or force a
   global reindex. Do not commit or modify production data.
+
+## UTXO statistics race fix and follow-up (Core #34451 / #34908)
+
+- Backport the exact merged #34451 correctness fix before #34908 refactoring,
+  as two independently built, tested and reviewable commits.
+- Current-tip gettxoutsetinfo must not capture an early block index. Historical
+  requests retain argument validation and the guarded index-sync height check.
+  Indexed block_info obtains its predecessor from the returned stats.hashBlock.
+- Create one cursor and resolve its best-block index under cs_main; release the
+  acquired lock before scanning. The internal template ultimately constructs
+  and returns optional<CCoinsStats>; retain the public signature, all three hash
+  modes, record ordering, finalization, disk-size and interruption/error behavior.
+- Preserve #30469 wide counters, bounded RPC conversion, index serialization,
+  locations and legacy rules. Disabled/full/pruned scans require no index,
+  synchronization, reindex, chainstate rebuild or migration.
+- Preserve AssumeUTXO snapshot hashes and recursive cs_main callers. Do not
+  change consensus, validation, ASERT, RDTS, parking, wallets, P2P or import #34521.
+- Add deterministic cursor-snapshot regressions and concurrent functional scans;
+  run hash, index/history/reorg/pruning and AssumeUTXO compatibility tests.
