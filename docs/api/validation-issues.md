@@ -14,6 +14,8 @@ and fields are unchanged. Wallet `mintxfee` remains 1 sat/vB.
 An explicit value in the configuration file or command line still overrides
 the default. `getblockchaininfo.initialblockdownload` uses this age threshold
 alongside its existing conditions. RPC fields and consensus rules are unchanged.
+The minimum-chain-work test explicitly configures node2 with `-maxtipage=86400`;
+its two-day clock offset must keep `initialblockdownload` true after syncing.
 
 `getchaintips` returns an additional required boolean `parked` on every tip.
 It covers the tip and ancestors with `BLOCK_PARKED_MASK`; existing fields and

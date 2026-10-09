@@ -9,13 +9,15 @@ assumevalid is block 961631:
 Default relay, incremental replacement and mining fee rates are respectively
 0.1, 0.01 and 0.4 sat/vB. The DATUM fixed share difficulty defaults to 262144
 in both the daemon and Qt settings. Explicit overrides and the opt-in
-`corepolicy` profile retain their existing behavior. See TASK-021.
+`corepolicy` profile retain their existing behavior. See TASK-023.
 
 ## Default maximum tip age
 
 The default `maxtipage` is 604800 seconds (7 days). Nodes use this tolerance
 without an explicit setting; configuration and command-line overrides remain
 available. Other initial block download conditions remain unchanged.
+The minimum-chain-work regression uses an explicit one-day tip-age tolerance
+to keep its final node in IBD with a two-day clock offset.
 
 ## Wallet transaction removal
 
@@ -186,3 +188,22 @@ Unspendable totals are derived from constituent amounts. Indexed RPC rejects
 per-block flow differences above INT64_MAX instead of returning truncated
 amounts. See [architecture](../architecture/coinstatsindex.md),
 [RPC/upgrade contract](../api/coinstatsindex.md) and [TASK-018](../tasks/TASK-018.md).
+
+## UTXO statistics race fix and follow-up (Core #34451 / #34908)
+
+- Backport the exact merged #34451 correctness fix before #34908 refactoring,
+  as two independently built, tested and reviewable commits.
+- Current-tip gettxoutsetinfo must not capture an early block index. Historical
+  requests retain argument validation and the guarded index-sync height check.
+  Indexed block_info obtains its predecessor from the returned stats.hashBlock.
+- Create one cursor and resolve its best-block index under cs_main; release the
+  acquired lock before scanning. The internal template ultimately constructs
+  and returns optional<CCoinsStats>; retain the public signature, all three hash
+  modes, record ordering, finalization, disk-size and interruption/error behavior.
+- Preserve #30469 wide counters, bounded RPC conversion, index serialization,
+  locations and legacy rules. Disabled/full/pruned scans require no index,
+  synchronization, reindex, chainstate rebuild or migration.
+- Preserve AssumeUTXO snapshot hashes and recursive cs_main callers. Do not
+  change consensus, validation, ASERT, RDTS, parking, wallets, P2P or import #34521.
+- Add deterministic cursor-snapshot regressions and concurrent functional scans;
+  run hash, index/history/reorg/pruning and AssumeUTXO compatibility tests.

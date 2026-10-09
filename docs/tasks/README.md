@@ -27,6 +27,11 @@
 
 - [TASK-019: Standalone Core #34358 wallet removal fix](TASK-019.md)
 
-- [TASK-020: Seven-day default maximum tip age](TASK-020.md)
+- [TASK-020: Core #34451 UTXO statistics race fix](TASK-020.md)
 
-- [TASK-021: Node configuration default updates](TASK-021.md)
+- [TASK-021: Core #34908 UTXO statistics refactor](TASK-021.md)
+
+- [TASK-022: Seven-day default maximum tip age](TASK-022.md)
+  (includes minimum-chain-work test isolation from the changed default).
+
+- [TASK-023: Node configuration default updates](TASK-023.md)
