@@ -150,6 +150,60 @@ sha256sum "${WORKDIR}/${PACKAGE_ID}.zip"
 6. Add or update the package entry in the remote `official-packages-<chain>.json`
    hosted at `https://downloads.bitcoinpurity.org/`. No client recompile is required.
 
+## Generating an unsigned mainnet catalog
+
+Use Python 3 to generate an unsigned single-package catalog directly from a
+finished node-data ZIP, without extracting it:
+
+```bash
+python3 contrib/official-packages/generate-packages-manifest.py \
+  --archive /path/to/mainnet-node-data.zip \
+  --download-uri https://downloads.bitcoinpurity.org/nodedata/mainnet-node-data.zip \
+  --output /path/to/official-packages-mainnet.json
+```
+
+The script detects the common data root containing `blocks/` and `chainstate/`,
+either directly in the ZIP or inside an enclosing directory such as
+`BitcoinPurity968190/`. Multiple enclosing levels are supported; inconsistent
+or multiple data roots are rejected. macOS resource-fork entries are ignored
+when detecting the root. It reads `id`, `snapshot_height`, `base_blockhash` and
+`prune_mib` from `bitcoinpurity-package.json` at that root, prints the detected
+root, streams SHA256 over the entire ZIP,
+records its byte size, and sums the uncompressed sizes of all file entries,
+including package metadata and optional configuration. Directory entries do
+not contribute to the extracted size. ZIP64 archives are supported.
+
+Published older ZIPs may lack the metadata file. In that case, append all four
+values to the command above (retain a trailing backslash on the preceding line):
+
+```bash
+  --id mainnet-961814-prune-5500mb \
+  --snapshot-height 961814 \
+  --base-blockhash 00000000000000040440db37ab428b029ee5dda57d192088c13046d124eeb80b \
+  --prune-mib 5500
+```
+
+Use the actual values of your package; the numbers above are examples. Values
+provided on the CLI must match any corresponding fields present in the ZIP.
+The tool checks metadata types, unique JSON keys, safe/unique ZIP paths,
+supported compression, `blocks/` data and `chainstate/CURRENT`. It trusts the
+snapshot metadata; it does not read LevelDB to determine height/hash, validate
+the chainstate, or establish that an archive is mainnet. Build and verify the
+mainnet package separately before publication.
+
+Output contains `packages` without a top-level `signature`. The generator
+accepts no `--key` argument and uses only Python's standard library. It never
+signs or uploads files, changes the ZIP, or replaces an existing output. Without
+`--output`, it creates `official-packages-mainnet.json` in the current directory;
+output directories must already exist. The separate signing procedure and
+remote signature requirements described above remain unchanged.
+
+Run the standalone regressions (no node build required):
+
+```bash
+python3 contrib/official-packages/test_generate_packages_manifest.py
+```
+
 ## Download behaviour
 
 The GUI downloader uses resumable HTTP downloads when the server supports

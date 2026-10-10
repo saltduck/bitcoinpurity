@@ -35,3 +35,5 @@
   (includes minimum-chain-work test isolation from the changed default).
 
 - [TASK-023: Activation-block mismatch DEBUG logging](TASK-023.md)
+
+- [TASK-024: Unsigned mainnet package manifest generator](TASK-024.md)

@@ -1,5 +1,20 @@
 # Embedded DATUM Solo Mining
 
+## Unsigned mainnet package manifest generator
+
+- Add a local script that generates unsigned `official-packages-mainnet.json`
+  from one node-data ZIP, without private-key parameters or signing steps.
+- Read package identity, snapshot height/hash and prune target from
+  `bitcoinpurity-package.json` at the detected data root; support a shared
+  enclosing directory around `blocks/` and `chainstate/`, and reject ambiguous
+  roots. Require explicit values when metadata is absent.
+  Reject conflicting overrides, invalid metadata and unusable archive layouts.
+- Stream the ZIP SHA256, use its byte size and sum uncompressed member sizes.
+  Require an official HTTPS download URI. Output has no `signature` field and
+  generation requires only Python's standard library, not OpenSSL.
+- Do not extract or modify the ZIP, overwrite existing outputs, expose private
+  keys, upload files, or change client validation. Document and test the CLI.
+
 ## Default maximum tip age
 
 Default `maxtipage` to 604800 seconds (7 days), replacing 86400 seconds.
