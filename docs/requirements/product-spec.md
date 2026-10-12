@@ -1,5 +1,20 @@
 # Bitcoin Purity Product Specification
 
+## Unsigned mainnet package manifest generator
+
+The local `generate-packages-manifest.py` tool generates a single-package
+unsigned `official-packages-mainnet.json` from a finished node-data ZIP. It
+accepts no private-key argument, performs no signing, and requires only Python's
+standard library. Output contains `packages` without a `signature` field. It reads package
+identity, snapshot height/hash and prune target from metadata at the detected
+data root (ZIP root or a common enclosing directory), or requires
+explicit values when absent; conflicting overrides are rejected. SHA256 is
+streamed over the ZIP, and compressed/uncompressed byte sizes are calculated.
+It requires an official HTTPS download URI and rejects invalid metadata and
+unusable or ambiguous archive layouts. It does not extract/modify the ZIP, replace existing
+outputs, upload files, expose private keys or change client validation. See
+[CLI contract](../api/official-packages.md) and TASK-024.
+
 ## Default maximum tip age
 
 The default `maxtipage` is 604800 seconds (7 days). Nodes use this tolerance

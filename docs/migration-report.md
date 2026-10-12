@@ -1,5 +1,24 @@
 # Embedded DATUM Migration Report
 
+## Unsigned mainnet package manifest generator (TASK-024)
+
+Add an offline Python manifest generator alongside the existing signer. The
+generator now outputs only unsigned JSON at the user's request; the private-key
+argument, automatic signing and OpenSSL dependency have been removed.
+Archives containing package metadata at their data root need no changes.
+Detect common enclosing directories around `blocks/` and `chainstate/`, as
+already supported by the Qt downloader; the original ZIP need not be repacked.
+For older archives
+without it, publishers supply identity, actual height/hash and prune target
+explicitly; LevelDB data is not parsed. ZIP SHA256 and compressed/uncompressed
+sizes are computed automatically, including ZIP64 archives.
+
+The generated JSON uses the existing unsigned catalog format. No node rebuild,
+database migration, reindex, client trust-policy change or dependency-source
+change is required. Existing remote signature verification and the standalone
+signer remain unchanged. No signing, upload or deployment is performed by this
+generator.
+
 ## Activation-block mismatch logging (issue #32)
 
 Change only the received-header diagnostic from unconditional logging with an
