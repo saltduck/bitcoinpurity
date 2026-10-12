@@ -282,6 +282,19 @@ explicit peer configuration remain unchanged. Rebuild and restart to use the
 new list; no database migration, reindex or peers.dat deletion is required.
 Previously learned addresses remain in AddrMan.
 
+## Mainnet fixed seed replacement (TASK-026)
+
+Replace the 1,306 compiled mainnet fixed seeds and the larger upstream source
+list with the 11 endpoints requested by the user. Keep both lists consistent
+and retain all other networks' seed arrays. The BIP155 fixed-seed format requires
+numeric addresses: node0 resolves to 49.190.167.39 (ports 8333/8334) and node1
+to 51.79.241.169 (8333), verified on 2026-10-12. Record these static mappings in
+the source list, without adding runtime hostname resolution.
+
+Rebuild and restart for the compiled replacement to take effect. No database
+migration or reindex is required; existing peers.dat addresses remain, so this
+change does not restrict all connections to the new fixed seeds.
+
 ## UTXO statistics race and refactoring (TASK-020 / TASK-021)
 
 Baseline: master 789f3781a79174bbb4a9fa75efa21c1e0a58f30b, clean detached

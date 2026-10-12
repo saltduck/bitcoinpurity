@@ -3,8 +3,30 @@
 ## Mainnet DNS seed
 
 Keep only `seed.bitcoinpurity.org` in the built-in mainnet DNS seed list.
-Remove every other mainnet DNS seed. Other networks' seeds, fixed seeds and
+Remove every other mainnet DNS seed. Other networks' seeds and
 explicit peer configuration remain unchanged.
+
+## Mainnet fixed seeds
+
+Replace every existing mainnet fixed seed with these endpoints:
+
+- `207.244.247.51:8333`
+- `[240e:390:6ee0:f370::b40]:8333`
+- `[2a02:4780:79:909::1]:8333`
+- `36.25.72.251:8333`
+- `45.77.139.7:8333`
+- `46.7.6.219:8333`
+- `57.129.53.78:5890`
+- `node0.bitcoinpurity.org:8333`
+- `node0.bitcoinpurity.org:8334`
+- `node1.bitcoinpurity.org:8333`
+- `76.13.13.187:8333`
+
+The fixed-seed format stores numeric IP addresses. Resolve domain entries to
+their current addresses for this update and record the mappings in
+`contrib/seeds/nodes_main.txt`; preserve both node0 ports and the 5890 port.
+Synchronize that source list with the compiled mainnet array, retaining the
+other networks' seed arrays, DNS seeds and explicit peer configuration.
 
 ## Unsigned mainnet package manifest generator
 
