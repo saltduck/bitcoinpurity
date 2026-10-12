@@ -18,6 +18,14 @@
 
 BOOST_FIXTURE_TEST_SUITE(chainparams_tests, BasicTestingSetup)
 
+BOOST_AUTO_TEST_CASE(purity_mainnet_dns_seed)
+{
+    const auto params = CreateChainParams(m_args, ChainType::MAIN);
+    const auto& seeds = params->DNSSeeds();
+    BOOST_REQUIRE_EQUAL(seeds.size(), 1);
+    BOOST_CHECK_EQUAL(seeds.front(), "seed.bitcoinpurity.org.");
+}
+
 BOOST_AUTO_TEST_CASE(purity_activation_height_mainnet)
 {
     ArgsManager args;

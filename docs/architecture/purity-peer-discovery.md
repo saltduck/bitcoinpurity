@@ -1,5 +1,10 @@
 # Purity peer discovery
 
+Mainnet's built-in DNS seed list contains only `seed.bitcoinpurity.org.`.
+The trailing dot preserves an absolute DNS name. DNS lookup and service-bit
+filtering use the existing connection code; other networks' DNS seeds, fixed
+seeds, AddrMan and explicit peer configuration are unchanged.
+
 Local services flow from init to CConnman, PeerManager VERSION and local
 CAddress advertisements. VERSION updates AddrMan with SetServices; addr/addrv2
 gossip adds advertised flags with Add. Existing uint64/CompactSize encodings

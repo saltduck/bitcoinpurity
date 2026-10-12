@@ -274,6 +274,14 @@ unchanged. The regression checks commit deferral and abort after partial
 deletion failure, before listener registration; database commit/erase failure
 injection and a clean abort after listener registration are not covered.
 
+## Mainnet DNS seed restriction (TASK-025)
+
+Keep `seed.bitcoinpurity.org.` and remove the other eight built-in mainnet DNS
+seed entries. Other networks' DNS seeds, fixed seeds, DNS lookup logic and
+explicit peer configuration remain unchanged. Rebuild and restart to use the
+new list; no database migration, reindex or peers.dat deletion is required.
+Previously learned addresses remain in AddrMan.
+
 ## UTXO statistics race and refactoring (TASK-020 / TASK-021)
 
 Baseline: master 789f3781a79174bbb4a9fa75efa21c1e0a58f30b, clean detached

@@ -1,5 +1,10 @@
 # Purity P2P and RPC service contract
 
+Mainnet DNS bootstrap uses only `seed.bitcoinpurity.org`. This changes the
+built-in seed list without changing RPC/P2P formats, DNS-seeding options or
+explicit peer configuration. Other networks' DNS seeds and fixed seeds remain
+unchanged.
+
 `NODE_PURITY_ASERT` is experimental nServices bit 25. It claims support for
 the Bitcoin Purity ASERT chain and is only an unauthenticated discovery hint.
 

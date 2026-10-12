@@ -1,5 +1,11 @@
 # Bitcoin Purity Product Specification
 
+## Mainnet DNS seed
+
+The only built-in mainnet DNS seed is `seed.bitcoinpurity.org`. Other networks'
+DNS seeds, fixed seeds and explicit peer configuration retain their existing
+behavior. See [TASK-025](../tasks/TASK-025.md).
+
 ## Unsigned mainnet package manifest generator
 
 The local `generate-packages-manifest.py` tool generates a single-package

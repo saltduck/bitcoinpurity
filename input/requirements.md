@@ -1,5 +1,11 @@
 # Embedded DATUM Solo Mining
 
+## Mainnet DNS seed
+
+Keep only `seed.bitcoinpurity.org` in the built-in mainnet DNS seed list.
+Remove every other mainnet DNS seed. Other networks' seeds, fixed seeds and
+explicit peer configuration remain unchanged.
+
 ## Unsigned mainnet package manifest generator
 
 - Add a local script that generates unsigned `official-packages-mainnet.json`
