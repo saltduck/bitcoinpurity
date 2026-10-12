@@ -18,7 +18,10 @@
 #include <boost/test/unit_test.hpp>
 
 #include <array>
+#include <chrono>
+#include <future>
 #include <limits>
+#include <thread>
 
 namespace {
 // Independent wire-format fixture: catches field order, width and endian changes.
@@ -61,6 +64,68 @@ BOOST_FIXTURE_TEST_CASE(coinstatsindex_rpc_syncing, TestChain100Setup)
         return error.find_value("code").getInt<int>() == -32603 &&
                error.find_value("message").get_str().starts_with("Unable to get data because coinstatsindex is still syncing.");
     });
+    g_coin_stats_index.swap(index);
+    index->Stop();
+}
+
+BOOST_FIXTURE_TEST_CASE(coinstatsindex_rpc_concurrent_flush, TestChain100Setup)
+{
+    auto index{std::make_unique<CoinStatsIndex>(interfaces::MakeChain(m_node), 1 << 20, true)};
+    BOOST_REQUIRE(index->Init());
+    BOOST_REQUIRE(index->StartBackgroundSync());
+    IndexWaitSynced(*index, *Assert(m_node.shutdown_signal));
+    BOOST_REQUIRE(!g_coin_stats_index);
+    g_coin_stats_index.swap(index);
+    auto& signals{*m_node.validation_signals};
+    auto& chainstate{m_node.chainman->ActiveChainstate()};
+    const CScript script{CScript() << ToByteVector(coinbaseKey.GetPubKey()) << OP_CHECKSIG};
+    if (RPCIsInWarmup(nullptr)) SetRPCWarmupFinished();
+
+    for (const char* mode : {"muhash", "none"}) {
+        signals.SyncWithValidationInterfaceQueue();
+        std::promise<void> entered, resume, rpc_done;
+        auto resume_future{resume.get_future()};
+        auto rpc_done_future{rpc_done.get_future()};
+        signals.CallFunctionInValidationInterfaceQueue([&] {
+            entered.set_value();
+            resume_future.wait();
+        });
+        entered.get_future().wait();
+        const CBlock target{CreateAndProcessBlock({}, script)};
+        const int height{WITH_LOCK(cs_main, return chainstate.m_chain.Height())};
+        // Flush a second block before the RPC's sync marker runs, but keep
+        // that block's index notification behind the marker and a blocker.
+        signals.CallFunctionInValidationInterfaceQueue([&] {
+            signals.CallFunctionInValidationInterfaceQueue([&] { rpc_done_future.wait(); });
+            CreateAndProcessBlock({}, script);
+            chainstate.ForceFlushStateToDisk();
+        });
+        const size_t pending{signals.CallbacksPending()};
+        JSONRPCRequest request;
+        request.context = &m_node;
+        request.strMethod = "gettxoutsetinfo";
+        request.params = UniValue{UniValue::VARR};
+        request.params.push_back(mode);
+        auto result{std::async(std::launch::async, [&] { return tableRPC.execute(request); })};
+        // ForceFlushStateToDisk queues one notification; synchronization
+        // queues a second. Neither can run while the first callback waits.
+        const auto deadline{std::chrono::steady_clock::now() + std::chrono::seconds{10}};
+        while (signals.CallbacksPending() < pending + 2 && std::chrono::steady_clock::now() < deadline) {
+            std::this_thread::sleep_for(std::chrono::milliseconds{1});
+        }
+        BOOST_CHECK_GE(signals.CallbacksPending(), pending + 2);
+        resume.set_value();
+        BOOST_CHECK(result.wait_for(std::chrono::seconds{10}) == std::future_status::ready);
+        rpc_done.set_value();
+        BOOST_CHECK_NO_THROW({
+            const UniValue stats{result.get()};
+            BOOST_CHECK_EQUAL(stats.find_value("height").getInt<int>(), height);
+            BOOST_CHECK_EQUAL(stats.find_value("bestblock").get_str(), target.GetHash().GetHex());
+            BOOST_CHECK_EQUAL(stats.find_value("txouts").getInt<int>(), height);
+            BOOST_CHECK_EQUAL(stats.find_value("block_info").find_value("prevout_spent").getValStr(), "0.00000000");
+        });
+        signals.SyncWithValidationInterfaceQueue();
+    }
     g_coin_stats_index.swap(index);
     index->Stop();
 }
