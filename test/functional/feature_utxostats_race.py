@@ -5,7 +5,7 @@
 """Exercise UTXO scans while blocks advance and flush, with and without an index."""
 
 from concurrent.futures import ThreadPoolExecutor
-from threading import Barrier
+from threading import Barrier, BrokenBarrierError
 
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import assert_equal, get_rpc_proxy, rpc_url
@@ -46,7 +46,12 @@ class UTXOStatsRaceTest(BitcoinTestFramework):
 
         with ThreadPoolExecutor(max_workers=4) as executor:
             futures = [executor.submit(worker, mode) for mode in [None] + modes]
-            results = [future.result() for future in futures]
+        # Report the worker that aborted the barrier before its peers' errors.
+        for future in futures:
+            error = future.exception()
+            if error is not None and not isinstance(error, BrokenBarrierError):
+                future.result()
+        results = [future.result() for future in futures]
         self.sync_blocks()
         assert_equal(node.getblockcount(), self.nodes[1].getblockcount())
         if use_index:

@@ -37,3 +37,7 @@
 - [TASK-023: Activation-block mismatch DEBUG logging](TASK-023.md)
 
 - [TASK-024: Unsigned mainnet package manifest generator](TASK-024.md)
+
+- [TASK-025: Restrict mainnet DNS seeds to the Purity seed](TASK-025.md)
+
+- [TASK-026: Replace mainnet fixed seeds with selected Purity nodes](TASK-026.md)

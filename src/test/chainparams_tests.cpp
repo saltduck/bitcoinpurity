@@ -6,6 +6,9 @@
 #include <chainparams.h>
 #include <consensus/params.h>
 #include <deploymentstatus.h>
+#include <netaddress.h>
+#include <protocol.h>
+#include <streams.h>
 #include <versionbits.h>
 
 #include <limits>
@@ -17,6 +20,41 @@
 #include <boost/test/unit_test.hpp>
 
 BOOST_FIXTURE_TEST_SUITE(chainparams_tests, BasicTestingSetup)
+
+BOOST_AUTO_TEST_CASE(purity_mainnet_dns_seed)
+{
+    const auto params = CreateChainParams(m_args, ChainType::MAIN);
+    const auto& seeds = params->DNSSeeds();
+    BOOST_REQUIRE_EQUAL(seeds.size(), 1);
+    BOOST_CHECK_EQUAL(seeds.front(), "seed.bitcoinpurity.org.");
+}
+
+BOOST_AUTO_TEST_CASE(purity_mainnet_fixed_seeds)
+{
+    const auto params = CreateChainParams(m_args, ChainType::MAIN);
+    ParamsStream stream{DataStream{params->FixedSeeds()}, CAddress::V2_NETWORK};
+    std::vector<std::string> actual;
+    while (!stream.eof()) {
+        CService endpoint;
+        stream >> endpoint;
+        actual.push_back(endpoint.ToStringAddrPort());
+    }
+    const std::vector<std::string> expected{
+        "207.244.247.51:8333",
+        "[240e:390:6ee0:f370::b40]:8333",
+        "[2a02:4780:79:909::1]:8333",
+        "36.25.72.251:8333",
+        "45.77.139.7:8333",
+        "46.7.6.219:8333",
+        "57.129.53.78:5890",
+        "49.190.167.39:8333",
+        "49.190.167.39:8334",
+        "51.79.241.169:8333",
+        "76.13.13.187:8333",
+    };
+    BOOST_REQUIRE_EQUAL(actual.size(), expected.size());
+    BOOST_CHECK_EQUAL_COLLECTIONS(actual.begin(), actual.end(), expected.begin(), expected.end());
+}
 
 BOOST_AUTO_TEST_CASE(purity_activation_height_mainnet)
 {

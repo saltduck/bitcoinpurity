@@ -1432,7 +1432,13 @@ static RPCHelpMan gettxoutsetinfo()
         pindex = ParseHashOrHeight(request.params[1], chainman);
     }
 
+    const CBlockIndex* stats_block{pindex};
     if (index_requested && g_coin_stats_index) {
+        if (!stats_block && hash_type != CoinStatsHashType::HASH_SERIALIZED) {
+            // Fix the target before waiting: another RPC may advance and
+            // flush the coins view after the index synchronization marker.
+            stats_block = CHECK_NONFATAL(WITH_LOCK(::cs_main, return blockman->LookupBlockIndex(coins_view->GetBestBlock())));
+        }
         if (!g_coin_stats_index->BlockUntilSyncedToCurrentChain()) {
             const IndexSummary summary{g_coin_stats_index->GetSummary()};
 
@@ -1444,7 +1450,7 @@ static RPCHelpMan gettxoutsetinfo()
         }
     }
 
-    const std::optional<CCoinsStats> maybe_stats = GetUTXOStats(coins_view, *blockman, hash_type, node.rpc_interruption_point, pindex, index_requested);
+    const std::optional<CCoinsStats> maybe_stats = GetUTXOStats(coins_view, *blockman, hash_type, node.rpc_interruption_point, stats_block, index_requested);
     if (maybe_stats.has_value()) {
         const CCoinsStats& stats = maybe_stats.value();
         ret.pushKV("height", (int64_t)stats.nHeight);

@@ -171,6 +171,9 @@ PE_ALLOWED_LIBRARIES = {libname.lower() for libname in (
 'VERSION.dll', # version checking
 'WINMM.dll', # WinMM audio API
 'WTSAPI32.dll', # Remote Desktop
+'bcrypt.dll',   # Windows CNG cryptography
+'CRYPT32.dll',  # Windows certificate and cryptography APIs
+'Secur32.dll',  # Windows SSPI / Schannel
 )}
 
 def check_version(max_versions, version, arch) -> bool:

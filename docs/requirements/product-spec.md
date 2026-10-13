@@ -1,5 +1,20 @@
 # Bitcoin Purity Product Specification
 
+## Mainnet DNS seed
+
+The only built-in mainnet DNS seed is `seed.bitcoinpurity.org`. Other networks'
+DNS seeds and explicit peer configuration retain their existing
+behavior. See [TASK-025](../tasks/TASK-025.md).
+
+## Mainnet fixed seeds
+
+Mainnet fixed seeds consist only of the 11 user-selected endpoints recorded in
+`input/requirements.md` and `contrib/seeds/nodes_main.txt`. Domain entries use
+their resolved numeric addresses at the time of the update, including both
+node0 ports. Preserve port 5890 and both IPv6 entries. The compiled mainnet
+array matches the source list; other networks' seed arrays are unchanged.
+See [TASK-026](../tasks/TASK-026.md).
+
 ## Unsigned mainnet package manifest generator
 
 The local `generate-packages-manifest.py` tool generates a single-package
