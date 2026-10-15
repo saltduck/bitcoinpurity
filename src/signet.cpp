@@ -7,6 +7,7 @@
 #include <common/system.h>
 #include <consensus/merkle.h>
 #include <consensus/params.h>
+#include <consensus/tx_verify.h>
 #include <consensus/validation.h>
 #include <core_io.h>
 #include <hash.h>
@@ -122,14 +123,53 @@ std::optional<SignetTxs> SignetTxs::Create(const CBlock& block, const CScript& c
 }
 
 // Signet block solution checker
-bool CheckSignetBlockSolution(const CBlock& block, const Consensus::Params& consensusParams)
+const std::vector<uint8_t>& GetSignetChallengeForHeight(const Consensus::Params& params, int height)
 {
-    if (block.GetHash() == consensusParams.hashGenesisBlock) {
-        // genesis block solution is always valid
-        return true;
+    return height >= params.nPurityActivationHeight ? params.signet_challenge_postfork : params.signet_challenge;
+}
+
+bool CheckSignetBlockSolution(const CBlock& block, const Consensus::Params& consensusParams, int height)
+{
+    if (height < 0) return false;
+    if (height == 0) return block.GetHash() == consensusParams.hashGenesisBlock;
+
+    const auto& challenge_bytes = GetSignetChallengeForHeight(consensusParams, height);
+    if (challenge_bytes.empty()) return false;
+    if (height >= consensusParams.nPurityActivationHeight) {
+        const int index = GetWitnessCommitmentIndex(block);
+        if (index == NO_WITNESS_COMMITMENT) return false;
+        const CScript& commitment = block.vtx[0]->vout[index].scriptPubKey;
+        if (commitment.size() > 195) return false;
+        auto pc = commitment.begin() + MINIMUM_WITNESS_COMMITMENT;
+        std::vector<unsigned char> data;
+        opcodetype op;
+        if (!commitment.GetOp(pc, op, data) || pc != commitment.end() || data.size() <= 4 ||
+            !std::ranges::equal(Span{data}.first(4), SIGNET_HEADER) ||
+            CScript(commitment.begin() + MINIMUM_WITNESS_COMMITMENT, commitment.end()) != (CScript() << data)) {
+            return false;
+        }
+        try {
+            SpanReader reader{Span{data}.subspan(4)};
+            const uint64_t size = ReadCompactSize(reader);
+            if (size > 149) return false;
+            CScript script_sig;
+            script_sig.resize(size);
+            reader.read(MakeWritableByteSpan(script_sig));
+            if (ReadCompactSize(reader) != 0 || !reader.empty()) return false;
+            CScript::const_iterator it = script_sig.begin();
+            std::vector<unsigned char> signature;
+            if (!script_sig.GetOp(it, op, signature) || op != OP_0) return false;
+            for (int signer = 0; signer < 2; ++signer) {
+                if (!script_sig.GetOp(it, op, signature) || signature.empty() || signature.size() > 73 ||
+                    static_cast<size_t>(op) != signature.size()) return false;
+            }
+            if (it != script_sig.end()) return false;
+        } catch (const std::exception&) {
+            return false;
+        }
     }
 
-    const CScript challenge(consensusParams.signet_challenge.begin(), consensusParams.signet_challenge.end());
+    const CScript challenge(challenge_bytes.begin(), challenge_bytes.end());
     const std::optional<SignetTxs> signet_txs = SignetTxs::Create(block, challenge);
 
     if (!signet_txs) {
@@ -149,4 +189,18 @@ bool CheckSignetBlockSolution(const CBlock& block, const Consensus::Params& cons
         return false;
     }
     return true;
+}
+
+bool CheckSignetCoinbaseOutputSizes(const CBlock& block, const Consensus::Params& params, int height, TxValidationState& state)
+{
+    if (block.vtx.empty()) return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-cb-missing");
+    if (!params.signet_blocks || height < params.nPurityActivationHeight) {
+        return Consensus::CheckOutputSizes(*block.vtx[0], state);
+    }
+    if (!block.vtx[0]->IsCoinBase() || !CheckSignetBlockSolution(block, params, height)) {
+        return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-signet-blksig");
+    }
+    CMutableTransaction other_outputs{*block.vtx[0]};
+    other_outputs.vout.erase(other_outputs.vout.begin() + GetWitnessCommitmentIndex(block));
+    return Consensus::CheckOutputSizes(CTransaction{other_outputs}, state);
 }

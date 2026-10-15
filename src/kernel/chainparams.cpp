@@ -480,34 +480,31 @@ public:
         vFixedSeeds.clear();
         vSeeds.clear();
 
-        if (!options.challenge) {
-            bin = "512103ad5e0edad18cb1f0fc0d28a3d4f1f3e445640337489abb10404f2d1e086be430210359ef5021964fe22d6f8e05b2463c9540ce96883fe3b278760f048f5189f2e6c452ae"_hex_v_u8;
-            vFixedSeeds = std::vector<uint8_t>(std::begin(chainparams_seed_signet), std::end(chainparams_seed_signet));
-            vSeeds.emplace_back("seed.signet.bitcoin.sprovoost.nl.");
-            vSeeds.emplace_back("seed.signet.achownodes.xyz."); // Ava Chow, only supports x1, x5, x9, x49, x809, x849, xd, x400, x404, x408, x448, xc08, xc48, x40c
-
-            consensus.nMinimumChainWork = uint256{"000000000000000000000000000000000000000000000000000002b517f3d1a1"};
-            consensus.defaultAssumeValid = uint256{"000000895a110f46e59eb82bbc5bfb67fa314656009c295509c21b4999f5180a"}; // 237722
-            m_assumed_blockchain_size = 9;
-            m_assumed_chain_state_size = 1;
-            chainTxData = ChainTxData{
-                // Data from RPC: getchaintxstats 4096 000000895a110f46e59eb82bbc5bfb67fa314656009c295509c21b4999f5180a
-                .nTime    = 1741019645,
-                .tx_count = 16540736,
-                .dTxRate  = 1.064918879911595,
-            };
-        } else {
-            bin = *options.challenge;
-            consensus.nMinimumChainWork = uint256{};
-            consensus.defaultAssumeValid = uint256{};
-            m_assumed_blockchain_size = 0;
-            m_assumed_chain_state_size = 0;
-            chainTxData = ChainTxData{
-                0,
-                0,
-                0,
-            };
-            LogPrintf("Signet with challenge %s\n", HexStr(bin));
+        bin = "512103ad5e0edad18cb1f0fc0d28a3d4f1f3e445640337489abb10404f2d1e086be430210359ef5021964fe22d6f8e05b2463c9540ce96883fe3b278760f048f5189f2e6c452ae"_hex_v_u8;
+        consensus.nMinimumChainWork.SetNull();
+        consensus.defaultAssumeValid.SetNull();
+        m_assumed_blockchain_size = 9;
+        m_assumed_chain_state_size = 1;
+        chainTxData = {0, 0, 0};
+        if (options.fork) {
+            const auto& fork = *options.fork;
+            consensus.nPurityActivationHeight = fork.activation_height;
+            consensus.nReducedDataGrandfatherHeight = fork.activation_height;
+            consensus.nReducedDataGrandfatherFixHeight = fork.activation_height;
+            consensus.hashPurityActivationBlock = fork.activation_hash;
+            consensus.hashSignetForkParent = fork.parent_hash;
+            consensus.nAsertAnchorHeight = fork.anchor_height;
+            consensus.hashSignetAsertAnchor = fork.anchor_hash;
+            consensus.hashSignetAsertAnchorParent = fork.anchor_parent_hash;
+            consensus.nSignetAsertAnchorBits = fork.anchor_bits;
+            consensus.nSignetAsertAnchorParentTime = fork.anchor_parent_time;
+            consensus.signet_challenge_postfork = fork.challenge;
+            consensus.signet_simulation = fork.simulation;
+            consensus.nMinimumChainWork = fork.minimum_chain_work;
+            vSeeds = fork.dns_seeds;
+            vFixedSeeds = fork.fixed_seeds;
+            m_signet_rpc_port = fork.rpc_port;
+            m_signet_historical_seeds = fork.historical_seed_nodes;
         }
 
         if (options.seeds) {
@@ -525,7 +522,7 @@ public:
         consensus.CSVHeight = 1;
         consensus.SegwitHeight = 1;
         consensus.nPowTargetTimespan = 14 * 24 * 60 * 60; // two weeks
-        consensus.nPowTargetSpacing = options.pow_target_spacing;
+        consensus.nPowTargetSpacing = 600;
         consensus.fPowAllowMinDifficultyBlocks = false;
         consensus.enforce_BIP94 = false;
         consensus.fPowNoRetargeting = false;
@@ -555,7 +552,7 @@ public:
         uint256 hash = h.GetHash();
         std::copy_n(hash.begin(), 4, pchMessageStart.begin());
 
-        nDefaultPort = 38333;
+        nDefaultPort = options.fork ? options.fork->p2p_port : 38333;
         nPruneAfterHeight = 1000;
 
         genesis = CreateGenesisBlock(1598918400, 52613770, 0x1e0377ae, 1, 50 * COIN);
@@ -563,14 +560,7 @@ public:
         assert(consensus.hashGenesisBlock == uint256{"00000008819873e925422c1ff0f99f7cc9bbb232af63a077a480a3633bee1ef6"});
         assert(genesis.hashMerkleRoot == uint256{"4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"});
 
-        m_assumeutxo_data = {
-            {
-                .height = 160'000,
-                .hash_serialized = AssumeutxoHash{uint256{"fe0a44309b74d6b5883d246cb419c6221bcccf0b308c9b59b7d70783dbdf928a"}},
-                .m_chain_tx_count = 2289496,
-                .blockhash = consteval_ctor(uint256{"0000003ca3c99aff040f2563c2ad8f8ec88bd0fd6b8f0895cfaf1ef90353a62c"}),
-            }
-        };
+        m_assumeutxo_data.clear();
 
         base58Prefixes[PUBKEY_ADDRESS] = std::vector<unsigned char>(1,111);
         base58Prefixes[SCRIPT_ADDRESS] = std::vector<unsigned char>(1,196);

@@ -11,10 +11,14 @@
 
 #include <optional>
 
+class TxValidationState;
+
 /**
  * Extract signature and check whether a block has a valid solution
  */
-bool CheckSignetBlockSolution(const CBlock& block, const Consensus::Params& consensusParams);
+const std::vector<uint8_t>& GetSignetChallengeForHeight(const Consensus::Params& params, int height);
+bool CheckSignetBlockSolution(const CBlock& block, const Consensus::Params& consensusParams, int height);
+bool CheckSignetCoinbaseOutputSizes(const CBlock& block, const Consensus::Params& params, int height, TxValidationState& state);
 
 /**
  * Generate the signet tx corresponding to the given block

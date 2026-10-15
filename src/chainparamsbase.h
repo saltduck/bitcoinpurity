@@ -9,6 +9,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 
 class ArgsManager;
@@ -52,7 +53,7 @@ void SetupChainParamsBaseOptions(ArgsManager& argsman);
 const CBaseChainParams& BaseParams();
 
 /** Sets the params returned by Params() to those for the given chain. */
-void SelectBaseParams(const ChainType chain);
+void SelectBaseParams(const ChainType chain, std::optional<uint16_t> signet_rpc_port = {});
 
 /** List of possible chain / network names  */
 #define LIST_CHAIN_NAMES "main, test, testnet4, signet, regtest"

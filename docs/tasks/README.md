@@ -41,3 +41,19 @@
 - [TASK-025: Restrict mainnet DNS seeds to the Purity seed](TASK-025.md)
 
 - [TASK-026: Replace mainnet fixed seeds with selected Purity nodes](TASK-026.md)
+
+## Purity Signet
+
+- [TASK-PS-000: Baseline and requirement amendments](TASK-PS-000.md)
+- [TASK-PS-001: Signet parameter configuration and isolation](TASK-PS-001.md)
+- [TASK-PS-002: Height-aware signatures and Coinbase commitment](TASK-PS-002.md)
+- [TASK-PS-003: Signet ASERT numeric compatibility](TASK-PS-003.md)
+- [TASK-PS-004: Shared-magic P2P history and fork isolation](TASK-PS-004.md)
+- [TASK-PS-005: Independent signing miner and RPCs](TASK-PS-005.md)
+- [TASK-PS-006: Real parameters and first-block pin freeze](TASK-PS-006.md)
+- [TASK-PS-007: Release and full acceptance](TASK-PS-007.md)
+
+- [Purity Signet acceptance matrix](../purity-signet-acceptance.md)
+- [Purity Signet operator procedure](../purity-signet-operations.md)
+
+- [Signet complete source audit and Linux fuzz](../purity-signet-review.md)

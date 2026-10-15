@@ -122,3 +122,25 @@ FUZZ_TARGET(pow_transition, .init = initialize_pow)
     unsigned int new_nbits{GetNextWorkRequired(last_block, nullptr, consensus_params)};
     Assert(PermittedDifficultyTransition(consensus_params, last_block->nHeight + 1, last_block->nBits, new_nbits));
 }
+
+FUZZ_TARGET(signet_asert)
+{
+    FuzzedDataProvider provider{buffer.data(), buffer.size()};
+    const arith_uint256 signet_limit{UintToArith256(uint256{"00000377ae000000000000000000000000000000000000000000000000000000"})};
+    const arith_uint256 boundary_limit{(arith_uint256{1} << 239) - 1};
+    const arith_uint256 main_limit{UintToArith256(uint256{"00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff"})};
+    const auto choice = provider.ConsumeIntegralInRange<int>(0, 2);
+    const auto& limit = choice == 0 ? signet_limit : choice == 1 ? boundary_limit : main_limit;
+    arith_uint256 reference{ConsumeArithUInt256(provider) >> 17};
+    if (reference == 0) reference = 1;
+    if (reference > limit) reference = limit;
+    const int64_t height_diff = provider.ConsumeIntegralInRange<int64_t>(0, std::numeric_limits<int>::max() - 1);
+    const int64_t time_diff = provider.ConsumeBool()
+        ? provider.ConsumeIntegralInRange<int64_t>(-4294967295LL, 4294967295LL)
+        : 600 * (height_diff + 1) + provider.ConsumeIntegralInRange<int64_t>(-30000000, 30000000);
+    const auto target = CalculateSignetASERT(reference, 600, time_diff, height_diff, limit, 86400);
+    Assert(target > 0 && target <= limit);
+    if (reference > main_limit) reference = main_limit;
+    Assert(CalculateSignetASERT(reference, 600, time_diff, height_diff, main_limit, 86400) ==
+           CalculateASERT(reference, 600, time_diff, height_diff, main_limit, 86400));
+}

@@ -216,7 +216,7 @@ std::shared_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock()
 
     BlockValidationState state;
     if (m_options.test_block_validity && !TestBlockValidity(state, chainparams, m_chainstate, *pblock, pindexPrev,
-                                                            /*fCheckPOW=*/false, /*fCheckMerkleRoot=*/false)) {
+                                                            /*fCheckPOW=*/false, /*fCheckMerkleRoot=*/false, BlockValidationMode::UnsignedTemplate)) {
         throw std::runtime_error(strprintf("%s: TestBlockValidity failed: %s", __func__, state.ToString()));
     }
     const auto time_2{SteadyClock::now()};

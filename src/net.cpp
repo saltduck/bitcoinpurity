@@ -651,6 +651,7 @@ void CNode::CopyStats(CNodeStats& stats)
     X(m_last_tx_time);
     X(m_last_block_time);
     X(m_connected);
+    stats.signet_chain_verified = m_signet_chain_verified;
     X(m_addr_name);
     X(nVersion);
     {

@@ -344,4 +344,87 @@ BOOST_AUTO_TEST_CASE(purity_regtest_retains_no_retargeting)
     BOOST_CHECK_EQUAL(GetNextWorkRequired(&previous, &next, params), previous.nBits);
 }
 
+BOOST_AUTO_TEST_CASE(signet_asert_activation_uses_wide_limit)
+{
+    auto params = CreateChainParams(*m_node.args, ChainType::SIGNET)->GetConsensus();
+    params.nPurityActivationHeight = 11;
+    params.nAsertAnchorHeight = 6;
+    const auto limit = UintToArith256(params.powLimit);
+    BOOST_REQUIRE_EQUAL(limit.bits(), 234U);
+    auto blocks = MakeAsertChain(params, 10, 0x1e0377ae);
+    BOOST_CHECK_EQUAL(GetNextWorkRequired(&blocks.back(), nullptr, params), 0x1e0377aeU);
+    BOOST_CHECK_EQUAL(GetNextWorkRequired(&blocks[blocks.size() - 2], nullptr, params), 0x1e0377aeU);
+}
+
+BOOST_AUTO_TEST_CASE(signet_selected_height_anchor_work)
+{
+    auto params = CChainParams::SigNet({})->GetConsensus();
+    params.nPurityActivationHeight = 318621;
+    params.nAsertAnchorHeight = 318616;
+    std::vector<CBlockIndex> headers(6);
+    const uint32_t times[]{1787261860, 1787263660, 1787265035, 1787266074, 1787266163, 1787266302};
+    for (size_t i = 0; i < headers.size(); ++i) {
+        headers[i].nHeight = 318615 + i;
+        headers[i].nTime = times[i];
+        headers[i].nBits = 0x1d13c0c2;
+        headers[i].pprev = i ? &headers[i - 1] : nullptr;
+    }
+    const auto bits = GetNextWorkRequired(&headers.back(), nullptr, params);
+    BOOST_CHECK_EQUAL(bits, 0x1d13fbb5U);
+    BOOST_CHECK(CheckDifficultyBits(0x1d13c0c2, bits, 318621, params));
+    BOOST_CHECK(!CheckDifficultyBits(0x1d13c0c2, bits, 318622, params));
+}
+
+BOOST_AUTO_TEST_CASE(signet_asert_integer_reference)
+{
+    const arith_uint256 limit{UintToArith256(uint256{"00000377ae000000000000000000000000000000000000000000000000000000"})};
+    const arith_uint256 ref{UintToArith256(uint256{"0000010000000000000000000000000000000000000000000000000000000000"})};
+    // Generated with unbounded integers and signed division toward zero.
+    const struct { int64_t extra_time; const char* target; } vectors[] = {
+        {-30000000, "0000000000000000000000000000000000000000000000000000000000000001"},
+        {-86401, "0000008000000000000000000000000000000000000000000000000000000000"},
+        {-86400, "0000008000000000000000000000000000000000000000000000000000000000"},
+        {-12345, "000000e7e3800000000000000000000000000000000000000000000000000000"},
+        {-1, "0000010000000000000000000000000000000000000000000000000000000000"},
+        {0, "0000010000000000000000000000000000000000000000000000000000000000"},
+        {1, "0000010000000000000000000000000000000000000000000000000000000000"},
+        {12345, "0000011aae000000000000000000000000000000000000000000000000000000"},
+        {43199, "0000016a01000000000000000000000000000000000000000000000000000000"},
+        {86399, "000001ffff000000000000000000000000000000000000000000000000000000"},
+        {86400, "0000020000000000000000000000000000000000000000000000000000000000"},
+        {86401, "0000020000000000000000000000000000000000000000000000000000000000"},
+        {30000000, "00000377ae000000000000000000000000000000000000000000000000000000"},
+    };
+    for (const auto& v : vectors) {
+        BOOST_CHECK_EQUAL(CalculateSignetASERT(ref, 600, 3000 + v.extra_time, 4, limit, 86400),
+                          UintToArith256(*uint256::FromHex(v.target)));
+    }
+}
+
+BOOST_AUTO_TEST_CASE(signet_asert_matches_original_on_mainnet_domain)
+{
+    const auto params = CreateChainParams(*m_node.args, ChainType::MAIN)->GetConsensus();
+    const auto limit = UintToArith256(params.powLimit);
+    for (const auto& ref : {arith_uint256{1}, arith_uint256{limit >> 1}, limit}) {
+        for (int64_t height : {0, 4, 2016}) {
+            for (int64_t extra : {-30000000, -86401, -12345, 0, 12345, 86401, 30000000}) {
+                const int64_t time = 600 * (height + 1) + extra;
+                BOOST_CHECK_EQUAL(CalculateSignetASERT(ref, 600, time, height, limit, 86400),
+                                  CalculateASERT(ref, 600, time, height, limit, 86400));
+            }
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(signet_asert_239_bit_multiply_and_shift_boundaries)
+{
+    const arith_uint256 limit = (~arith_uint256{}) >> 17;
+    BOOST_REQUIRE_EQUAL(limit.bits(), 239U);
+    const auto ref = limit >> 1;
+    // exponent's fractional part is 65535: the largest polynomial factor.
+    BOOST_CHECK_EQUAL(CalculateSignetASERT(ref, 600, 86999, 0, limit, 86400), (ref * 131071U) >> 16);
+    BOOST_CHECK_EQUAL(CalculateSignetASERT(limit, 600, 30000000, 0, limit, 86400), limit);
+    BOOST_CHECK_EQUAL(CalculateSignetASERT(arith_uint256{1}, 600, -30000000, 0, limit, 86400), arith_uint256{1});
+}
+
 BOOST_AUTO_TEST_SUITE_END()
