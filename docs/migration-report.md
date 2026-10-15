@@ -293,3 +293,49 @@ Add deterministic cursor-acquisition tests before fixing production code, then
 concurrent RPC/full/pruned/index tests and existing hash/AssumeUTXO/reorg suites.
 Each logical stage is independently built and validated before its commit.
 See doc/utxostats-backport.md for executed results and lifetime-review limits.
+
+
+## Purity Signet implementation
+
+Baseline cc85cfad90dea5447ff313f3158147ebb7bf1b47. The existing Signet chain
+becomes Purity consensus; original/custom Signet runtime modes are removed.
+Pre-H official history remains mandatory. Mainnet is unchanged. The owner
+authorized chain-parameter JSON with simulated initial values for development.
+No H, public key or simulated hash is an official public-chain decision.
+
+Use isolated signet/ state. Import/revalidate only historical raw blocks;
+do not copy external Signet indexes, chainstate, wallets or peer caches. Fixed
+pins, anchor and height-aware signatures must apply to restart, full reindex
+and chainstate-only replay. Public release waits for real H-1/anchor evidence,
+first-block raw/hash, official keys/seeds and all AT gates.
+
+Current acceptance: macOS and Linux arm64 CTest each 150/150 and nine focused functional runs passed;
+82 UBSan cases passed. The actual ASERT source produced 79 identical results
+on macOS arm64/Clang and Docker Linux x86_64/GCC, preserving the original
+224-bit assertion. Official Core 28.0 confirmed the complete simulated 0..10
+prefix, UTXO hash, shared-magic sync and directory/port isolation. Simulation
+first-block pin freeze/restart passed. Raw RPC/REST/P2P/ZMQ reads now validate
+Signet with index height. Public examples passed a daemon/CLI smoke test.
+Full future official history and production validation remain pending.
+See purity-signet-acceptance.md for the current matrix.
+
+The four-daemon miner rehearsal passed signer outage/resumption and restored
+backup signing. A separate wall-clock run passed one 600-second interval.
+Xcode lacks the libFuzzer runtime; later Linux libFuzzer validation is recorded
+in purity-signet-review.md. See
+purity-signet-operations.md for the freeze and recovery procedure.
+
+Linux arm64 full-node functional validation passed all five selected cases
+with container-local data, including signer outage and restored backup signing.
+
+Owner amendment and complete audit (2026-10-15): H=318621, default P2P/RPC
+38333/38332, standard signet/ directory. Original per-version test-directory
+mapping and wallet directory-scan additions were removed. The complete-field
+JSON regression exposed and fixed omitted activation_hash acceptance.
+See purity-signet-review.md for Mainnet isolation proof, actual boundary-block
+records, Linux fuzz results and remaining full-history/production gates.
+
+Documentation language: the retained Signet v1.0 baseline and source-review
+record were translated into English. All documents maintained for this change
+use English; requirement IDs, consensus parameters and validation evidence were
+preserved. No implementation or data migration accompanies this editorial change.

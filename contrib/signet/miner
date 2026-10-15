@@ -23,11 +23,6 @@ from test_framework.messages import CBlock, CBlockHeader, COutPoint, CTransactio
 from test_framework.psbt import PSBT, PSBTMap, PSBT_GLOBAL_UNSIGNED_TX, PSBT_IN_FINAL_SCRIPTSIG, PSBT_IN_FINAL_SCRIPTWITNESS, PSBT_IN_NON_WITNESS_UTXO, PSBT_IN_SIGHASH_TYPE # noqa: E402
 from test_framework.script import CScript, CScriptOp # noqa: E402
 
-logging.basicConfig(
-    format='%(asctime)s %(levelname)s %(message)s',
-    level=logging.INFO,
-    datefmt='%Y-%m-%d %H:%M:%S')
-
 SIGNET_HEADER = b"\xec\xc7\xda\xa2"
 PSBT_SIGNET_BLOCK = b"\xfc\x06signetb"    # proprietary PSBT global field holding the block being signed
 RE_MULTIMINER = re.compile(r"^(\d+)(-(\d+))?/(\d+)$")
@@ -568,4 +563,5 @@ def main():
         return 1
 
 if __name__ == "__main__":
+    logging.basicConfig(format='%(asctime)s %(levelname)s %(message)s', level=logging.INFO, datefmt='%Y-%m-%d %H:%M:%S')
     main()

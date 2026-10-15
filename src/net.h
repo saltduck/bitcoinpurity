@@ -225,6 +225,7 @@ public:
     std::string m_session_id;
     /** whether this peer forced its connection by evicting another */
     bool m_forced_inbound;
+    bool signet_chain_verified;
     /** CPU time spent processing messages to/from the peer. */
     std::chrono::nanoseconds m_cpu_time;
 };
@@ -863,6 +864,7 @@ public:
 
     /** Whether this peer provides all services that we want. Used for eviction decisions */
     std::atomic_bool m_has_all_wanted_services{false};
+    std::atomic_bool m_signet_chain_verified{false};
 
     /** Whether this connection counts towards an automatic outbound target. */
     bool CountsTowardOutboundTarget() const { return !m_is_non_bip110_outbound; }

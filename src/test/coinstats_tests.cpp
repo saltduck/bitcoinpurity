@@ -67,8 +67,13 @@ BOOST_AUTO_TEST_CASE(cursor_snapshot)
     const CScript script{CScript() << ToByteVector(coinbaseKey.GetPubKey()) << OP_CHECKSIG};
     for (const auto mode : {CoinStatsHashType::HASH_SERIALIZED, CoinStatsHashType::MUHASH, CoinStatsHashType::NONE}) {
         view.cursor_calls = view.best_block_calls = 0;
-        // Advance and flush exactly at cursor acquisition, after any separate
-        // best-block read. No production scheduling hook or delay is needed.
+        const auto* before_tip{WITH_LOCK(cs_main, return chainstate.m_chain.Tip())};
+        const auto stable{kernel::ComputeUTXOStats(mode, &view, m_node.chainman->m_blockman)};
+        BOOST_REQUIRE(stable);
+        view.cursor_calls = view.best_block_calls = 0;
+        std::thread advance;
+        // Queue advancement during cursor acquisition. The scan must keep its
+        // snapshot after cs_main is released and the queued flush completes.
         view.before_cursor = [&] {
             bool available{false};
             std::thread contender{[&] {
@@ -77,25 +82,28 @@ BOOST_AUTO_TEST_CASE(cursor_snapshot)
             }};
             contender.join();
             BOOST_CHECK(!available);
-            CreateAndProcessBlock({}, script);
-            chainstate.ForceFlushStateToDisk();
+            advance = std::thread{[&] {
+                CreateAndProcessBlock({}, script);
+                chainstate.ForceFlushStateToDisk();
+            }};
         };
         int interruptions{0};
         const auto stats{kernel::ComputeUTXOStats(mode, &view, m_node.chainman->m_blockman, [&] {
             AssertLockNotHeld(cs_main);
+            if (advance.joinable()) advance.join();
             ++interruptions;
         })};
+        if (advance.joinable()) advance.join();
         BOOST_REQUIRE(stats);
         const auto* tip{WITH_LOCK(cs_main, return chainstate.m_chain.Tip())};
-        BOOST_CHECK_EQUAL(stats->nHeight, tip->nHeight);
-        BOOST_CHECK(stats->hashBlock == tip->GetBlockHash());
-        BOOST_CHECK_EQUAL(stats->coins_count, tip->nHeight);
+        BOOST_CHECK_EQUAL(tip->nHeight, before_tip->nHeight + 1);
+        BOOST_CHECK_EQUAL(stats->nHeight, before_tip->nHeight);
+        BOOST_CHECK(stats->hashBlock == before_tip->GetBlockHash());
+        BOOST_CHECK_EQUAL(stats->coins_count, before_tip->nHeight);
         BOOST_CHECK_EQUAL(interruptions, stats->coins_count);
         BOOST_CHECK_EQUAL(view.cursor_calls, 1);
         BOOST_CHECK_EQUAL(view.best_block_calls, 0);
         view.before_cursor = {};
-        const auto stable{WITH_LOCK(cs_main, return kernel::ComputeUTXOStats(mode, &view, m_node.chainman->m_blockman))};
-        BOOST_REQUIRE(stable);
         BOOST_CHECK(stable->hashSerialized == stats->hashSerialized);
         BOOST_CHECK(stable->total_amount == stats->total_amount);
         BOOST_CHECK_EQUAL(stable->nTransactionOutputs, stats->nTransactionOutputs);

@@ -10,6 +10,14 @@
 #include <consensus/params.h>
 #include <deploymentinfo.h>
 #include <kernel/chainparams.h>
+#include <kernel/official_packages.h>
+#include <netbase.h>
+#include <arith_uint256.h>
+#include <protocol.h>
+#include <pubkey.h>
+#include <script/script.h>
+#include <streams.h>
+#include <univalue.h>
 #include <logging.h>
 #include <tinyformat.h>
 #include <util/chaintype.h>
@@ -19,6 +27,9 @@
 #include <cassert>
 #include <cstdint>
 #include <limits>
+#include <fstream>
+#include <iterator>
+#include <set>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -27,29 +38,102 @@ using util::SplitString;
 
 void ReadSigNetArgs(const ArgsManager& args, CChainParams::SigNetOptions& options)
 {
-    if (!args.GetArgs("-signetseednode").empty()) {
-        options.seeds.emplace(args.GetArgs("-signetseednode"));
+    if (args.IsArgSet("-signetchallenge") || args.IsArgSet("-signetblocktime")) {
+        throw std::runtime_error("Signet consensus is configured by -signetparams; -signetchallenge and -signetblocktime are not supported");
     }
-    if (!args.GetArgs("-signetchallenge").empty()) {
-        const auto signet_challenge = args.GetArgs("-signetchallenge");
-        if (signet_challenge.size() != 1) {
-            throw std::runtime_error("-signetchallenge cannot be multiple values.");
-        }
-        const auto val{TryParseHex<uint8_t>(signet_challenge[0])};
-        if (!val) {
-            throw std::runtime_error(strprintf("-signetchallenge must be hex, not '%s'.", signet_challenge[0]));
-        }
-        options.challenge.emplace(*val);
+    if (!args.GetArgs("-signetseednode").empty()) options.seeds = args.GetArgs("-signetseednode");
+    const fs::path path = AbsPathForConfigVal(args, args.GetPathArg("-signetparams", "signet-params.json"), false);
+    if (!args.IsArgSet("-signetparams") && !fs::exists(path)) return;
+    std::ifstream input{path, std::ios::binary};
+    if (!input) throw std::runtime_error("Cannot read Signet parameter configuration");
+    const std::string contents{std::istreambuf_iterator<char>{input}, {}};
+    UniValue json;
+    if (!json.read(contents) || !json.isObject() || JsonHasDuplicateKeys(json)) {
+        throw std::runtime_error("Signet parameters must be a JSON object without duplicate keys");
     }
-    if (const auto signetblocktime{args.GetIntArg("-signetblocktime")}) {
-        if (!args.IsArgSet("-signetchallenge")) {
-            throw std::runtime_error("-signetblocktime cannot be set without -signetchallenge");
-        }
-        if (*signetblocktime <= 0) {
-            throw std::runtime_error("-signetblocktime must be greater than 0");
-        }
-        options.pow_target_spacing = *signetblocktime;
+    const std::set<std::string> fields{"schema_version", "simulation", "activation_height", "parent_hash", "activation_hash", "anchor", "public_keys", "minimum_chain_work", "p2p_port", "rpc_port", "dns_seeds", "fixed_seed_nodes", "historical_seed_nodes"};
+    if (json.getKeys().size() != fields.size()) throw std::runtime_error("Signet parameters must include every schema field");
+    for (const auto& key : json.getKeys()) {
+        if (!fields.contains(key)) throw std::runtime_error("Unknown Signet parameter field: " + key);
     }
+    if (json["schema_version"].getInt<int>() != 1) throw std::runtime_error("Unsupported Signet parameter schema version");
+    CChainParams::SigNetOptions::Fork fork{};
+    fork.simulation = json["simulation"].get_bool();
+    fork.activation_height = json["activation_height"].getInt<int>();
+    if (fork.activation_height < 6 || fork.activation_height == std::numeric_limits<int>::max()) {
+        throw std::runtime_error("Signet activation_height must be in [6, INT_MAX)");
+    }
+    const auto hash = [](const UniValue& object, const std::string& field) {
+        const auto value = object[field].isStr() ? uint256::FromHex(object[field].get_str()) : std::nullopt;
+        if (!value || value->IsNull()) throw std::runtime_error("Invalid Signet hash field: " + field);
+        return *value;
+    };
+    fork.parent_hash = hash(json, "parent_hash");
+    if (json["activation_hash"].isNull() && fork.simulation) {
+        fork.activation_hash.SetNull();
+    } else {
+        fork.activation_hash = hash(json, "activation_hash");
+    }
+    const auto& anchor = json["anchor"];
+    if (!anchor.isObject() || anchor.getKeys().size() != 5) throw std::runtime_error("Invalid Signet anchor object");
+    fork.anchor_height = anchor["height"].getInt<int>();
+    if (fork.anchor_height < 1 || fork.anchor_height >= fork.activation_height) throw std::runtime_error("Signet anchor must precede activation and have a parent");
+    fork.anchor_hash = hash(anchor, "hash");
+    fork.anchor_parent_hash = hash(anchor, "parent_hash");
+    const auto bits = TryParseHex<uint8_t>(anchor["bits"].get_str());
+    if (!bits || bits->size() != 4) throw std::runtime_error("Invalid Signet anchor bits");
+    fork.anchor_bits = (uint32_t((*bits)[0]) << 24) | (uint32_t((*bits)[1]) << 16) | (uint32_t((*bits)[2]) << 8) | (*bits)[3];
+    arith_uint256 target;
+    bool negative, overflow;
+    target.SetCompact(fork.anchor_bits, &negative, &overflow);
+    if (negative || overflow || target == 0 || target > UintToArith256(uint256{"00000377ae000000000000000000000000000000000000000000000000000000"})) {
+        throw std::runtime_error("Signet anchor target exceeds the inherited powLimit");
+    }
+    fork.anchor_parent_time = anchor["parent_time"].getInt<uint32_t>();
+    if (fork.anchor_parent_time == 0) throw std::runtime_error("Invalid Signet anchor parent_time");
+    const auto& keys = json["public_keys"];
+    if (!keys.isArray() || keys.size() != 3) throw std::runtime_error("Signet requires three compressed public keys");
+    std::set<std::vector<uint8_t>> unique;
+    CScript challenge;
+    challenge << OP_2;
+    for (const auto& item : keys.getValues()) {
+        const auto key = item.isStr() ? TryParseHex<uint8_t>(item.get_str()) : std::nullopt;
+        if (!key || key->size() != 33 || !CPubKey{*key}.IsFullyValid() || !unique.insert(*key).second) {
+            throw std::runtime_error("Signet public keys must be distinct valid compressed public keys");
+        }
+        challenge << *key;
+    }
+    challenge << OP_3 << OP_CHECKMULTISIG;
+    fork.challenge.assign(challenge.begin(), challenge.end());
+    fork.minimum_chain_work = hash(json, "minimum_chain_work");
+    const auto port = [](const UniValue& object, const std::string& field) {
+        const int value = object[field].getInt<int>();
+        if (value < 1 || value > 65535) throw std::runtime_error("Invalid Signet port field: " + field);
+        return static_cast<uint16_t>(value);
+    };
+    fork.p2p_port = port(json, "p2p_port");
+    fork.rpc_port = port(json, "rpc_port");
+    if (fork.p2p_port == fork.rpc_port) throw std::runtime_error("Signet P2P and RPC ports must differ");
+    const auto list = [](const UniValue& object, const std::string& field) {
+        const auto& values = object[field];
+        if (!values.isArray()) throw std::runtime_error("Invalid Signet list field: " + field);
+        std::vector<std::string> result;
+        for (const auto& value : values.getValues()) {
+            if (!value.isStr() || value.get_str().empty()) throw std::runtime_error("Invalid Signet seed entry");
+            result.push_back(value.get_str());
+        }
+        return result;
+    };
+    fork.dns_seeds = list(json, "dns_seeds");
+    fork.historical_seed_nodes = list(json, "historical_seed_nodes");
+    VectorWriter seeds{fork.fixed_seeds, 0};
+    ParamsStream seed_writer{seeds, CAddress::V2_NETWORK};
+    for (const auto& seed : list(json, "fixed_seed_nodes")) {
+        const CService endpoint = LookupNumeric(seed);
+        if (!endpoint.IsValid() || endpoint.GetPort() == 0) throw std::runtime_error("Signet fixed seed must be a numeric address with a port");
+        seed_writer << endpoint;
+    }
+    options.fork = std::move(fork);
 }
 
 void ReadRegTestArgs(const ArgsManager& args, CChainParams::RegTestOptions& options)
@@ -169,6 +253,13 @@ std::unique_ptr<const CChainParams> CreateChainParams(const ArgsManager& args, c
 
 void SelectParams(const ChainType chain)
 {
+    if (chain == ChainType::SIGNET) {
+        gArgs.SelectConfigNetwork("signet");
+        auto params = CreateChainParams(gArgs, chain);
+        SelectBaseParams(chain, params->SignetRPCPort());
+        globalChainParams = std::move(params);
+        return;
+    }
     SelectBaseParams(chain);
     globalChainParams = CreateChainParams(gArgs, chain);
 }

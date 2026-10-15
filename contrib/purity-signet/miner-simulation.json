@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "chain_params": "simulation.json",
+  "node_cli": [
+    "./build/bin/bitcoin-cli",
+    "-datadir=./build/purity-signet-simulation",
+    "-rpcclienttimeout=30"
+  ],
+  "signer_clis": [
+    [
+      "./build/bin/bitcoin-cli",
+      "-datadir=./build/purity-signet-simulation",
+      "-rpcwallet=authority-a",
+      "-rpcclienttimeout=30"
+    ],
+    [
+      "./build/bin/bitcoin-cli",
+      "-datadir=./build/purity-signet-simulation",
+      "-rpcwallet=authority-b",
+      "-rpcclienttimeout=30"
+    ]
+  ],
+  "bitcoin_util": "./build/bin/bitcoin-util",
+  "reward_script": "00149243f727dd5343293eb83174324019ec16c2630f",
+  "poll_seconds": 5
+}

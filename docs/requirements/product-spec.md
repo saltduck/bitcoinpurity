@@ -215,3 +215,43 @@ amounts. See [architecture](../architecture/coinstatsindex.md),
   change consensus, validation, ASERT, RDTS, parking, wallets, P2P or import #34521.
 - Add deterministic cursor-snapshot regressions and concurrent functional scans;
   run hash, index/history/reorg/pruning and AssumeUTXO compatibility tests.
+
+
+## Purity Signet
+
+All requirement, architecture, API, task, operational and review documents
+maintained for this change must be written in English.
+
+The existing `signet` chain directly uses Purity consensus. There is no separate
+chain type or Purity mode. Inherit official Bitcoin Signet through H-1, keep its
+genesis, magic and powLimit, then switch to a fixed bare 2-of-3 challenge,
+permanent RDTS and aserti3-1d (600/86400). Grandfather boundaries are H.
+Mainnet consensus and its original ASERT/224-bit assertion remain unchanged.
+
+Chain parameters are loaded from a Signet-only JSON configuration; the owner
+authorized explicitly labelled simulated initial values. Simulation is not an
+official release. Public configuration contains no private keys. Official
+parameters and first-block pin must be audited before release.
+
+Signet signatures are height-aware on all acceptance, disk, replay and reorg
+paths. Only internal unsigned template construction may omit the unfinished
+solution. The selected canonical bare-multisig BIP141/BIP325 Coinbase output
+has a maximum 195-byte exception after H; other outputs retain 34/83 limits.
+Use a Signet-only 239-bit ASERT entry, GBT bits, real PoW, shared-prefix peers
+and bounded post-fork peer isolation without punishing normal old-chain forks.
+
+See [requirements](purity-signet-requirements.md),
+[architecture](../architecture/purity-signet.md),
+[configuration and RPC contract](../api/purity-signet.md), and TASK-PS-000..007.
+
+Validation evidence: [acceptance matrix](../purity-signet-acceptance.md).
+Freeze and recovery: [operator procedure](../purity-signet-operations.md).
+
+Owner-fixed Signet parameters (2026-10-15): H=318621, default P2P/RPC
+38333/38332, standard signet/ directory. The launch JSON is
+contrib/purity-signet/signet-params.json; the H=11 simulation remains a separate
+regression fixture. Authority/seeds/activation pin are still provisional.
+Shared directories/ports require distinct base datadirs and listener overrides
+for concurrent clients; they do not authorize silently adopting the old chain.
+
+Complete audit and actual evidence: [Signet source review](../purity-signet-review.md).

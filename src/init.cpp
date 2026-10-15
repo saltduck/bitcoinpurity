@@ -490,7 +490,7 @@ void SetupServerArgs(ArgsManager& argsman, bool can_listen_ipc)
     const auto defaultChainParams = CreateChainParams(argsman, ChainType::MAIN);
     const auto testnetChainParams = CreateChainParams(argsman, ChainType::TESTNET);
     const auto testnet4ChainParams = CreateChainParams(argsman, ChainType::TESTNET4);
-    const auto signetChainParams = CreateChainParams(argsman, ChainType::SIGNET);
+    const auto signetChainParams = CChainParams::SigNet({});
     const auto regtestChainParams = CreateChainParams(argsman, ChainType::REGTEST);
 
     // Hidden Options
@@ -1081,6 +1081,15 @@ bool AppInitParameterInteraction(const ArgsManager& args)
     // on the command line or in this chain's section of the config file.
     ChainType chain = args.GetChainType();
     if (chain == ChainType::SIGNET) {
+        if (chainparams.GetConsensus().nPurityActivationHeight == std::numeric_limits<int>::max()) {
+            return InitError(Untranslated("Signet requires a chain-parameter JSON file (-signetparams). Copy the labelled simulation example only for local testing."));
+        }
+        if (args.IsArgSet("-assumevalid") && args.GetArg("-assumevalid", "0") != "0") {
+            return InitError(Untranslated("Signet requires -assumevalid=0 for complete inherited-history verification"));
+        }
+        if (chainparams.GetConsensus().signet_simulation) {
+            LogWarning("Signet is using simulation parameters; these are not official chain parameters\n");
+        }
         LogPrintf("Signet derived magic (message start): %s\n", HexStr(chainparams.MessageStart()));
     }
     bilingual_str errors;
@@ -2017,6 +2026,7 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
     g_zmq_notification_interface = CZMQNotificationInterface::Create(
         [&chainman = node.chainman](std::vector<uint8_t>& block, const CBlockIndex& index) {
             assert(chainman);
+            if (chainman->GetConsensus().signet_blocks) return chainman->m_blockman.ReadRawBlock(block, index);
             return chainman->m_blockman.ReadRawBlock(block, WITH_LOCK(cs_main, return index.GetBlockPos()));
         });
 
@@ -2470,6 +2480,11 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
     }
 
     connOptions.vSeedNodes = args.GetArgs("-seednode");
+    if (chainparams.GetConsensus().signet_blocks && !args.IsArgSet("-connect") &&
+        WITH_LOCK(cs_main, return chainman.ActiveChain().Height()) < chainparams.GetConsensus().nPurityActivationHeight - 1) {
+        const auto& historical = chainparams.SignetHistoricalSeeds();
+        connOptions.vSeedNodes.insert(connOptions.vSeedNodes.end(), historical.begin(), historical.end());
+    }
 
     const auto connect = args.GetArgs("-connect");
     if (!connect.empty() || args.IsArgNegated("-connect")) {

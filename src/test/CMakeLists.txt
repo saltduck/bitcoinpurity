@@ -28,6 +28,7 @@ add_executable(test_bitcoin
   bswap_tests.cpp
   caches_tests.cpp
   chainparams_tests.cpp
+  signet_tests.cpp
   chainstate_write_tests.cpp
   checkqueue_tests.cpp
   cluster_linearize_tests.cpp
@@ -142,6 +143,8 @@ target_json_data_sources(test_bitcoin
   data/blockfilters.json
   data/key_io_invalid.json
   data/key_io_valid.json
+  data/purity_signet_config.json
+  data/bitcoin_signet_block11.json
   data/script_tests.json
   data/sighash.json
   data/tx_invalid.json

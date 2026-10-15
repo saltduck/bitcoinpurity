@@ -35,6 +35,7 @@
 #include <primitives/transaction.h>
 #include <random.h>
 #include <scheduler.h>
+#include <signet.h>
 #include <streams.h>
 #include <sync.h>
 #include <tinyformat.h>
@@ -464,6 +465,8 @@ struct CNodeState {
     };
 
     ChainSyncTimeoutState m_chain_sync;
+    bool m_signet_verification_requested{false};
+    std::optional<std::chrono::seconds> m_signet_verification_started;
 
     //! Time of last new block announcement
     int64_t m_last_block_announcement{0};
@@ -1685,6 +1688,7 @@ ServiceFlags PeerManagerImpl::GetDesirableServiceFlags(ServiceFlags services) co
     // serve the Purity activation block or anything after it.
     if (!NeedStaleOutboundPeers()) {
         flags = ServiceFlags(flags | NODE_REDUCED_DATA);
+        if (m_chainparams.GetConsensus().signet_blocks) flags = ServiceFlags(flags | NODE_PURITY_ASERT);
     }
     return flags;
 }
@@ -1858,7 +1862,8 @@ void PeerManagerImpl::MaybePunishNodeForBlock(NodeId nodeid, const BlockValidati
         // peers already classified as stale, and inbound/manual peers do not
         // occupy automatic outbound slots. A peer still counted as compatible
         // must be disconnected so it cannot fill a Purity outbound target.
-        if (state.GetRejectReason() == "bad-purity-activation-block") {
+        if (state.GetRejectReason() == "bad-purity-activation-block" ||
+            (m_chainparams.GetConsensus().signet_blocks && state.GetRejectReason() == "bad-signet-fork-history")) {
             bool tolerate_peer{false};
             m_connman.ForNode(nodeid, [&tolerate_peer](CNode* node) {
                 tolerate_peer = node->m_is_non_bip110_outbound || !node->PunishInvalidBlocks();
@@ -2353,7 +2358,8 @@ void PeerManagerImpl::ProcessGetBlockData(CNode& pfrom, Peer& peer, const CInv& 
         // Fast-path: in this case it is possible to serve the block directly from disk,
         // as the network format matches the format on disk
         std::vector<uint8_t> block_data;
-        if (!m_chainman.m_blockman.ReadRawBlock(block_data, block_pos, /*lowprio=*/true)) {
+        if (!(m_chainparams.GetConsensus().signet_blocks ? m_chainman.m_blockman.ReadRawBlock(block_data, *pindex, /*lowprio=*/true) :
+                                                        m_chainman.m_blockman.ReadRawBlock(block_data, block_pos, /*lowprio=*/true))) {
             if (WITH_LOCK(m_chainman.GetMutex(), return m_chainman.m_blockman.IsBlockPruned(*pindex))) {
                 LogDebug(BCLog::NET, "Block was pruned before it could be read, %s\n", pfrom.DisconnectMsg(fLogIPs));
             } else {
@@ -2367,7 +2373,7 @@ void PeerManagerImpl::ProcessGetBlockData(CNode& pfrom, Peer& peer, const CInv& 
     } else {
         // Send block from disk
         std::shared_ptr<CBlock> pblockRead = std::make_shared<CBlock>();
-        if (!m_chainman.m_blockman.ReadBlock(*pblockRead, block_pos, /*expected_hash=*/ inv.hash, /*lowprio=*/true)) {
+        if (!m_chainman.m_blockman.ReadBlock(*pblockRead, block_pos, /*expected_hash=*/ inv.hash, /*lowprio=*/true, pindex->nHeight)) {
             if (WITH_LOCK(m_chainman.GetMutex(), return m_chainman.m_blockman.IsBlockPruned(*pindex))) {
                 LogDebug(BCLog::NET, "Block was pruned before it could be read, %s\n", pfrom.DisconnectMsg(fLogIPs));
             } else {
@@ -2891,7 +2897,14 @@ void PeerManagerImpl::UpdatePeerStateForReceivedHeaders(CNode& pfrom, Peer& peer
     // See ChainSyncTimeoutState.
     // Stale peers are excluded, so they cannot take all the protect slots and
     // leave compatible peers unprotected.
-    if (!pfrom.fDisconnect && pfrom.IsFullOutboundConn() && pfrom.CountsTowardOutboundTarget() && nodestate->pindexBestKnownBlock != nullptr) {
+    if (!pfrom.fDisconnect && m_chainparams.GetConsensus().signet_blocks && !pfrom.m_signet_chain_verified &&
+        last_header.nHeight >= m_chainparams.GetConsensus().nPurityActivationHeight && !nodestate->m_signet_verification_requested) {
+        const auto* first = last_header.GetAncestor(m_chainparams.GetConsensus().nPurityActivationHeight);
+        MakeAndPushMessage(pfrom, NetMsgType::GETDATA, std::vector<CInv>{CInv(MSG_WITNESS_BLOCK, first->GetBlockHash())});
+        nodestate->m_signet_verification_requested = true;
+    }
+    if (!pfrom.fDisconnect && pfrom.IsFullOutboundConn() && pfrom.CountsTowardOutboundTarget() && nodestate->pindexBestKnownBlock != nullptr &&
+        (!m_chainparams.GetConsensus().signet_blocks || pfrom.m_signet_chain_verified)) {
         if (m_outbound_peers_with_protect_from_disconnect < MAX_OUTBOUND_PEERS_TO_PROTECT_FROM_DISCONNECT && nodestate->pindexBestKnownBlock->nChainWork >= m_chainman.ActiveChain().Tip()->nChainWork && !nodestate->m_chain_sync.m_protect) {
             LogDebug(BCLog::NET, "Protecting outbound peer=%d from eviction\n", pfrom.GetId());
             nodestate->m_chain_sync.m_protect = true;
@@ -3026,7 +3039,8 @@ void PeerManagerImpl::ProcessHeadersMessage(CNode& pfrom, Peer& peer,
     // Now process all the headers.
     BlockValidationState state;
     if (!m_chainman.ProcessNewBlockHeaders(headers, /*min_pow_checked=*/true, state, &pindexLast)) {
-        const bool purity_activation_mismatch{state.GetRejectReason() == "bad-purity-activation-block"};
+        const bool purity_activation_mismatch{state.GetRejectReason() == "bad-purity-activation-block" ||
+            (m_chainparams.GetConsensus().signet_blocks && state.GetRejectReason() == "bad-signet-fork-history")};
         if (purity_activation_mismatch && (peer.m_their_services & NODE_PURITY_ASERT)) {
             LogDebug(BCLog::NET, "NODE_PURITY_ASERT peer=%d failed Purity activation block hash verification\n", pfrom.GetId());
         }
@@ -3391,7 +3405,19 @@ void PeerManagerImpl::ProcessGetCFCheckPt(CNode& node, Peer& peer, DataStream& v
 void PeerManagerImpl::ProcessBlock(CNode& node, const std::shared_ptr<const CBlock>& block, bool force_processing, bool min_pow_checked)
 {
     bool new_block{false};
-    m_chainman.ProcessNewBlock(block, force_processing, min_pow_checked, &new_block);
+    const bool accepted = m_chainman.ProcessNewBlock(block, force_processing, min_pow_checked, &new_block);
+    if (accepted && m_chainparams.GetConsensus().signet_blocks && !node.m_signet_chain_verified) {
+        LOCK(cs_main);
+        const auto* index = m_chainman.m_blockman.LookupBlockIndex(block->GetHash());
+        if (index && index->nHeight >= m_chainparams.GetConsensus().nPurityActivationHeight && index->IsValid(BLOCK_VALID_SCRIPTS) &&
+            CheckSignetBlockSolution(*block, m_chainparams.GetConsensus(), index->nHeight)) {
+            node.m_signet_chain_verified = true;
+            const auto source = GetPeerRef(node.GetId());
+            node.m_has_all_wanted_services = source && HasAllDesirableServiceFlags(source->m_their_services);
+            LogDebug(BCLog::NET, "Verified Signet full-block peer=%d height=%d\n", node.GetId(), index->nHeight);
+            if (source) UpdatePeerStateForReceivedHeaders(node, *source, *index, false, false);
+        }
+    }
     if (new_block) {
         node.m_last_block_time = GetTime<std::chrono::seconds>();
         // In case this block came from a different peer than we requested
@@ -3610,7 +3636,7 @@ void PeerManagerImpl::ProcessMessage(CNode& pfrom, const std::string& msg_type, 
             MakeAndPushMessage(pfrom, NetMsgType::SENDADDRV2);
         }
 
-        pfrom.m_has_all_wanted_services = HasAllDesirableServiceFlags(nServices);
+        pfrom.m_has_all_wanted_services = HasAllDesirableServiceFlags(nServices) && !m_chainparams.GetConsensus().signet_blocks;
         // BIP-110: tolerate up to -maxstaleoutbound outbound peers not enforcing
         // the ReducedData rules, demoting each to an additional connection. Only
         // the persistent outbound target types are gated; ADDR_FETCH (eg
@@ -4229,6 +4255,7 @@ void PeerManagerImpl::ProcessMessage(CNode& pfrom, const std::string& msg_type, 
         }
 
         FlatFilePos block_pos{};
+        int block_height{-1};
         {
             LOCK(cs_main);
 
@@ -4240,12 +4267,13 @@ void PeerManagerImpl::ProcessMessage(CNode& pfrom, const std::string& msg_type, 
 
             if (pindex->nHeight >= m_chainman.ActiveChain().Height() - MAX_BLOCKTXN_DEPTH) {
                 block_pos = pindex->GetBlockPos();
+                block_height = pindex->nHeight;
             }
         }
 
         if (!block_pos.IsNull()) {
             CBlock block;
-            const bool ret{m_chainman.m_blockman.ReadBlock(block, block_pos, /*expected_hash=*/ req.blockhash, /*lowprio=*/true)};
+            const bool ret{m_chainman.m_blockman.ReadBlock(block, block_pos, /*expected_hash=*/ req.blockhash, /*lowprio=*/true, block_height)};
             // If height is above MAX_BLOCKTXN_DEPTH then this block cannot get
             // pruned after we release cs_main above, so this read should never fail.
             assert(ret);
@@ -5602,6 +5630,17 @@ bool PeerManagerImpl::SendMessages(CNode* pto)
     }
 
     const auto current_time{GetTime<std::chrono::microseconds>()};
+    if (consensusParams.signet_blocks && pto->IsOutboundOrBlockRelayConn() && !NeedStaleOutboundPeers() && !pto->m_signet_chain_verified) {
+        LOCK(cs_main);
+        auto* state = State(pto->GetId());
+        const auto now = GetTime<std::chrono::seconds>();
+        if (!state->m_signet_verification_started) state->m_signet_verification_started = now;
+        if (now - *state->m_signet_verification_started > CHAIN_SYNC_TIMEOUT) {
+            LogDebug(BCLog::NET, "Unverified Signet outbound peer=%d timed out\n", pto->GetId());
+            pto->fDisconnect = true;
+            return true;
+        }
+    }
 
     if (pto->IsAddrFetchConn() && current_time - pto->m_connected > 10 * AVG_ADDRESS_BROADCAST_INTERVAL) {
         LogDebug(BCLog::NET, "addrfetch connection timeout, %s\n", pto->DisconnectMsg(fLogIPs));
