@@ -501,6 +501,8 @@ public:
         chainTxData = {0, 0, 0};
         if (options.fork) {
             const auto& fork = *options.fork;
+            consensus.signet_configured = true;
+            consensus.signet_preparing = fork.preparing;
             consensus.nPurityActivationHeight = fork.activation_height;
             consensus.nReducedDataGrandfatherHeight = fork.activation_height;
             consensus.nReducedDataGrandfatherFixHeight = fork.activation_height;

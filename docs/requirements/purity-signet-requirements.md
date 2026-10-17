@@ -1,7 +1,8 @@
 # Effective implementation amendments (2026-10-14)
 
 These owner-approved amendments supersede conflicting statements in the v1.0
-baseline below.
+baseline below. Implementation of the amended plan is now authorized; the
+original plan-only deliverable below is retained as historical baseline text.
 
 1. The existing `signet` chain is the Purity consensus chain. Keep
    `ChainType::SIGNET`, `-signet` / `-chain=signet`, `[signet]` and RPC
@@ -9,7 +10,8 @@ baseline below.
 2. Bitcoin Signet is an external history/reference network. This client does
    not retain an option to follow its post-H continuation. Preserve every
    original pre-H block and its validation rules.
-3. Use a bare 2-of-3 challenge. The owner fixed H=318621 on 2026-10-15.
+3. Use a bare 2-of-3 challenge. Select H=T+1 immediately before mining,
+   where T is the paused, fully validated original Signet tip. H=318621 is obsolete.
    The separate H=11 fixture remains only for fast regression tests.
 4. The owner subsequently requested chain parameters in a configuration file
    with simulated initial values. Implement `-signetparams=<JSON file>`, provide
@@ -17,7 +19,7 @@ baseline below.
    official. Mainnet does not read this file. Consensus configuration is fixed
    for a process and must not be changed while reusing incompatible state.
 5. Simulated configuration enables local implementation and acceptance tests.
-   H is selected; boundary/anchor hashes, public keys, activation-block pin
+   H is deferred until launch; boundary/anchor hashes, public keys, activation-block pin
    and seeds still require real evidence before public release. Public config
    contains public keys only; signing private keys live in separate wallets.
 6. Latest owner amendment (2026-10-15): use `signet/`, with default P2P/RPC
@@ -25,6 +27,19 @@ baseline below.
    separate base datadirs and explicit port overrides. Earlier puritysignet/
    and 58333/58332 suggestions are superseded. No replay protection or Mainnet
    changes.
+
+7. Approved late-selection implementation (2026-10-15): schema v2 preparation
+   requires all four activation fields explicitly null; mixed states fail.
+   Keep schema v1 fixed files. Preparation uses original history rules and
+   disables mining RPCs and template assembly. Pause networking, verify stored
+   history, derive H=T+1, anchor H-5 and T chainwork from one active snapshot,
+   record evidence and stop. Parent age defaults to at most one hour (operator
+   policy only). Same-datadir conversion must reject incompatible active history,
+   recheck cached H+ validity and exclude conflicting inactive branches without
+   failing startup solely because they exist. Pin the first verified block and
+   turn off simulation before public operation. Do not introduce dynamic markers
+   or first-seen activation. Restore the preparation backup if a pre-first-block
+   delay requires choosing H again. See TASK-PS-008 and the API contract.
 
 The baseline D/FR/AT identifiers below remain the acceptance index, subject to
 these amendments. AT-15 now protects Mainnet/Regtest/other networks and pre-H

@@ -27,6 +27,15 @@ class PuritySignetMinerTest(PuritySignetTest):
         self.num_nodes = 4
         self.extra_args = [self.extra_args[0].copy() for _ in range(self.num_nodes)]
 
+    def setup_chain(self):
+        self.preparing_file = Path(self.options.tmpdir) / "miner-preparing.json"
+        preparing = dict(self.params, schema_version=2)
+        for field in ("activation_height", "parent_hash", "anchor", "activation_hash"):
+            preparing[field] = None
+        self.preparing_file.write_text(json.dumps(preparing))
+        self.extra_args[0] = [f"-signetparams={self.preparing_file}", "-checkblockindex=1", "-blocksxor=0", "-mocktime=1598920800"]
+        super().setup_chain()
+
     def setup_network(self):
         self.setup_nodes()
         for index in range(1, self.num_nodes):
@@ -55,6 +64,20 @@ class PuritySignetMinerTest(PuritySignetTest):
             assert_equal(result[0]["success"], True)
             wallets.append(wallet)
         payout = wallets[0].getaddressinfo(wallets[0].getnewaddress())["scriptPubKey"]
+        self.log.info("Freeze the prepared mining node after both signing wallets are ready")
+        frozen = Path(self.options.tmpdir) / "miner-frozen.json"
+        root = Path(self.config["environment"]["SRCDIR"])
+        freeze_cli = [node.cli.binary, f"-datadir={node.cli.datadir}", "-signet", f"-signetparams={self.preparing_file}"]
+        result = subprocess.run([sys.executable, str(root / "contrib/purity-signet/prepare.py"),
+                                 "--config", str(self.preparing_file), "--output", str(frozen),
+                                 "--node-cli", json.dumps(freeze_cli), "--ready", "--max-parent-age", "1000000000"], capture_output=True, text=True)
+        assert result.returncode == 0, result.stderr
+        node.wait_until_stopped()
+        self.params_file = frozen
+        self.extra_args[0] = [f"-signetparams={frozen}", "-checkblockindex=1", "-blocksxor=0"]
+        self.start_node(0, extra_args=self.extra_args[0])
+        for index in range(1, self.num_nodes):
+            self.connect_nodes(0, index)
         clis = [[n.cli.binary, f"-datadir={n.cli.datadir}", "-signet", f"-signetparams={self.params_file}"] for n in self.nodes]
         miner = Path(self.config["environment"]["SRCDIR"]) / "contrib/purity-signet/miner.py"
         config_path = Path(self.options.tmpdir) / "miner.json"

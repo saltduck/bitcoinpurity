@@ -56,41 +56,50 @@ void ReadSigNetArgs(const ArgsManager& args, CChainParams::SigNetOptions& option
     for (const auto& key : json.getKeys()) {
         if (!fields.contains(key)) throw std::runtime_error("Unknown Signet parameter field: " + key);
     }
-    if (json["schema_version"].getInt<int>() != 1) throw std::runtime_error("Unsupported Signet parameter schema version");
+    const int schema = json["schema_version"].getInt<int>();
+    if (schema != 1 && schema != 2) throw std::runtime_error("Unsupported Signet parameter schema version");
     CChainParams::SigNetOptions::Fork fork{};
     fork.simulation = json["simulation"].get_bool();
-    fork.activation_height = json["activation_height"].getInt<int>();
-    if (fork.activation_height < 6 || fork.activation_height == std::numeric_limits<int>::max()) {
-        throw std::runtime_error("Signet activation_height must be in [6, INT_MAX)");
-    }
     const auto hash = [](const UniValue& object, const std::string& field) {
         const auto value = object[field].isStr() ? uint256::FromHex(object[field].get_str()) : std::nullopt;
         if (!value || value->IsNull()) throw std::runtime_error("Invalid Signet hash field: " + field);
         return *value;
     };
-    fork.parent_hash = hash(json, "parent_hash");
-    if (json["activation_hash"].isNull() && fork.simulation) {
-        fork.activation_hash.SetNull();
+    fork.preparing = schema == 2 && json["activation_height"].isNull();
+    if (fork.preparing) {
+        for (const auto* field : {"parent_hash", "anchor", "activation_hash"}) {
+            if (!json[field].isNull()) throw std::runtime_error("Preparing Signet activation fields must all be null");
+        }
     } else {
-        fork.activation_hash = hash(json, "activation_hash");
+        fork.activation_height = json["activation_height"].getInt<int>();
+        if (fork.activation_height < 6 || fork.activation_height == std::numeric_limits<int>::max()) {
+            throw std::runtime_error("Signet activation_height must be in [6, INT_MAX)");
+        }
+        fork.parent_hash = hash(json, "parent_hash");
+        if (json["activation_hash"].isNull() && fork.simulation) {
+            fork.activation_hash.SetNull();
+        } else {
+            fork.activation_hash = hash(json, "activation_hash");
+        }
+        const auto& anchor = json["anchor"];
+        if (!anchor.isObject() || anchor.getKeys().size() != 5) throw std::runtime_error("Invalid Signet anchor object");
+        fork.anchor_height = anchor["height"].getInt<int>();
+        if (fork.anchor_height < 1 || fork.anchor_height >= fork.activation_height) throw std::runtime_error("Signet anchor must precede activation and have a parent");
+        if (schema == 2 && fork.anchor_height != fork.activation_height - 5) throw std::runtime_error("Signet schema v2 anchor must be H-5");
+        fork.anchor_hash = hash(anchor, "hash");
+        fork.anchor_parent_hash = hash(anchor, "parent_hash");
+        const auto bits = TryParseHex<uint8_t>(anchor["bits"].get_str());
+        if (!bits || bits->size() != 4) throw std::runtime_error("Invalid Signet anchor bits");
+        fork.anchor_bits = (uint32_t((*bits)[0]) << 24) | (uint32_t((*bits)[1]) << 16) | (uint32_t((*bits)[2]) << 8) | (*bits)[3];
+        arith_uint256 target;
+        bool negative, overflow;
+        target.SetCompact(fork.anchor_bits, &negative, &overflow);
+        if (negative || overflow || target == 0 || target > UintToArith256(uint256{"00000377ae000000000000000000000000000000000000000000000000000000"})) {
+            throw std::runtime_error("Signet anchor target exceeds the inherited powLimit");
+        }
+        fork.anchor_parent_time = anchor["parent_time"].getInt<uint32_t>();
+        if (fork.anchor_parent_time == 0) throw std::runtime_error("Invalid Signet anchor parent_time");
     }
-    const auto& anchor = json["anchor"];
-    if (!anchor.isObject() || anchor.getKeys().size() != 5) throw std::runtime_error("Invalid Signet anchor object");
-    fork.anchor_height = anchor["height"].getInt<int>();
-    if (fork.anchor_height < 1 || fork.anchor_height >= fork.activation_height) throw std::runtime_error("Signet anchor must precede activation and have a parent");
-    fork.anchor_hash = hash(anchor, "hash");
-    fork.anchor_parent_hash = hash(anchor, "parent_hash");
-    const auto bits = TryParseHex<uint8_t>(anchor["bits"].get_str());
-    if (!bits || bits->size() != 4) throw std::runtime_error("Invalid Signet anchor bits");
-    fork.anchor_bits = (uint32_t((*bits)[0]) << 24) | (uint32_t((*bits)[1]) << 16) | (uint32_t((*bits)[2]) << 8) | (*bits)[3];
-    arith_uint256 target;
-    bool negative, overflow;
-    target.SetCompact(fork.anchor_bits, &negative, &overflow);
-    if (negative || overflow || target == 0 || target > UintToArith256(uint256{"00000377ae000000000000000000000000000000000000000000000000000000"})) {
-        throw std::runtime_error("Signet anchor target exceeds the inherited powLimit");
-    }
-    fork.anchor_parent_time = anchor["parent_time"].getInt<uint32_t>();
-    if (fork.anchor_parent_time == 0) throw std::runtime_error("Invalid Signet anchor parent_time");
     const auto& keys = json["public_keys"];
     if (!keys.isArray() || keys.size() != 3) throw std::runtime_error("Signet requires three compressed public keys");
     std::set<std::vector<uint8_t>> unique;

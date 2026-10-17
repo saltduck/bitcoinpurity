@@ -4,10 +4,19 @@
 
 All documentation maintained for this change must be written in English.
 
-Latest owner decisions (2026-10-15): H=318621; default P2P/RPC ports
-38333/38332; use the standard signet/ network directory. Keep these values
-configurable. The H=11 configuration remains a separate fast-test fixture.
-The launch example still labels authority/seeds/first-block pin as simulated.
+Latest owner decisions (2026-10-15): select H=T+1 immediately before mining,
+where T is the frozen, fully validated original Signet tip. H=318621 is only
+an obsolete rehearsal record. Keep ports 38333/38332 and the signet/ directory.
+Schema v2 permits preparation only when activation_height, parent_hash, anchor
+and activation_hash are all explicitly null. Preparation validates original
+history and disables block generation/templates. Schema v1 fixed files remain
+supported. Freeze networking, record H-5 anchor evidence and T chainwork, stop,
+then restart the same independent datadir with fixed parameters. Recheck cached
+post-H indexes and isolate conflicting inactive branches without trusting prior
+validity. After the first signed block, pin its hash and disable simulation.
+Do not introduce dynamic activation or another chain/mode. Default preparation
+policy rejects a parent older than one hour; this is not a consensus rule.
+The launch example retains explicitly simulated authorities and endpoints.
 
 
 - In this client, `-signet` / `-chain=signet` selects the Purity consensus chain.

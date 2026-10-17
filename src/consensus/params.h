@@ -177,6 +177,8 @@ struct Params {
     uint32_t nSignetAsertAnchorBits{0};
     uint32_t nSignetAsertAnchorParentTime{0};
     bool signet_simulation{false};
+    bool signet_configured{false};
+    bool signet_preparing{false};
 
     int DeploymentHeight(BuriedDeployment dep) const
     {

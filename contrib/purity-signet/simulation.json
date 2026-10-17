@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "simulation": true,
   "activation_height": 11,
   "parent_hash": "000001418e9af8310ef3644093dbc4a8ad9edb0c9ac80397f3479ad1729d965b",

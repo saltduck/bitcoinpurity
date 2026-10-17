@@ -1,16 +1,10 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "simulation": true,
-  "activation_height": 318621,
-  "parent_hash": "0000000a573b25aeae051a91769714a6c384753bedba235a334a5196a2a2af15",
+  "activation_height": null,
+  "parent_hash": null,
   "activation_hash": null,
-  "anchor": {
-    "height": 318616,
-    "hash": "0000000ea43e56e8ccdc528e59092db2a83221bcfd8819f64eea5f40ddb05844",
-    "bits": "1d13c0c2",
-    "parent_hash": "000000136a72d8c42770f26ff1e6ba148d4974c1533ebf0bd62d5a75ef4828bf",
-    "parent_time": 1787261860
-  },
+  "anchor": null,
   "public_keys": [
     "02fe8d1eb1bcb3432b1db5833ff5f2226d9cb5e65cee430558c18ed3a3c86ce1af",
     "03d528ecd9b696b54c907a9ed045447a79bb408ec39b68df504bb51f459bc3ffc9",

@@ -6,34 +6,99 @@ Core reference nodes and Purity nodes in separate data directories, with separat
 ports, cookies, wallets and caches. There is no original-Signet runtime mode in
 this client. Never import an old node's indexes or chainstate as a shortcut.
 
-## Parameter and first-block freeze
+## Prepare before choosing H
 
-1. Generate three signing authorities under separate custody. Record compressed
-   public keys in their challenge order; independently confirm the bare 2-of-3
-   script. Keep private descriptors out of public configuration and source.
-2. H is fixed at 318621 and the launch anchor is H-5=318616. Verify the
-   existing H-1, anchor and anchor-parent hashes, anchor bits and
-   parent time against independent original Signet nodes. Compare inherited
-   history and UTXOs with assumevalid=0. Set minimum_chain_work so original peers
-   can serve the H-1 prefix; do not retain a later original-chain threshold.
-3. Prepare a private provisional configuration, explicitly simulation=true and
-   activation_hash=null, with the actual audited public values. Synchronize the
-   prefix, inspect getblockchaininfo.signet_fork and GBT height/challenge/bits.
-   Genesis, message magic, powLimit, spacing and half-life remain fixed.
-4. Run the independent miner with two signing services. Verify real PoW, new
-   authority, exact required bits and every applicable RDTS rule. Archive the
-   first block's raw bytes, hash and the parameter/UTXO verification report.
-5. Set activation_hash from that verified block. Rehearse restart, both reindex
-   modes and a fresh node import with the pin. Use a fresh index if a provisional
-   rehearsal stored a competing H block. Pinning rejects that competing history.
-6. Replace all fixture keys/seeds/ports as required, confirm actual authority
-   custody and operated endpoints, then set simulation=false for the audited
-   official file. Publish only after owner approval. Archive its exact bytes and
-   checksum together with the first-block record. Public nodes use the frozen
-   configuration and obtain that existing first block before mining H+1.
+H=318621 is obsolete rehearsal data. Do not put it into a launch configuration.
+Use the schema v2 signet-params.json sample, replace the known fixture public
+keys with the three real ordered compressed authorities and replace simulated
+endpoints with operated peers. Leave activation_height, parent_hash, anchor and
+activation_hash explicitly null together. Keep signing private material in
+separate wallets. Ports default to 38333/38332, state to signet/ under an
+independent Purity base datadir. Original reference nodes are optional additional
+checks; the Purity preparing node itself fully validates original history.
 
-The public sample's keys have known fixture secrets and are unsuitable for an
-official file. A configuration edit does not migrate incompatible state.
+```sh
+mkdir -p /path/to/purity-signet
+cp contrib/purity-signet/bitcoin.conf /path/to/purity-signet/bitcoin.conf
+cp contrib/purity-signet/signet-params.json /path/to/purity-signet/signet-params.json
+# Edit public authorities and endpoints before starting; no private keys here.
+build/bin/bitcoind -datadir=/path/to/purity-signet
+build/bin/bitcoin-cli -datadir=/path/to/purity-signet getblockchaininfo
+```
+
+Wait for initialblockdownload=false and headers=blocks, with
+signet_fork.state=preparing. The next challenge remains the historical one;
+mining RPCs and GBT proposals/templates are disabled. Keep assumevalid=0, avoid
+pruning/AssumeUTXO, prepare independent signing wallets and actual Purity peers.
+No early H deadline is required.
+
+## Freeze and restart immediately before mining
+
+Stop other import/RPC writers and keep miners stopped. After keys, signers and
+network endpoints are ready, use a local cookie-authenticated CLI argument array:
+
+```sh
+python3 contrib/purity-signet/prepare.py \
+  --config /path/to/purity-signet/signet-params.json \
+  --output /path/to/purity-signet/fixed-params.json \
+  --node-cli '["/absolute/path/to/bitcoin-cli","-datadir=/path/to/purity-signet","-rpcclienttimeout=0"]' \
+  --ready
+```
+
+The tool pauses P2P, verifies all stored history with verifychain 4 0 and derives
+H=T+1 and A=H-5 from the fully validated active tip. It records exact T/A/A-1
+headers, anchor bits/parent time, T chainwork, configuration checksums and node
+state in fixed-params.json.snapshot.json. Default --max-parent-age=3600 rejects
+stale parents after verification; an explicit override changes operator policy,
+never consensus or block time/bits. Failed checks after pausing leave P2P paused;
+inspect the failure and use setnetworkactive true to resume preparation if safe.
+Existing output/evidence files are never overwritten. Full verification may
+require a larger -dbcache; insufficient cache returns false and prevents freeze.
+The example disables the CLI time limit for the full verification call.
+
+On success, stop is requested and the fixed file has simulation=true and
+activation_hash=null. Wait for the process to finish cleanly. Back up the entire
+stopped preparation datadir outside its original location. Retain the preparation
+JSON with that backup; the next restart writes a fixed rule fingerprint to the
+index. Start with the generated file:
+
+```sh
+build/bin/bitcoind -datadir=/path/to/purity-signet \
+  -signetparams=/path/to/purity-signet/fixed-params.json
+build/bin/bitcoin-cli -datadir=/path/to/purity-signet \
+  -signetparams=/path/to/purity-signet/fixed-params.json \
+  getblocktemplate '{"rules":["segwit","signet"]}'
+```
+
+Check height=H, previousblockhash=T, ordered 2-of-3 challenge and template bits.
+The same datadir is supported; conflicting inactive old branches are excluded,
+not adopted. Incompatible active pins/replay heads fail startup. The index never
+trusts cached post-H difficulty/signature/script validity from preparation.
+A legacy fixed index without the new fingerprint and active H+ requires explicit
+-reindex-chainstate. Changing a fixed H/parent/anchor/authority in an existing
+index fails; restore a stopped preparation backup or rebuild explicitly.
+
+## First block and official pin
+
+Use the standalone miner's --once option with two independent signing wallets.
+Verify accepted H, its raw block, PoW, signatures, required difficulty,
+transactions, witness commitment and UTXO results. Archive those raw bytes and
+hash together with the snapshot and exact provisional configuration.
+
+Create a new official JSON with activation_hash set to that actual H hash and
+simulation=false. Do not alter H, parent, keys/order or anchor. Stop and restart
+with it, verify the pin, rehearse both reindex modes and fresh-node sync using
+the same file, and archive its SHA256. Only then enable continuous miners and
+public Purity peers. Known fixture authorities and .invalid/loopback endpoints
+must not be published as official. Simulation remains a launch safeguard, not
+a substitute for real custody and evidence.
+
+If launch is delayed before H is mined, keep miners stopped, restore the stopped
+preparation backup into an independent datadir, resume synchronization, select a
+new T and generate a new file. Do not change H online or casually repoint the
+already frozen database. The default age check catches staleness only at freeze;
+recheck it manually if restart or signing is delayed. ASERT cannot hide a long
+gap by miner scheduling, and this procedure never alters its formula.
 
 ## Signer outage and backup recovery
 

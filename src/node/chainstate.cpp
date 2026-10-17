@@ -11,6 +11,7 @@
 #include <kernel/caches.h>
 #include <logging.h>
 #include <node/blockstorage.h>
+#include <signet.h>
 #include <sync.h>
 #include <threadsafety.h>
 #include <tinyformat.h>
@@ -37,13 +38,26 @@ static ChainstateLoadResult CompleteChainstateInitialization(
 {
     if (chainman.m_interrupt) return {ChainstateLoadStatus::INTERRUPTED, {}};
 
+    const auto& consensus = chainman.GetConsensus();
+    const bool signet = consensus.signet_blocks && consensus.signet_configured;
+    std::string previous_signet;
+    uint256 previous_activation;
+    const std::string current_signet = signet ? SignetConsensusFingerprint(consensus) : "";
+    if (signet && chainman.m_blockman.m_block_tree_db->ReadSignetConsensus(previous_signet, previous_activation) &&
+        ((previous_signet != current_signet && previous_signet != "preparing") ||
+         (!previous_activation.IsNull() && previous_activation != consensus.hashPurityActivationBlock))) {
+        return {ChainstateLoadStatus::FAILURE_INCOMPATIBLE_DB, Untranslated("Signet consensus parameters changed. Restore the preparation backup or use -reindex.")};
+    }
+    const bool recheck_signet = signet && !consensus.signet_preparing && previous_signet != current_signet;
+
     // LoadBlockIndex will load m_have_pruned if we've ever removed a
     // block file from disk.
     // Note that it also sets m_blockfiles_indexed based on the disk flag!
-    if (!chainman.LoadBlockIndex()) {
+    if (!chainman.LoadBlockIndex(recheck_signet)) {
         if (chainman.m_interrupt) return {ChainstateLoadStatus::INTERRUPTED, {}};
         return {ChainstateLoadStatus::FAILURE, _("Error loading block database")};
     }
+    const bool rechecked_stored_signet = recheck_signet && !chainman.BlockIndex().empty();
 
     if (!chainman.BlockIndex().empty() &&
             !chainman.m_blockman.LookupBlockIndex(chainman.GetConsensus().hashGenesisBlock)) {
@@ -108,6 +122,18 @@ static ChainstateLoadResult CompleteChainstateInitialization(
                                                                      "rebuild the chainstate database.")};
         }
 
+        if (signet) {
+            auto heads = chainstate->CoinsDB().GetHeadBlocks();
+            heads.push_back(chainstate->CoinsDB().GetBestBlock());
+            for (const auto& hash : heads) {
+                const CBlockIndex* index = chainman.m_blockman.LookupBlockIndex(hash);
+                if (index && ((index->nStatus & BLOCK_FAILED_MASK) ||
+                    (recheck_signet && index->nHeight >= consensus.nPurityActivationHeight))) {
+                    return {ChainstateLoadStatus::FAILURE_INCOMPATIBLE_DB, Untranslated("Active chain conflicts with configured Signet consensus or needs post-fork revalidation. Restore the preparation backup or use -reindex-chainstate.")};
+                }
+            }
+        }
+
         // ReplayBlocks is a no-op if we cleared the coinsviewdb with -reindex or -reindex-chainstate
         if (!chainstate->ReplayBlocks()) {
             return {ChainstateLoadStatus::FAILURE, _("Unable to replay blocks. You will need to rebuild the database using -reindex-chainstate.")};
@@ -137,6 +163,14 @@ static ChainstateLoadResult CompleteChainstateInitialization(
     // disk, rebalance the coins caches to desired levels based
     // on the condition of each chainstate.
     chainman.MaybeRebalanceCaches();
+
+    // The rule marker must never become durable before invalidated legacy indexes.
+    if (rechecked_stored_signet && !chainman.m_blockman.WriteBlockIndexDB()) {
+        return {ChainstateLoadStatus::FAILURE, Untranslated("Cannot persist revalidated Signet block indexes")};
+    }
+    if (signet && !chainman.m_blockman.m_block_tree_db->WriteSignetConsensus(current_signet, consensus.hashPurityActivationBlock)) {
+        return {ChainstateLoadStatus::FAILURE, Untranslated("Cannot persist Signet consensus parameters")};
+    }
 
     return {ChainstateLoadStatus::SUCCESS, {}};
 }

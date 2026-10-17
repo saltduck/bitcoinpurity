@@ -68,14 +68,14 @@ class SignetBasicTest(BitcoinTestFramework):
         result = subprocess.run([node.binary, f"-datadir={self.options.tmpdir}", "-chain=main", "-signetparams=/nonexistent/parameters.json", "-help"], capture_output=True)
         assert_equal(result.returncode, 0)
         launch = self.params_file.with_name("signet-params.json")
-        self.start_node(0, extra_args=[f"-signetparams={launch}"])
+        self.start_node(0, extra_args=[f"-signetparams={launch}", "-reindex"])
         info = node.getblockchaininfo()
-        assert_equal(info["signet_fork"]["activation_height"], 318621)
-        assert_equal(info["signet_fork"]["anchor_height"], 318616)
+        assert_equal(info["signet_fork"]["activation_height"], None)
+        assert_equal(info["signet_fork"]["anchor_height"], None)
         assert_equal(info["signet_challenge"], SIGNET_DEFAULT_CHALLENGE)
         assert_equal(node.chain_path.name, "signet")
         self.stop_node(0)
-        self.start_node(0, extra_args=self.extra_args[0])
+        self.start_node(0, extra_args=self.extra_args[0] + ["-reindex"])
 
 
 if __name__ == '__main__':

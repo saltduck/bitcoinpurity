@@ -1,5 +1,20 @@
 # Embedded DATUM Migration Report
 
+## Late Signet activation freeze (TASK-PS-008)
+
+Schema v1 fixed files remain supported. New v2 examples start with four explicit
+null activation fields, retain original historical validation and block mining.
+The operator tool pauses P2P and derives H=T+1/H-5 from validated active state,
+records full-chain verification and actual chainwork, requests stop and emits a
+fixed file. Back up the stopped preparation datadir before its first fixed-H
+restart. The block index gains a Signet-only rule fingerprint; cached H+ status
+is rechecked during conversion, inactive conflicts are excluded and incompatible
+active/replay heads fail. Older fixed databases without the fingerprint and
+active post-H state require -reindex-chainstate. A different fixed rule tuple
+requires restoration or full -reindex. Adding the first hash pin remains allowed.
+H=318621 is historical only. Mainnet parameters, RDTS output rules, ASERT formula
+and 224-bit checking path are unchanged. No deployment, commit or PR is implied.
+
 ## Unsigned mainnet package manifest generator (TASK-024)
 
 Add an offline Python manifest generator alongside the existing signer. The
@@ -328,7 +343,7 @@ purity-signet-operations.md for the freeze and recovery procedure.
 Linux arm64 full-node functional validation passed all five selected cases
 with container-local data, including signer outage and restored backup signing.
 
-Owner amendment and complete audit (2026-10-15): H=318621, default P2P/RPC
+Historical amendment and audit (superseded for H): H=318621, default P2P/RPC
 38333/38332, standard signet/ directory. Original per-version test-directory
 mapping and wallet directory-scan additions were removed. The complete-field
 JSON regression exposed and fixed omitted activation_hash acceptance.

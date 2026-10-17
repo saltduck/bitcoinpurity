@@ -144,6 +144,9 @@ void BlockAssembler::resetBlock()
 
 std::shared_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock()
 {
+    if (m_chainstate.m_chainman.GetConsensus().signet_blocks && m_chainstate.m_chainman.GetConsensus().signet_preparing) {
+        throw std::runtime_error("Signet is preparing; block assembly is disabled");
+    }
     const auto time_start{SteadyClock::now()};
 
     resetBlock();

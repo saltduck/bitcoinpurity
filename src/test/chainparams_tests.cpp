@@ -203,6 +203,57 @@ BOOST_AUTO_TEST_CASE(signet_rejects_legacy_consensus_overrides)
     }
 }
 
+BOOST_AUTO_TEST_CASE(signet_preparing_configuration)
+{
+    const auto path = m_args.GetDataDirBase() / "signet-preparing.json";
+    ArgsManager args;
+    args.ForceSetArg("-datadir", fs::PathToString(m_args.GetDataDirBase()));
+    args.ForceSetArg("-signetparams", fs::PathToString(path));
+    UniValue fixed;
+    BOOST_REQUIRE(fixed.read(json_tests::purity_signet_config));
+    fixed.pushKV("schema_version", 2);
+    auto preparing = fixed;
+    for (const auto* field : {"activation_height", "parent_hash", "anchor", "activation_hash"}) preparing.pushKV(field, UniValue{});
+    { std::ofstream out{path}; out << preparing.write(); }
+    const auto params = CreateChainParams(args, ChainType::SIGNET);
+    BOOST_CHECK_EQUAL(params->GetConsensus().nPurityActivationHeight, std::numeric_limits<int>::max());
+    BOOST_CHECK(params->GetConsensus().hashSignetForkParent.IsNull());
+    BOOST_CHECK_EQUAL(params->GetDefaultPort(), 38333);
+    BOOST_CHECK_EQUAL(params->GetConsensus().signet_challenge_postfork.size(), 105);
+    for (const auto* field : {"activation_height", "parent_hash", "anchor"}) {
+        auto partial = preparing;
+        partial.pushKV(field, fixed[field]);
+        { std::ofstream out{path}; out << partial.write(); }
+        BOOST_CHECK_THROW(CreateChainParams(args, ChainType::SIGNET), std::runtime_error);
+    }
+    auto partial_pin = preparing;
+    partial_pin.pushKV("activation_hash", fixed["parent_hash"]);
+    { std::ofstream out{path}; out << partial_pin.write(); }
+    BOOST_CHECK_THROW(CreateChainParams(args, ChainType::SIGNET), std::runtime_error);
+    for (const auto* missing : {"activation_height", "parent_hash", "anchor", "activation_hash"}) {
+        UniValue incomplete{UniValue::VOBJ};
+        for (const auto& key : preparing.getKeys()) {
+            if (key != missing) incomplete.pushKV(key, preparing[key]);
+        }
+        { std::ofstream out{path}; out << incomplete.write(); }
+        BOOST_CHECK_THROW(CreateChainParams(args, ChainType::SIGNET), std::runtime_error);
+    }
+    auto invalid = preparing;
+    invalid.pushKV("rpc_port", 0);
+    { std::ofstream out{path}; out << invalid.write(); }
+    BOOST_CHECK_THROW(CreateChainParams(args, ChainType::SIGNET), std::runtime_error);
+    preparing.pushKV("schema_version", 1);
+    { std::ofstream out{path}; out << preparing.write(); }
+    BOOST_CHECK_THROW(CreateChainParams(args, ChainType::SIGNET), std::runtime_error);
+    { std::ofstream out{path}; out << fixed.write(); }
+    BOOST_CHECK_EQUAL(CreateChainParams(args, ChainType::SIGNET)->GetConsensus().nPurityActivationHeight, 11);
+    auto wrong_anchor = fixed["anchor"];
+    wrong_anchor.pushKV("height", 5);
+    fixed.pushKV("anchor", wrong_anchor);
+    { std::ofstream out{path}; out << fixed.write(); }
+    BOOST_CHECK_THROW(CreateChainParams(args, ChainType::SIGNET), std::runtime_error);
+}
+
 BOOST_AUTO_TEST_CASE(signet_rejects_invalid_configuration)
 {
     const auto path = m_args.GetDataDirBase() / "signet-invalid.json";

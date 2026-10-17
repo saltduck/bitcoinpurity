@@ -162,7 +162,8 @@ public:
     struct SigNetOptions {
         struct Fork {
             bool simulation;
-            int activation_height;
+            bool preparing{false};
+            int activation_height{std::numeric_limits<int>::max()};
             uint256 parent_hash;
             uint256 activation_hash;
             int anchor_height;

@@ -1,15 +1,20 @@
 # Purity Signet implementation acceptance
 
 Baseline: cc85cfad90dea5447ff313f3158147ebb7bf1b47. Local host: macOS arm64.
-All changes remain uncommitted. No PR, public release or deployment occurred.
+The original evidence below is historical. The late-H change is local only;
+no new commit, PR, public release or deployment occurred.
 The existing signet chain is the Purity consensus chain. There is no extra mode.
 Latest owner amendment: all configurable public parameters use JSON, initially
 labelled simulation. The fast fixture is H=11 with real blocks 0..10.
-Latest owner decisions (2026-10-15): launch H=318621, default ports
+Latest owner decisions (2026-10-15): choose H=T+1 immediately before mining;
+H=318621 is obsolete rehearsal data. Keep default ports
 38333/38332 and signet/ directory. See purity-signet-review.md for the current
 full audit, actual boundary-block evidence and Linux fuzz results.
 
-## Implemented scope and evidence
+For the late-H implementation and its new evidence, see
+[TASK-PS-008](tasks/TASK-PS-008.md) and [late-H review](purity-signet-late-h-review.md).
+
+## Prior implemented scope and evidence
 
 | Stage | Implementation | Local evidence | Remaining gate |
 | --- | --- | --- | --- |
@@ -142,3 +147,15 @@ each 181 seconds with Clang 18.1.3 / ASan / UBSan, both exit 0. No sanitizer
 errors or assertions. Complete source audit and reproducibility metadata:
 [purity-signet-review.md](purity-signet-review.md) and
 [purity-signet-fuzz-results.json](purity-signet-fuzz-results.json).
+
+
+## Late selection of H: completed local implementation
+
+TASK-PS-008 implements schema v2 preparation, snapshot-derived H=T+1/H-5,
+safe same-datadir conversion, failure-flag recovery and first-pin immutability.
+Final native/Linux results are each 151 CTest entries and 6 selected functional
+cases passed, plus the Core 28.0 comparison. Signet/ASERT fuzz ran 1022066 times
+under ASan+UBSan with no reported error. The independent wallet test now freezes
+a preparing node with the new tool before mining. Detailed evidence and the
+remaining actual-launch gates: [late-H review](purity-signet-late-h-review.md).
+No official H, authority custody or public deployment is implied by these tests.

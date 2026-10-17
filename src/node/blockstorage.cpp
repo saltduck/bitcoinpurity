@@ -46,6 +46,7 @@
 #include <ranges>
 #include <stdexcept>
 #include <system_error>
+#include <tuple>
 #include <unordered_map>
 
 namespace kernel {
@@ -55,10 +56,24 @@ static constexpr uint8_t DB_FLAG{'F'};
 static constexpr uint8_t DB_REINDEX_FLAG{'R'};
 static constexpr uint8_t DB_LAST_BLOCK{'l'};
 static constexpr uint8_t DB_PRUNE_LOCK{'L'};
+static constexpr uint8_t DB_SIGNET_CONSENSUS{'S'};
 // Keys used in previous version that might still be found in the DB:
 // BlockTreeDB::DB_TXINDEX_BLOCK{'T'};
 // BlockTreeDB::DB_TXINDEX{'t'}
 // BlockTreeDB::ReadFlag("txindex")
+
+bool BlockTreeDB::ReadSignetConsensus(std::string& value, uint256& activation)
+{
+    std::pair<std::string, uint256> record;
+    if (!Read(DB_SIGNET_CONSENSUS, record)) return false;
+    std::tie(value, activation) = record;
+    return true;
+}
+
+bool BlockTreeDB::WriteSignetConsensus(const std::string& value, const uint256& activation)
+{
+    return Write(DB_SIGNET_CONSENSUS, std::make_pair(value, activation), /*fSync=*/true);
+}
 
 bool BlockTreeDB::ReadBlockFileInfo(int nFile, CBlockFileInfo& info)
 {

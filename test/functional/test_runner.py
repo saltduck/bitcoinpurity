@@ -356,6 +356,7 @@ BASE_SCRIPTS = [
     'mining_mainnet.py',
     'feature_signet.py',
     'feature_purity_signet.py',
+    'feature_signet_prepare.py',
     'p2p_purity_signet.py',
     'p2p_mutated_blocks.py',
     'wallet_implicitsegwit.py --legacy-wallet',

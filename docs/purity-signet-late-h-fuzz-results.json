@@ -1,0 +1,57 @@
+{
+  "platform": "Linux arm64 / Ubuntu 24.04",
+  "sanitizers": [
+    "libFuzzer",
+    "ASan",
+    "UBSan"
+  ],
+  "binary_sha256": "7b2de2ef687f18333b86da7a9272caaae7798cde90040d32a76dc8997faf471e",
+  "campaigns": [
+    {
+      "target": "signet",
+      "seed": 318623,
+      "runs": 270702,
+      "seconds": 61,
+      "peak_rss_mb": 333,
+      "log": "build/linux-fuzz-review/late-h-release-signet.log",
+      "log_sha256": "65baedd297d3e48750283250deec97af67bde087c8dd4b88b384eea2a96e1536",
+      "parameters": [
+        "-max_total_time=60",
+        "-timeout=10",
+        "-rss_limit_mb=2048"
+      ],
+      "asan_options": "detect_leaks=1",
+      "ubsan_options": "halt_on_error=1:print_stacktrace=1",
+      "exit_code": 0
+    },
+    {
+      "target": "signet_asert",
+      "seed": 318624,
+      "runs": 751364,
+      "seconds": 61,
+      "peak_rss_mb": 281,
+      "log": "build/linux-fuzz-review/late-h-release-signet_asert.log",
+      "log_sha256": "4399fd378473a03bad6c0681d8d08823ff87dffa021b029c379d7ae922f72237",
+      "parameters": [
+        "-max_total_time=60",
+        "-timeout=10",
+        "-rss_limit_mb=2048"
+      ],
+      "asan_options": "detect_leaks=1",
+      "ubsan_options": "halt_on_error=1:print_stacktrace=1",
+      "exit_code": 0
+    }
+  ],
+  "audited_source_sha256": {
+    "src/pow.cpp": "0ddf1f9906b2d258c9826cf5afbdfc2ed5178c4ec0ce0f9ef159534e5ea148dc",
+    "src/signet.cpp": "b5e4953f7280747cf0c209e6bbdad238e9cb2a7ec196f5b3160cbc76738368a5",
+    "src/test/fuzz/pow.cpp": "05774e58080cd29bdb25dd3e70f6015d1d0477c69937ce0c6c2d687340965e16",
+    "src/test/fuzz/signet.cpp": "111dfcc4a5ca103aa144c84680941b6bf9090bd53154951769ac282b4a6240de"
+  },
+  "total_runs": 1022066,
+  "scope": "Bounded signature/ASERT fuzz; not actual mining, full-history acceptance or index-transition fuzz. Index migration is covered by node functional tests.",
+  "toolchain": {
+    "architecture": "aarch64",
+    "compiler": "Ubuntu clang version 18.1.3 (1ubuntu1)"
+  }
+}
