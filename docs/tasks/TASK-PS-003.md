@@ -28,7 +28,7 @@ call aborted with status 134 at the unchanged 224-bit assertion. Functional
 H/H+1 GBT/work cases passed. Real official anchor audit and full-node execution
 on other release platforms remain release gates.
 
-Selected-height regression: H=318621, anchor=318616, bits=1d13c0c2, parent
+Historical numeric regression (not the launch height): H=318621, anchor=318616, bits=1d13c0c2, parent
 time=1787261860 and previous time=1787266302 yield required bits=1d13fbb5.
 Independent integer result and C++ wrapper agree. Linux signet_asert fuzz
 checks the inherited/239-bit limits and equality with the original calculator

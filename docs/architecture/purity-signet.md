@@ -27,9 +27,30 @@ the plan. Preserve original history, genesis, magic 0a03cf40 and powLimit.
 - Storage: signet/; defaults P2P/RPC 38333/38332, matching Bitcoin Signet.
   Concurrent external Core processes need separate base datadirs and port
   overrides. No AssumeUTXO in the first release; preserve replay semantics.
-- Launch configuration: H=318621, anchor H-5=318616. Keep H=11/anchor=6
-  exclusively as the small real-history test fixture. Public authorities,
-  activation-block pin and operated seeds remain provisional.
+- Preparation: schema v2 accepts only a complete null activation group. Keep
+  H at the existing inactive sentinel internally, retain historical challenge
+  and Bitcoin DAA, and block assembly/mining RPCs. RPC exposes nulls and
+  preparing state. No new chain type or alternative runtime chain is added.
+- Freeze: prepare.py pauses P2P, requires full sync and verifychain(4,0),
+  snapshots the active parent, H-5 anchor and parent time, sets minimum work to
+  parent chainwork and requests shutdown. It never derives from header-only tip
+  or changes time/bits. Operator age/readiness checks are not consensus.
+- Conversion: block-index DB key S stores a Signet rule fingerprint. Preparing
+  may become fixed once. Fixed H/parent/anchor/keys cannot change in that DB;
+  filling the H hash is permitted and independently enforced; an existing pin
+  cannot be removed or replaced. On conversion,
+  recheck stored header constraints and full H+ data, downgrade cached script
+  validity so candidate connection rechecks UTXOs/scripts. Failed branches and
+  descendants are excluded. Validate active coins/replay heads before replay;
+  incompatible active state requires backup restoration or explicit reindex.
+  Missing legacy fingerprints with active H+ require chainstate revalidation.
+  Revalidated stored indexes are synced before publishing the rule fingerprint,
+  so a crash cannot publish the context while retaining stale legacy flags.
+  Mainnet does not read/write this key and retains its activation-pin failure.
+- Launch: H=318621 is obsolete; H=T+1 is frozen just before mining. H=11 remains
+  the fast regression fixture. First-block pin/custody/seeds still require actual
+  operational evidence. Frozen parameter changes require restoring a clean
+  preparation backup or full reindex, not an online edit.
 
 Stages: S0 -> S1 -> {S2,S3} -> {S4,S5} -> S6 -> S7. See the task index.
 Generic implementation and local simulation have passed their recorded checks.

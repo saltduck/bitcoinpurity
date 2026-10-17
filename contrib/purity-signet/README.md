@@ -3,7 +3,7 @@
 The existing `signet` chain selects Purity consensus. There is one Signet
 implementation and no Purity mode switch. RPC continues to report `signet`;
 state, wallets, cookies and peer caches live in `signet/`.
-The owner-selected launch height is **318621** in `signet-params.json`;
+`signet-params.json` is schema v2 preparation with no selected H;
 `simulation.json` deliberately remains the separate H=11 fast-test fixture.
 
 `simulation.json` is a labelled development configuration: H=11, anchor=6,
@@ -15,6 +15,18 @@ the challenge transaction and invalidates existing signatures, including those
 whose signer pair did not use the changed key. Rebuild incompatible databases
 from verified raw blocks in a separate directory.
 
+For launch, use the schema v2 preparation sample, with real authorities and
+operated endpoints. Wait for full historical sync before choosing H. Then run
+prepare.py with --config, --output, --node-cli (a local JSON CLI argument array)
+and --ready. It pauses networking, runs full verification, derives H=T+1 and
+A=H-5/parent time/bits/chainwork, saves checksummed snapshot evidence and requests
+normal stop. The default one-hour parent-age check is configurable operator
+policy. Wait for clean exit and back up the preparation datadir before its first
+fixed-parameter restart. H=318621 is obsolete. See the operator procedure below.
+
+For a small isolated H=11 regression fixture (not launch), from the repository
+root:
+
 From the repository root, prepare a local node:
 
 ```sh
@@ -24,7 +36,7 @@ cp contrib/purity-signet/simulation.json build/purity-signet-simulation/signet-p
 build/bin/bitcoind -datadir="$PWD/build/purity-signet-simulation"
 ```
 
-The sample node config disables automatic connections. Import the real shared
+The sample permits configured historical connections. Import or synchronize the real shared
 prefix before mining. The functional tests replay the original blocks; an
 operator may import revalidated raw block records exported by a separately
 running Bitcoin Core Signet. Do not copy its indexes, chainstate or wallets.
@@ -37,22 +49,21 @@ nonzero assumevalid and inconsistent frozen anchor/index metadata. Genesis,
 magic, powLimit, 600-second spacing and 86400-second half-life are fixed.
 The [schema](../../docs/api/purity-signet.md) specifies configurable fields.
 
-## Selected launch height
+## Deferred launch height
 
-`signet-params.json` is the provisional launch example with owner-selected
-H=318621 and anchor=318616. Ports default to 38333/38332 and state uses signet/.
-Its historical header hashes/anchor bits/time were checked against public raw
-headers. It still has known test keys, .invalid/loopback seeds, a null H pin and
-simulation=true. This is not an official configuration. The lower inherited
-minimum-chainwork threshold is provisional, not the audited H-1 chainwork.
-Keep `simulation.json` at H=11 for the fast fixture shown above. To rehearse
-the selected height, copy signet-params.json into a separate base datadir and
-synchronize/revalidate through H-1. Existing old-chain H-or-later state must
-not be silently adopted. Concurrent clients need explicit listener overrides
-because their default ports and signet/ path now match. For this launch
-rehearsal, also change the miner configuration's chain_params to the launch JSON
-and its CLI datadirs to the corresponding nodes; the supplied miner-simulation
-example intentionally remains paired with the H=11 fixture.
+signet-params.json starts with no H; H=318621 is an obsolete rehearsal record.
+The schema v2 preparing state validates original history and refuses mining.
+Use the generated fixed file for node and miner after freezing. Existing
+inactive old branches/headers are rechecked and excluded where incompatible;
+active history must match the pins. The default ports and signet/ path match
+Bitcoin Signet, so concurrent clients require separate base datadirs and port
+overrides. simulation.json and miner-simulation.json remain paired H=11
+fixtures. Rehearse the lifecycle with feature_signet_prepare.py; do not turn
+known fixture keys or nonproduction seeds into an official file.
+
+See [operator procedure](../../docs/purity-signet-operations.md) and
+[acceptance record](../../docs/purity-signet-acceptance.md) for current launch
+steps, historical test evidence and the remaining public release gates.
 
 ## Independent signing miner
 

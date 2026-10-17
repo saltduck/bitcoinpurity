@@ -10,8 +10,11 @@
 #include <primitives/transaction.h>
 
 #include <optional>
+#include <string>
 
 class TxValidationState;
+
+std::string SignetConsensusFingerprint(const Consensus::Params& params);
 
 /**
  * Extract signature and check whether a block has a valid solution

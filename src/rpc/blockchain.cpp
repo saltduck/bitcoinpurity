@@ -1823,15 +1823,16 @@ RPCHelpMan getblockchaininfo()
                 {RPCResult::Type::NUM, "signet_challenge_height", /*optional=*/true, "Height of the next block using signet_challenge"},
                 {RPCResult::Type::OBJ, "signet_fork", /*optional=*/true, "Configured Signet fork parameters",
                 {
+                    {RPCResult::Type::STR, "state", "preparing or fixed"},
                     {RPCResult::Type::BOOL, "simulation", "Whether this is a simulation configuration"},
-                    {RPCResult::Type::NUM, "activation_height", "Purity activation height"},
-                    {RPCResult::Type::STR_HEX, "parent_hash", "Pinned hash at activation_height minus one"},
-                    {RPCResult::Type::STR_HEX, "activation_hash", "Pinned first Purity block hash; zero if unfrozen in simulation"},
-                    {RPCResult::Type::NUM, "anchor_height", "ASERT anchor height"},
-                    {RPCResult::Type::STR_HEX, "anchor_hash", "Pinned ASERT anchor hash"},
-                    {RPCResult::Type::STR_HEX, "anchor_bits", "ASERT reference compact target"},
-                    {RPCResult::Type::STR_HEX, "anchor_parent_hash", "Pinned anchor parent hash"},
-                    {RPCResult::Type::NUM_TIME, "anchor_parent_time", "ASERT reference parent time"},
+                    {RPCResult::Type::ANY, "activation_height", "Purity activation height"},
+                    {RPCResult::Type::ANY, "parent_hash", "Pinned hash at activation_height minus one"},
+                    {RPCResult::Type::ANY, "activation_hash", "Pinned first Purity block hash; zero if unfrozen in simulation"},
+                    {RPCResult::Type::ANY, "anchor_height", "ASERT anchor height"},
+                    {RPCResult::Type::ANY, "anchor_hash", "Pinned ASERT anchor hash"},
+                    {RPCResult::Type::ANY, "anchor_bits", "ASERT reference compact target"},
+                    {RPCResult::Type::ANY, "anchor_parent_hash", "Pinned anchor parent hash"},
+                    {RPCResult::Type::ANY, "anchor_parent_time", "ASERT reference parent time"},
                     {RPCResult::Type::STR_HEX, "historical_challenge", "Challenge before activation"},
                     {RPCResult::Type::STR_HEX, "postfork_challenge", "Challenge from activation"},
                     {RPCResult::Type::STR_HEX, "message_start", "Shared P2P message magic"},
@@ -1893,14 +1894,21 @@ RPCHelpMan getblockchaininfo()
         const auto& consensus = chainman.GetConsensus();
         UniValue fork{UniValue::VOBJ};
         fork.pushKV("simulation", consensus.signet_simulation);
-        fork.pushKV("activation_height", consensus.nPurityActivationHeight);
-        fork.pushKV("parent_hash", consensus.hashSignetForkParent.GetHex());
-        fork.pushKV("activation_hash", consensus.hashPurityActivationBlock.GetHex());
-        fork.pushKV("anchor_height", consensus.nAsertAnchorHeight);
-        fork.pushKV("anchor_hash", consensus.hashSignetAsertAnchor.GetHex());
-        fork.pushKV("anchor_bits", strprintf("%08x", consensus.nSignetAsertAnchorBits));
-        fork.pushKV("anchor_parent_hash", consensus.hashSignetAsertAnchorParent.GetHex());
-        fork.pushKV("anchor_parent_time", consensus.nSignetAsertAnchorParentTime);
+        fork.pushKV("state", consensus.signet_preparing ? "preparing" : "fixed");
+        if (consensus.signet_preparing) {
+            for (const auto* field : {"activation_height", "parent_hash", "activation_hash", "anchor_height", "anchor_hash", "anchor_bits", "anchor_parent_hash", "anchor_parent_time"}) {
+                fork.pushKV(field, UniValue{});
+            }
+        } else {
+            fork.pushKV("activation_height", consensus.nPurityActivationHeight);
+            fork.pushKV("parent_hash", consensus.hashSignetForkParent.GetHex());
+            fork.pushKV("activation_hash", consensus.hashPurityActivationBlock.GetHex());
+            fork.pushKV("anchor_height", consensus.nAsertAnchorHeight);
+            fork.pushKV("anchor_hash", consensus.hashSignetAsertAnchor.GetHex());
+            fork.pushKV("anchor_bits", strprintf("%08x", consensus.nSignetAsertAnchorBits));
+            fork.pushKV("anchor_parent_hash", consensus.hashSignetAsertAnchorParent.GetHex());
+            fork.pushKV("anchor_parent_time", consensus.nSignetAsertAnchorParentTime);
+        }
         fork.pushKV("historical_challenge", HexStr(consensus.signet_challenge));
         fork.pushKV("postfork_challenge", HexStr(consensus.signet_challenge_postfork));
         fork.pushKV("message_start", HexStr(chainman.GetParams().MessageStart()));

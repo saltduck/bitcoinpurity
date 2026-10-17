@@ -4284,11 +4284,22 @@ void Chainstate::ResetBlockFailureFlags(CBlockIndex *pindex) {
     AssertLockHeld(cs_main);
 
     int nHeight = pindex->nHeight;
+    std::vector<CBlockIndex*> reconsidered_signet;
 
     // Remove the invalidity flag from this block and all its ancestors and descendants.
     for (auto& [_, block_index] : m_blockman.m_block_index) {
         if ((block_index.nStatus & BLOCK_FAILED_MASK) &&
             (block_index.GetAncestor(nHeight) == pindex || pindex->GetAncestor(block_index.nHeight) == &block_index)) {
+            const auto& consensus = m_chainman.GetConsensus();
+            if (consensus.signet_blocks && !consensus.signet_preparing) {
+                BlockValidationState state;
+                if (!CheckSignetHeaderConstraints(block_index.GetBlockHeader(), state, consensus, block_index.pprev, BlockValidationMode::Full)) continue;
+                if (block_index.nHeight >= consensus.nPurityActivationHeight && (block_index.nStatus & BLOCK_HAVE_DATA)) {
+                    CBlock block;
+                    if (!m_blockman.ReadBlock(block, block_index) ||
+                        !ContextualCheckBlock(block, state, m_chainman, block_index.pprev)) continue;
+                }
+            }
             block_index.nStatus &= ~BLOCK_FAILED_MASK;
             m_blockman.m_dirty_blockindex.insert(&block_index);
             if (block_index.IsValid(BLOCK_VALID_TRANSACTIONS) && block_index.HaveNumChainTxs() && setBlockIndexCandidates.value_comp()(m_chain.Tip(), &block_index)) {
@@ -4299,6 +4310,7 @@ void Chainstate::ResetBlockFailureFlags(CBlockIndex *pindex) {
                 m_chainman.m_best_invalid = nullptr;
             }
             m_chainman.m_failed_blocks.erase(&block_index);
+            if (consensus.signet_blocks && !consensus.signet_preparing) reconsidered_signet.push_back(&block_index);
         } else if ((block_index.nStatus & BLOCK_FAILED_MASK) == BLOCK_FAILED_CHILD &&
                    pindex->GetAncestor(block_index.nHeight - 1) == block_index.pprev) {
             // Sibling branches remain invalid when their shared ancestor is reconsidered.
@@ -4306,6 +4318,15 @@ void Chainstate::ResetBlockFailureFlags(CBlockIndex *pindex) {
             block_index.nStatus = (block_index.nStatus & ~BLOCK_FAILED_CHILD) | BLOCK_FAILED_VALID;
             m_blockman.m_dirty_blockindex.insert(&block_index);
             m_chainman.m_failed_blocks.insert(&block_index);
+        }
+    }
+    // Keep descendants of retained failures out of candidates and the best header.
+    std::sort(reconsidered_signet.begin(), reconsidered_signet.end(), CBlockIndexHeightOnlyComparator());
+    for (CBlockIndex* index : reconsidered_signet) {
+        if (index->pprev && (index->pprev->nStatus & BLOCK_FAILED_MASK)) {
+            index->nStatus |= BLOCK_FAILED_CHILD;
+            m_blockman.m_dirty_blockindex.insert(index);
+            setBlockIndexCandidates.erase(index);
         }
     }
 }
@@ -5299,6 +5320,10 @@ bool Chainstate::LoadChainTip()
     if (!pindex) {
         return false;
     }
+    if (m_chainman.GetConsensus().signet_blocks && (pindex->nStatus & BLOCK_FAILED_MASK)) {
+        LogError("Active chain conflicts with configured Signet consensus; restore the preparation backup or reindex\n");
+        return false;
+    }
     m_chain.SetTip(*pindex);
     m_chainman.UpdateIBDStatus();
     tip = m_chain.Tip();
@@ -5725,7 +5750,7 @@ void Chainstate::ClearBlockIndexCandidates()
     setBlockIndexCandidates.clear();
 }
 
-bool ChainstateManager::LoadBlockIndex()
+bool ChainstateManager::LoadBlockIndex(bool recheck_signet)
 {
     AssertLockHeld(cs_main);
     // Load block index from databases
@@ -5741,23 +5766,39 @@ bool ChainstateManager::LoadBlockIndex()
 
         for (CBlockIndex* pindex : vSortedByHeight) {
             if (m_interrupt) return false;
-            if (!Consensus::SignetForkBlockPermitted(pindex->nHeight, pindex->GetBlockHash(), GetConsensus())) {
-                LogError("Block index conflicts with configured Signet history at height %d; rebuild from verified blocks\n", pindex->nHeight);
-                return false;
-            }
             const auto& consensus = GetConsensus();
-            if (consensus.signet_blocks &&
-                ((pindex->nHeight == consensus.nAsertAnchorHeight && consensus.nSignetAsertAnchorBits && pindex->nBits != consensus.nSignetAsertAnchorBits) ||
-                 (pindex->nHeight == consensus.nAsertAnchorHeight - 1 && consensus.nSignetAsertAnchorParentTime && pindex->nTime != consensus.nSignetAsertAnchorParentTime))) {
-                LogError("Block index conflicts with configured Signet ASERT anchor at height %d\n", pindex->nHeight);
-                return false;
+            if (consensus.signet_blocks && !consensus.signet_preparing) {
+                if (recheck_signet && pindex->nHeight >= consensus.nPurityActivationHeight &&
+                    (pindex->nStatus & BLOCK_VALID_MASK) > BLOCK_VALID_TRANSACTIONS) {
+                    pindex->nStatus = (pindex->nStatus & ~BLOCK_VALID_MASK) | BLOCK_VALID_TRANSACTIONS;
+                    m_blockman.m_dirty_blockindex.insert(pindex);
+                }
+                BlockValidationState state;
+                if (pindex->pprev && (pindex->pprev->nStatus & BLOCK_FAILED_MASK)) {
+                    pindex->nStatus |= BLOCK_FAILED_CHILD;
+                    m_blockman.m_dirty_blockindex.insert(pindex);
+                } else if (!CheckSignetHeaderConstraints(pindex->GetBlockHeader(), state, consensus, pindex->pprev, BlockValidationMode::Full)) {
+                    pindex->nStatus |= BLOCK_FAILED_VALID;
+                    m_blockman.m_dirty_blockindex.insert(pindex);
+                } else if (recheck_signet && pindex->nHeight >= consensus.nPurityActivationHeight && !(pindex->nStatus & BLOCK_FAILED_MASK)) {
+                    // Cached legacy validation cannot authorize a post-fork candidate.
+                    if (pindex->nStatus & BLOCK_HAVE_DATA) {
+                        CBlock block;
+                        if (!m_blockman.ReadBlock(block, *pindex) ||
+                            !CheckBlock(block, state, consensus) ||
+                            !ContextualCheckBlock(block, state, *this, pindex->pprev)) {
+                            pindex->nStatus |= BLOCK_FAILED_VALID;
+                        }
+                    }
+                    m_blockman.m_dirty_blockindex.insert(pindex);
+                }
             }
             // A conflicting block at the Purity activation height can only be
             // a leftover accepted before this software enforced the pin (new
             // headers are rejected in ContextualCheckBlockHeader). Refuse to
             // start so the user rebuilds the index instead of following a
             // non-Purity chain.
-            if (!Consensus::PurityActivationBlockPermitted(pindex->nHeight, pindex->GetBlockHash(), GetConsensus())) {
+            if (!GetConsensus().signet_blocks && !Consensus::PurityActivationBlockPermitted(pindex->nHeight, pindex->GetBlockHash(), GetConsensus())) {
                 LogError("Block index contains %s at height %d, which conflicts with the Purity activation block %s. "
                          "This block was stored before upgrading; use -reindex to rebuild the block index.\n",
                          pindex->GetBlockHash().ToString(), pindex->nHeight,

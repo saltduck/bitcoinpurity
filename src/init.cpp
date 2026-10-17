@@ -1081,7 +1081,7 @@ bool AppInitParameterInteraction(const ArgsManager& args)
     // on the command line or in this chain's section of the config file.
     ChainType chain = args.GetChainType();
     if (chain == ChainType::SIGNET) {
-        if (chainparams.GetConsensus().nPurityActivationHeight == std::numeric_limits<int>::max()) {
+        if (!chainparams.GetConsensus().signet_configured) {
             return InitError(Untranslated("Signet requires a chain-parameter JSON file (-signetparams). Copy the labelled simulation example only for local testing."));
         }
         if (args.IsArgSet("-assumevalid") && args.GetArg("-assumevalid", "0") != "0") {

@@ -257,16 +257,25 @@ and bounded post-fork peer isolation without punishing normal old-chain forks.
 
 See [requirements](purity-signet-requirements.md),
 [architecture](../architecture/purity-signet.md),
-[configuration and RPC contract](../api/purity-signet.md), and TASK-PS-000..007.
+[configuration and RPC contract](../api/purity-signet.md), and TASK-PS-000..008.
 
 Validation evidence: [acceptance matrix](../purity-signet-acceptance.md).
 Freeze and recovery: [operator procedure](../purity-signet-operations.md).
 
-Owner-fixed Signet parameters (2026-10-15): H=318621, default P2P/RPC
-38333/38332, standard signet/ directory. The launch JSON is
-contrib/purity-signet/signet-params.json; the H=11 simulation remains a separate
-regression fixture. Authority/seeds/activation pin are still provisional.
-Shared directories/ports require distinct base datadirs and listener overrides
-for concurrent clients; they do not authorize silently adopting the old chain.
+Select H only when signing wallets, software, peers and inherited history are
+ready. Schema v2 preparation uses explicit null activation_height, parent_hash,
+anchor and activation_hash together. It validates original Signet and refuses
+mining/templates. Version 1 fixed files remain supported. Pause networking,
+verify the complete active chain and freeze T; prepare.py derives H=T+1,
+A=H-5, actual hashes/bits/parent time and T chainwork, records evidence and
+requests normal shutdown. The default one-hour parent-age policy is configurable
+and does not affect consensus. Restart the same independent datadir with fixed
+parameters (simulation=true, null first pin); revalidate cached H+ candidates,
+isolate conflicting inactive branches and reject incompatible active history.
+After mining/validating H, pin its hash and set simulation=false. No dynamic
+activation, online parameter changes or new chain selection rule is introduced.
+H=318621 is obsolete rehearsal data. Defaults remain 38333/38332 and signet/;
+concurrent clients need separate base datadirs and listener overrides.
+See [TASK-PS-008](../tasks/TASK-PS-008.md) for conversion and acceptance.
 
 Complete audit and actual evidence: [Signet source review](../purity-signet-review.md).

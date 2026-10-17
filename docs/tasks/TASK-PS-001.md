@@ -37,6 +37,6 @@ arrays do not combine -signet with the example's chain=signet setting.
 S2/S4/S5 now have their own completed local evidence. Official values remain
 an external release decision.
 
-2026-10-15 amendment: defaults 38333/38332 and signet/. The launch file uses
-H=318621; H=11 remains a fast fixture. Complete-field validation now rejects
+2026-10-15 amendment: defaults 38333/38332 and signet/. The launch file now uses schema v2 preparation with no H;
+H=318621 is obsolete. H=11 remains a fast fixture. See TASK-PS-008. Complete-field validation now rejects
 an omitted activation_hash, while explicit null remains allowed in simulation.

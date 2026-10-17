@@ -71,7 +71,7 @@ class PuritySignetReferenceTest(PuritySignetTest):
         reference.args[0] = self.options.bitcoind
         reference.assert_start_raises_init_error(
             extra_args=[f"-signetparams={self.params_file}", "-checklevel=0", "-checkblocks=1"],
-            expected_msg="Corrupted block database detected", match=ErrorMatch.PARTIAL_REGEX)
+            expected_msg="Active chain conflicts with configured Signet consensus", match=ErrorMatch.PARTIAL_REGEX)
 
 
 

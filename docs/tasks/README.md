@@ -52,8 +52,11 @@
 - [TASK-PS-005: Independent signing miner and RPCs](TASK-PS-005.md)
 - [TASK-PS-006: Real parameters and first-block pin freeze](TASK-PS-006.md)
 - [TASK-PS-007: Release and full acceptance](TASK-PS-007.md)
+- [TASK-PS-008: Freeze H immediately before mining](TASK-PS-008.md)
 
 - [Purity Signet acceptance matrix](../purity-signet-acceptance.md)
 - [Purity Signet operator procedure](../purity-signet-operations.md)
 
 - [Signet complete source audit and Linux fuzz](../purity-signet-review.md)
+
+- [Late-H implementation and final validation](../purity-signet-late-h-review.md)

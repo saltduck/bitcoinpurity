@@ -29,10 +29,13 @@ Linux arm64 node/miner/Mainnet functional acceptance: five cases passed using
 container-local wallet directories; shared-mount failure details are preserved
 in the acceptance record.
 
-Latest complete source audit: ../purity-signet-review.md. H=318621, defaults
+Historical source audit: ../purity-signet-review.md. H=318621 (now superseded), defaults
 38333/38332, signet/; final CTest 150/150 and Core28/current-database regressions
 passed after those changes.
 
 Linux bounded fuzz passed: 1,907,931 Signet parser cases and 4,202,403 ASERT
 cases, both 181-second runs with ASan/UBSan, exit 0. Metadata is preserved in
 ../purity-signet-fuzz-results.json.
+
+Late-H source and verification: ../purity-signet-late-h-review.md and TASK-PS-008.
+Choose H=T+1 at launch; earlier test counts do not certify this new change.

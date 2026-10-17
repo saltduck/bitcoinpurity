@@ -27,6 +27,18 @@
 
 static constexpr uint8_t SIGNET_HEADER[4] = {0xec, 0xc7, 0xda, 0xa2};
 
+std::string SignetConsensusFingerprint(const Consensus::Params& params)
+{
+    if (params.signet_preparing) return "preparing";
+    HashWriter writer;
+    writer << params.nPurityActivationHeight << params.hashSignetForkParent
+           << params.nAsertAnchorHeight << params.hashSignetAsertAnchor
+           << params.hashSignetAsertAnchorParent << params.nSignetAsertAnchorBits
+           << params.nSignetAsertAnchorParentTime << params.signet_challenge_postfork;
+    // The first-block pin may be filled after mining without changing these rules.
+    return writer.GetHash().GetHex();
+}
+
 static constexpr unsigned int BLOCK_SCRIPT_VERIFY_FLAGS = SCRIPT_VERIFY_P2SH | SCRIPT_VERIFY_WITNESS | SCRIPT_VERIFY_DERSIG | SCRIPT_VERIFY_NULLDUMMY;
 
 static bool FetchAndClearCommitmentSection(const Span<const uint8_t> header, CScript& witness_commitment, std::vector<uint8_t>& result)

@@ -54,6 +54,8 @@ class Miner:
         if not params_path.is_absolute():
             params_path = path.parent / params_path
         self.params = json.loads(params_path.read_text())
+        if self.params["activation_height"] is None:
+            raise ValueError("Signet is preparing; freeze activation parameters before mining")
         for field in ("parent_hash", "activation_hash", "minimum_chain_work"):
             if self.params[field] is not None:
                 self.params[field] = bytes.fromhex(self.params[field]).hex()

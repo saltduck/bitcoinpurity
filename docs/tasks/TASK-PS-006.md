@@ -20,10 +20,11 @@ previous-release tool). Every hash 0..10 and the UTXO hash/amount/output count
 matched. A new signed PoW H block was archived, its hash written into a pinned
 simulation JSON, and startup with that pin passed. The Core reference accepted
 the actual original block 11 on its own continuation. Tests isolate ports,
-cookies, wallets and chain directories. H is now selected. Official custody/seeds and public release records
+cookies, wallets and chain directories. H selection is now deferred to launch. Official custody/seeds and public release records
 remain pending.
 
-Latest owner amendment: H=318621; launch anchor=318616; default ports
-38333/38332 and directory signet/. A separate provisional launch JSON records
-the verified public header tuple. H=11 stays a regression fixture. Production
-authorities/seeds/H pin and full inherited-chain/UTXO evidence remain pending.
+Latest owner amendment: select H=T+1 from the fully validated, paused tip at
+launch; H=318621 is obsolete rehearsal data. TASK-PS-008 adds schema v2
+preparation, snapshot generation and safe index conversion. Keep H=11 as a
+regression fixture. Official custody, operated seeds, first-block pin and full
+launch-history/UTXO evidence remain pending.

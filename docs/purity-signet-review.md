@@ -1,3 +1,8 @@
+> Historical review: H=318621 below has been superseded by late selection
+> H=T+1 immediately before mining. Previous test counts refer to that earlier
+> source snapshot. See [late-H review](purity-signet-late-h-review.md) for the
+> new preparation/conversion implementation and its own validation evidence.
+
 # Signet change review (2026-10-15)
 
 Review baseline: `cc85cfad90dea5447ff313f3158147ebb7bf1b47`. Scope includes all
