@@ -32,6 +32,12 @@ other networks' seed arrays, DNS seeds and explicit peer configuration.
 
 All documentation maintained for this change must be written in English.
 
+Maintain an English [deployment guide](../docs/purity-signet-deployment.md)
+translated from the operator's Chinese deployment instructions. Preserve the
+external Chinese original, use public placeholders, and align commands with the
+current preparation, signing and first-block freeze implementation. This is a
+documentation update only; it does not deploy a network or change consensus.
+
 Latest owner decisions (2026-10-15): select H=T+1 immediately before mining,
 where T is the frozen, fully validated original Signet tip. H=318621 is only
 an obsolete rehearsal record. Keep ports 38333/38332 and the signet/ directory.

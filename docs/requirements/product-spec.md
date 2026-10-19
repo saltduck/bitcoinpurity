@@ -265,10 +265,15 @@ the mining interval, required bits, signed fields or consensus checks. See
 
 See [requirements](purity-signet-requirements.md),
 [architecture](../architecture/purity-signet.md),
-[configuration and RPC contract](../api/purity-signet.md), and TASK-PS-000..009.
+[configuration and RPC contract](../api/purity-signet.md), and TASK-PS-000..010.
 
 Validation evidence: [acceptance matrix](../purity-signet-acceptance.md).
 Freeze and recovery: [operator procedure](../purity-signet-operations.md).
+The [English deployment guide](../purity-signet-deployment.md) translates the
+external Chinese instructions, including signer setup, preflight, history
+synchronization, bounded-memory freeze, first-block pinning and recovery. It
+uses public placeholders and current interfaces; publishing it does not deploy
+a network or alter consensus. The Chinese original remains outside the repository.
 
 Select H only when signing wallets, software, peers and inherited history are
 ready. Schema v2 preparation uses explicit null activation_height, parent_hash,

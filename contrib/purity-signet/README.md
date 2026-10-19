@@ -1,5 +1,8 @@
 # Purity Signet simulation and configuration
 
+The [English deployment guide](../../docs/purity-signet-deployment.md) provides
+the full setup, signer preflight and launch sequence.
+
 The existing `signet` chain selects Purity consensus. There is one Signet
 implementation and no Purity mode switch. RPC continues to report `signet`;
 state, wallets, cookies and peer caches live in `signet/`.

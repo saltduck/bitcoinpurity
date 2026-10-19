@@ -1,5 +1,9 @@
 # Purity Signet rehearsal and operator procedure
 
+For the detailed English translation of the operator's Chinese setup,
+signer preflight and launch instructions, see the
+[deployment guide](purity-signet-deployment.md).
+
 The current examples are simulations. Existing `signet` means Purity consensus;
 public operation requires an independently audited parameter file. Keep Bitcoin
 Core reference nodes and Purity nodes in separate data directories, with separate

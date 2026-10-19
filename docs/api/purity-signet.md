@@ -3,6 +3,10 @@
 `-signet` / `-chain=signet` selects the one Purity Signet chain. RPC `chain`
 remains `signet`; the config section remains `[signet]`. No Purity mode option.
 
+See the [English deployment guide](../purity-signet-deployment.md) for complete
+CLI and signer preflight examples using this contract. Its translated examples
+introduce no new options, configuration fields or RPC methods.
+
 The owner authorized `-signetparams=<JSON file>` and an explicitly labelled
 simulation example. Schema versions 1 (fixed) and 2 (preparing or fixed) are supported. JSON contains
 public keys only. Fixed original challenge, genesis,

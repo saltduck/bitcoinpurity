@@ -1,5 +1,16 @@
 # Embedded DATUM Migration Report
 
+## English Signet deployment guide (TASK-PS-010)
+
+Translate the operator's external Chinese deployment instructions into
+docs/purity-signet-deployment.md and retain the Chinese original outside the
+repository. Align the older full-history level-4 instruction with the current
+verifychain(2,0) plus verifychain(4,288) strategy. Use placeholders, suppress raw
+RPC error output in private-descriptor examples, and link the guide from the
+requirements, specification, architecture, API contract and indexes. This is a
+documentation-only change; it performs no deployment, wallet operation, chain
+migration or consensus change.
+
 ## Signet miner status logging (TASK-PS-009)
 
 Add timestamped stderr status for waiting, signing, quorum/proposal validation,

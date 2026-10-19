@@ -54,9 +54,11 @@
 - [TASK-PS-007: Release and full acceptance](TASK-PS-007.md)
 - [TASK-PS-008: Freeze H immediately before mining](TASK-PS-008.md)
 - [TASK-PS-009: Miner runtime status logging](TASK-PS-009.md)
+- [TASK-PS-010: English deployment guide](TASK-PS-010.md)
 
 - [Purity Signet acceptance matrix](../purity-signet-acceptance.md)
 - [Purity Signet operator procedure](../purity-signet-operations.md)
+- [Purity Signet deployment guide](../purity-signet-deployment.md)
 
 - [Signet complete source audit and Linux fuzz](../purity-signet-review.md)
 

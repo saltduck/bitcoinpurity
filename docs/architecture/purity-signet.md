@@ -6,6 +6,11 @@ Baseline: cc85cfad90dea5447ff313f3158147ebb7bf1b47.
 owner authorized a parameter JSON and simulated initial values after approving
 the plan. Preserve original history, genesis, magic 0a03cf40 and powLimit.
 
+The [deployment guide](../purity-signet-deployment.md) gives the operator sequence
+for these components, translated from the external Chinese instructions. It
+keeps signer custody separate from the miner and documents the existing
+preparing-to-fixed transition without changing the architecture.
+
 - Parameter construction: validate a fixed process configuration (H, parent
   hash, anchor tuple, three compressed public keys, activation pin, chainwork,
   ports and seeds). Keep spacing 600 and half-life 86400. Mainnet is unaffected.
