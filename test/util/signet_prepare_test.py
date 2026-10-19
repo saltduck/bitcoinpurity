@@ -25,7 +25,8 @@ class PrepareTest(unittest.TestCase):
                         "bb" * 32: dict(height=96, hash="bb" * 32, bits="1e0377ae", previousblockhash="cc" * 32),
                         "cc" * 32: dict(height=95, hash="cc" * 32, time=9500)}
         self.active = True
-        self.verified = True
+        self.failed_verification = None
+        self.verification_calls = []
         self.change = False
         self.calls = []
 
@@ -41,8 +42,9 @@ class PrepareTest(unittest.TestCase):
         if method == "setnetworkactive":
             self.active = args[0]
         elif method == "verifychain":
-            self.assertEqual(args, (4, 0))
-            return self.verified
+            self.verification_calls.append(args)
+            self.assertIn(args, ((2, 0), (4, PREPARE.RECENT_STATE_VERIFY_DEPTH)))
+            return args != self.failed_verification
         elif method == "getblockhash":
             self.assertEqual(args, (96,))
             return "bb" * 32
@@ -61,7 +63,10 @@ class PrepareTest(unittest.TestCase):
         self.assertEqual(fixed["anchor"]["parent_time"], 9500)
         self.assertIsNone(fixed["activation_hash"])
         self.assertTrue(fixed["simulation"])
-        self.assertTrue(record["verifychain"]["result"])
+        self.assertEqual(record["schema_version"], 2)
+        self.assertEqual(self.verification_calls, [(2, 0), (4, 288)])
+        self.assertEqual(record["verifychain"]["full_history"], {"level": 2, "depth": 0, "checked_blocks": 100, "result": True})
+        self.assertEqual(record["verifychain"]["recent_chainstate"], {"level": 4, "depth": 288, "checked_blocks": 100, "result": True})
         self.assertFalse(self.active)
         self.assertNotIn("stop", self.calls)
 
@@ -88,9 +93,16 @@ class PrepareTest(unittest.TestCase):
         self.assertFalse(self.active)
 
     def test_failed_verification(self):
-        self.verified = False
-        with self.assertRaisesRegex(ValueError, "verification failed"):
+        self.failed_verification = (2, 0)
+        with self.assertRaisesRegex(ValueError, "Full stored block and undo verification failed"):
             self.freeze()
+        self.assertEqual(self.verification_calls, [(2, 0)])
+
+    def test_failed_recent_chainstate_verification(self):
+        self.failed_verification = (4, 288)
+        with self.assertRaisesRegex(ValueError, "Recent chainstate verification failed"):
+            self.freeze()
+        self.assertEqual(self.verification_calls, [(2, 0), (4, 288)])
 
     def test_changed_tip(self):
         self.change = True

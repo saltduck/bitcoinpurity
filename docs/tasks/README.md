@@ -53,6 +53,7 @@
 - [TASK-PS-006: Real parameters and first-block pin freeze](TASK-PS-006.md)
 - [TASK-PS-007: Release and full acceptance](TASK-PS-007.md)
 - [TASK-PS-008: Freeze H immediately before mining](TASK-PS-008.md)
+- [TASK-PS-009: Miner runtime status logging](TASK-PS-009.md)
 
 - [Purity Signet acceptance matrix](../purity-signet-acceptance.md)
 - [Purity Signet operator procedure](../purity-signet-operations.md)

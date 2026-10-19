@@ -70,6 +70,11 @@ The launch example retains explicitly simulated authorities and endpoints.
 - Provide an independent PSBT signing/mining pipeline using GBT bits and
   600-second target scheduling, with real PoW, two independent signers and
   backup/recovery. Do not add replay protection or change address formats.
+- Emit timestamped miner status on stderr: remaining wait time, signer requests,
+  signature quorum/proposal checks, periodic PoW elapsed time, submission,
+  acceptance, stale work and retries. Preserve stdout block JSON and omit RPC
+  credentials, PSBTs, signatures and raw block/header payloads. Logging must not
+  change scheduling, difficulty, signing rules or consensus validation.
 - H, H-1 hash, H-5 anchor tuple, public keys/order, first block hash, ports and
   seeds must be frozen from real evidence before public operation. The owner
   requested a Signet-only chain-parameter JSON file with simulated initial

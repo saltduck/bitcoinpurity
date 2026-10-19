@@ -45,16 +45,23 @@ python3 contrib/purity-signet/prepare.py \
   --ready
 ```
 
-The tool pauses P2P, verifies all stored history with verifychain 4 0 and derives
-H=T+1 and A=H-5 from the fully validated active tip. It records exact T/A/A-1
-headers, anchor bits/parent time, T chainwork, configuration checksums and node
-state in fixed-params.json.snapshot.json. Default --max-parent-age=3600 rejects
-stale parents after verification; an explicit override changes operator policy,
-never consensus or block time/bits. Failed checks after pausing leave P2P paused;
-inspect the failure and use setnetworkactive true to resume preparation if safe.
-Existing output/evidence files are never overwritten. Full verification may
-require a larger -dbcache; insufficient cache returns false and prevents freeze.
-The example disables the CLI time limit for the full verification call.
+The tool pauses P2P, runs verifychain(2,0) over all stored blocks and undo data,
+then runs verifychain(4,288) to check coin-state disconnect/reconnect consistency
+over the most recent 288 blocks. Full historical contextual and script
+validation comes from completed, unpruned synchronization with assumevalid=0;
+the preparation configuration and startup checks enforce that policy. The
+bounded level-4 pass avoids accumulating a UTXO overlay proportional to chain
+history. The full level-2 disk scan can still take time, but does not require
+increasing -dbcache as the chain grows. The tool derives H=T+1 and A=H-5 from
+the fully validated active tip. It records exact T/A/A-1 headers, anchor
+bits/parent time, T chainwork, both verification results, configuration
+checksums and node state in fixed-params.json.snapshot.json. Default
+--max-parent-age=3600 rejects stale parents after verification; an explicit
+override changes operator policy, never consensus or block time/bits. Failed
+checks after pausing leave P2P paused; inspect the failure and use
+setnetworkactive true to resume preparation if safe. Existing output/evidence
+files are never overwritten. The example disables the CLI time limit for the
+full disk scan.
 
 On success, stop is requested and the fixed file has simulation=true and
 activation_hash=null. Wait for the process to finish cleanly. Back up the entire
@@ -147,6 +154,13 @@ signer availability. Confirm actual elapsed cadence separately from tests that
 advance mocktime. Before public activation a private rehearsal can be discarded;
 after H do not roll back by following the old authority. Stop miners or restore
 the same validated state/keys while a reviewed repair is prepared.
+
+Miner stderr now shows timestamped waiting countdowns, signer requests and
+quorum checks, proposal validation, periodic elapsed PoW, submission, acceptance,
+stale work and retry delays. Stdout remains accepted-block JSON. The PoW heartbeat
+uses poll_seconds and does not impose a total computation timeout. Logging does
+not expose signing payloads or RPC credentials. Restart the Python miner to load
+this change; leave the node, wallets and frozen consensus parameters intact.
 
 Current executable rehearsals are feature_purity_signet, p2p_purity_signet,
 tool_purity_signet_miner and the optional original-Core reference test. The miner

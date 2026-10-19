@@ -12,6 +12,8 @@ import subprocess
 import sys
 import time
 
+RECENT_STATE_VERIFY_DEPTH = 288
+
 
 def rpc(command, method, *args):
     values = [a if isinstance(a, str) else json.dumps(a) for a in args]
@@ -35,15 +37,17 @@ def freeze(config, call, max_parent_age, now):
     if before["initialblockdownload"] or before["headers"] != before["blocks"] or before["blocks"] < 5:
         raise ValueError("Node must finish validating all headers before freezing")
     if before["pruned"]:
-        raise ValueError("Preparation requires unpruned history for full verification and recovery")
+        raise ValueError("Preparation requires unpruned history for the full block/undo scan and recovery")
     call("setnetworkactive", False)
     if call("getnetworkinfo")["networkactive"]:
         raise ValueError("Could not pause networking")
     snapshot = call("getblockchaininfo")
     if snapshot["initialblockdownload"] or snapshot["headers"] != snapshot["blocks"]:
         raise ValueError("Chain changed while freezing; finish synchronization and retry")
-    if not call("verifychain", 4, 0):
-        raise ValueError("Full stored-chain verification failed")
+    if not call("verifychain", 2, 0):
+        raise ValueError("Full stored block and undo verification failed")
+    if not call("verifychain", 4, RECENT_STATE_VERIFY_DEPTH):
+        raise ValueError("Recent chainstate verification failed")
     height = snapshot["blocks"] + 1
     parent = call("getblockheader", snapshot["bestblockhash"])
     anchor_hash = call("getblockhash", height - 5)
@@ -63,9 +67,14 @@ def freeze(config, call, max_parent_age, now):
     result = dict(config, simulation=True, activation_height=height, parent_hash=parent["hash"], activation_hash=None,
                   minimum_chain_work=parent["chainwork"], anchor={"height": anchor["height"], "hash": anchor_hash,
                   "bits": anchor["bits"], "parent_hash": anchor_parent["hash"], "parent_time": anchor_parent["time"]})
-    evidence = {"schema_version": 1, "frozen_at": now, "max_parent_age": max_parent_age,
+    evidence = {"schema_version": 2, "frozen_at": now, "max_parent_age": max_parent_age,
                 "chain": snapshot, "parent": parent, "anchor": anchor, "anchor_parent": anchor_parent,
-                "verifychain": {"level": 4, "depth": 0, "result": True}, "networkactive": False}
+                "verifychain": {
+                    "full_history": {"level": 2, "depth": 0, "checked_blocks": snapshot["blocks"], "result": True},
+                    "recent_chainstate": {"level": 4, "depth": RECENT_STATE_VERIFY_DEPTH,
+                                          "checked_blocks": min(RECENT_STATE_VERIFY_DEPTH, snapshot["blocks"]), "result": True},
+                },
+                "networkactive": False}
     return result, evidence
 
 

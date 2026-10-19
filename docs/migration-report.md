@@ -1,13 +1,30 @@
 # Embedded DATUM Migration Report
 
+## Signet miner status logging (TASK-PS-009)
+
+Add timestamped stderr status for waiting, signing, quorum/proposal validation,
+elapsed PoW, submission, acceptance, stale work and retries. Preserve accepted
+block JSON on stdout, CLI/configuration schema, GBT bits, the 600-second gate,
+immutable signed fields, proposal/PoW checks and active-chain acceptance checks.
+Poll a single PoW subprocess for heartbeat output without adding a total solver
+timeout or restarting work. Reap it on an interrupted call. Logging setup runs
+only on direct CLI execution and never logs credentials or signing payloads.
+Restart the Python miner to apply this change. No node rebuild, wallet/chain
+migration or operational configuration update is required. No deployment,
+commit or PR is performed by this implementation task.
+
 ## Late Signet activation freeze (TASK-PS-008)
 
 Schema v1 fixed files remain supported. New v2 examples start with four explicit
 null activation fields, retain original historical validation and block mining.
-The operator tool pauses P2P and derives H=T+1/H-5 from validated active state,
-records full-chain verification and actual chainwork, requests stop and emits a
-fixed file. Back up the stopped preparation datadir before its first fixed-H
-restart. The block index gains a Signet-only rule fingerprint; cached H+ status
+The operator tool pauses P2P, scans all stored blocks and undo data with
+verifychain(2,0), checks the most recent 288 blocks' chainstate consistency with
+verifychain(4,288), then derives H=T+1/H-5 from the validated active state. Full
+historical contextual and script validation comes from completed unpruned sync
+with assumevalid=0; the bounded level-4 window prevents history-sized memory
+growth. The tool records both results and actual chainwork, requests stop and
+emits a fixed file. Back up the stopped preparation datadir before its first
+fixed-H restart. The block index gains a Signet-only rule fingerprint; cached H+ status
 is rechecked during conversion, inactive conflicts are excluded and incompatible
 active/replay heads fail. Older fixed databases without the fingerprint and
 active post-H state require -reindex-chainstate. A different fixed rule tuple

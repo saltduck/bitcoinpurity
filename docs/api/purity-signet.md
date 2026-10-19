@@ -75,6 +75,27 @@ chain_params, bitcoin_util, reward_script and poll_seconds (1..60). Signer
 arrays must be distinct and exactly two. Chain parameters contain public keys
 only. CLI secrets belong in private node configuration/cookies.
 
+The miner writes timestamped INFO/WARNING/ERROR status to stderr. Timestamps
+include the local UTC offset. Waiting reports the next height and remaining
+seconds, calculated from `parent.time + 600 - template.curtime`, on each poll.
+Signing reports requests and completed response checks for signer 1/2 and 2/2;
+only successful finalization is reported as a complete signature quorum.
+Proposal checking, PoW start/completion, submission, active-chain acceptance,
+discarded stale work and errors/retry delays are reported separately.
+
+While the PoW subprocess runs, each `poll_seconds` interval reports elapsed
+monotonic time. This interval is a status heartbeat, not a total solver timeout:
+the same subprocess continues until it exits. No progress percentage or hashrate
+is inferred. Solver stderr, CLI arguments, PSBTs, signature bytes and raw blocks
+or headers are never included in these logs. Importing the module does not
+configure the root logger.
+
+Stdout retains the existing `{height, hash, bits}` JSON record, emitted only
+after acceptance and the active-height hash check. `--once` exits after one
+accepted block; continuous operation retries runtime failures after the existing
+poll interval. Ctrl+C stops and reaps the PoW child and exits with status 130.
+The JSON configuration schema and consensus behavior are unchanged.
+
 Operational freeze and recovery: [operator procedure](../purity-signet-operations.md).
 
 ## Preparation and launch freeze
@@ -95,14 +116,18 @@ and first-pin zero-hash convention remain unchanged.
 
 prepare.py --config PREPARING --output FIXED --node-cli JSON_ARRAY --ready
 requires explicit operational readiness, synced unpruned history and the same
-signing keys. It pauses networking, runs verifychain 4 0, derives one snapshot,
-rejects stale parents (default --max-parent-age 3600), writes a companion
-.snapshot.json record, requests normal stop, then creates the fixed file without
-overwriting existing outputs. Failed checks after pausing leave networking
-paused. The operator must wait for clean exit and back up before restarting;
-keep other import/RPC writers stopped during freezing. It emits simulation=true
-and activation_hash=null for the first-block workflow. Readiness attests wallet
-custody and actual endpoints; the tool cannot prove remote signing custody.
+signing keys. It pauses networking, runs verifychain(2,0) over all stored blocks
+and undo data, then verifychain(4,288) over the recent chainstate window. Full
+historical contextual and script validation is provided by completed sync with
+assumevalid=0; bounded level-4 verification avoids a history-sized UTXO overlay.
+It derives one snapshot, rejects stale parents (default --max-parent-age 3600),
+writes a companion .snapshot.json record with both verification results,
+requests normal stop, then creates the fixed file without overwriting existing
+outputs. Failed checks after pausing leave networking paused. The operator must
+wait for clean exit and back up before restarting; keep other import/RPC writers
+stopped during freezing. It emits simulation=true and activation_hash=null for
+the first-block workflow. Readiness attests wallet custody and actual endpoints;
+the tool cannot prove remote signing custody.
 
 Changing a fixed consensus fingerprint on an existing index fails startup.
 Adding the first-block hash and changing simulation are allowed; active pins

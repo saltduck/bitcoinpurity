@@ -11,6 +11,11 @@ H=318621 is obsolete rehearsal data. Keep default ports
 38333/38332 and signet/ directory. See purity-signet-review.md for the current
 full audit, actual boundary-block evidence and Linux fuzz results.
 
+The S5 verifychain(4,0) entry below records a prior short-fixture miner test.
+The current production freeze procedure scans all stored block/undo data with
+verifychain(2,0) and checks recent state with verifychain(4,288); see the
+[operator procedure](purity-signet-operations.md).
+
 For the late-H implementation and its new evidence, see
 [TASK-PS-008](tasks/TASK-PS-008.md) and [late-H review](purity-signet-late-h-review.md).
 

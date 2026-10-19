@@ -1,5 +1,64 @@
 # Private keys
 *.pem
+*.key
+*.p12
+*.pfx
+id_rsa
+id_ecdsa
+id_ed25519
+id_dsa
+.ssh/
+*.psbt*
+private-descriptor*
+
+# Local credentials and deployment configuration. Keep public examples tracked.
+.env
+.env.*
+!.env.example
+!.env.sample
+!.env.template
+bitcoin.conf
+bitcoin.conf.*
+!/contrib/purity-signet/bitcoin.conf
+!/share/examples/bitcoin.conf
+miner-config*.json
+fixed-params*.json
+*.snapshot.json
+.cookie*
+
+# Wallets, private backups and operator archives.
+wallet.dat*
+wallets/
+*.wallet
+signet-mining-rewards*.dat*
+wallet-backup*/
+backups/
+launch-[0-9]*/
+/Purity-Signet/
+
+# Local node and signer data directories; contrib/signet remains public.
+bitcoindata/
+/purity-signet/
+/purity-signet-*/
+/signer-*/
+/signet/
+/regtest/
+/testnet3/
+/testnet4/
+/.bitcoin/
+/blocks/
+/chainstate/
+/indexes/
+debug.log*
+signet-miner*.log*
+*.pid
+peers.dat
+anchors.dat
+mempool.dat
+fee_estimates.dat
+banlist.json
+settings.json
+settings.json.bak
 
 # Build subdirectories.
 /*build*

@@ -24,6 +24,12 @@ the plan. Preserve original history, genesis, magic 0a03cf40 and powLimit.
   stale peers, and qualify peers by pinned-chain/full-block evidence.
 - Miner: independent two-wallet PSBT pipeline, exact GBT bits, immutable signed
   template apart from nonce, actual SHA256d work and 600s scheduling.
+  Timestamped stderr logs expose waiting, signing, quorum/proposal checks,
+  elapsed PoW, submission, acceptance, stale work and retries. The same PoW
+  child is polled with communicate timeouts solely to report elapsed time;
+  it is not restarted or cancelled by heartbeat expiry. Interrupts reap the
+  child. Stdout keeps accepted-block JSON, and imports leave logging setup to
+  the caller. No signing payloads, RPC credentials or raw blocks are logged.
 - Storage: signet/; defaults P2P/RPC 38333/38332, matching Bitcoin Signet.
   Concurrent external Core processes need separate base datadirs and port
   overrides. No AssumeUTXO in the first release; preserve replay semantics.
@@ -31,10 +37,13 @@ the plan. Preserve original history, genesis, magic 0a03cf40 and powLimit.
   H at the existing inactive sentinel internally, retain historical challenge
   and Bitcoin DAA, and block assembly/mining RPCs. RPC exposes nulls and
   preparing state. No new chain type or alternative runtime chain is added.
-- Freeze: prepare.py pauses P2P, requires full sync and verifychain(4,0),
+- Freeze: prepare.py pauses P2P, requires completed unpruned sync with
+  assumevalid=0, verifies all stored blocks/undo with verifychain(2,0), then
+  checks recent chainstate consistency with verifychain(4,288). This keeps the
+  UTXO overlay bounded while the level-2 disk scan covers full history. It
   snapshots the active parent, H-5 anchor and parent time, sets minimum work to
-  parent chainwork and requests shutdown. It never derives from header-only tip
-  or changes time/bits. Operator age/readiness checks are not consensus.
+  parent chainwork and requests shutdown. It never derives from a header-only
+  tip or changes time/bits. Operator age/readiness checks are not consensus.
 - Conversion: block-index DB key S stores a Signet rule fingerprint. Preparing
   may become fixed once. Fixed H/parent/anchor/keys cannot change in that DB;
   filling the H hash is permitted and independently enforced; an existing pin

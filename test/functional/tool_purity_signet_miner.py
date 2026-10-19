@@ -90,6 +90,10 @@ class PuritySignetMinerTest(PuritySignetTest):
         result = subprocess.run([sys.executable, str(miner), "--config", str(config_path), "--once"], capture_output=True, text=True)
         assert result.returncode == 0, result.stderr
         first_hash = node.getbestblockhash()
+        assert_equal(json.loads(result.stdout)["hash"], first_hash)
+        for status in ("Signing request", "signer=1/2", "signer=2/2", "Signature quorum complete",
+                       "Checking signed proposal", "PoW started", "PoW complete", "Submitting block", "Block accepted"):
+            assert status in result.stderr, result.stderr
         first = node.getblockheader(first_hash)
         assert_equal(first["height"], 11)
         assert_equal(first["bits"], expected_bits)
@@ -109,6 +113,7 @@ class PuritySignetMinerTest(PuritySignetTest):
             process = subprocess.Popen([sys.executable, str(miner), "--config", str(config_path)], stdout=stdout, stderr=stderr)
             try:
                 self.wait_until(lambda: "RPC walletprocesspsbt failed" in stderr_path.read_text(), timeout=720 if self.options.real_cadence else 60)
+                assert "retrying in 1s" in stderr_path.read_text()
                 assert process.poll() is None
                 assert_equal(node.getblockcount(), 11)
                 self.start_node(2, extra_args=self.extra_args[2])

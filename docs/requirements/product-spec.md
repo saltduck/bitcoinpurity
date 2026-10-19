@@ -255,9 +255,17 @@ has a maximum 195-byte exception after H; other outputs retain 34/83 limits.
 Use a Signet-only 239-bit ASERT entry, GBT bits, real PoW, shared-prefix peers
 and bounded post-fork peer isolation without punishing normal old-chain forks.
 
+The independent miner emits timestamped operational status on stderr, including
+remaining wait time, both signer requests, quorum/proposal checks, periodic PoW
+elapsed time, submission, acceptance, stale work and retry delays. Stdout remains
+one JSON record per accepted active-chain block. Status never includes RPC
+credentials, PSBTs, signatures or raw block/header payloads, and does not change
+the mining interval, required bits, signed fields or consensus checks. See
+[TASK-PS-009](../tasks/TASK-PS-009.md).
+
 See [requirements](purity-signet-requirements.md),
 [architecture](../architecture/purity-signet.md),
-[configuration and RPC contract](../api/purity-signet.md), and TASK-PS-000..008.
+[configuration and RPC contract](../api/purity-signet.md), and TASK-PS-000..009.
 
 Validation evidence: [acceptance matrix](../purity-signet-acceptance.md).
 Freeze and recovery: [operator procedure](../purity-signet-operations.md).
@@ -265,10 +273,14 @@ Freeze and recovery: [operator procedure](../purity-signet-operations.md).
 Select H only when signing wallets, software, peers and inherited history are
 ready. Schema v2 preparation uses explicit null activation_height, parent_hash,
 anchor and activation_hash together. It validates original Signet and refuses
-mining/templates. Version 1 fixed files remain supported. Pause networking,
-verify the complete active chain and freeze T; prepare.py derives H=T+1,
-A=H-5, actual hashes/bits/parent time and T chainwork, records evidence and
-requests normal shutdown. The default one-hour parent-age policy is configurable
+mining/templates. Version 1 fixed files remain supported. Complete unpruned
+sync with assumevalid=0 validates inherited history. At freeze, pause networking,
+scan all stored blocks and undo data with verifychain(2,0), and check recent
+chainstate consistency with verifychain(4,288); then freeze T. This separates
+full-history validation from a bounded-memory UTXO consistency check.
+prepare.py derives H=T+1, A=H-5, actual hashes/bits/parent time and T chainwork,
+records both verification results and requests normal shutdown. The default
+one-hour parent-age policy is configurable
 and does not affect consensus. Restart the same independent datadir with fixed
 parameters (simulation=true, null first pin); revalidate cached H+ candidates,
 isolate conflicting inactive branches and reject incompatible active history.

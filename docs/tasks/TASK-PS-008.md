@@ -7,10 +7,12 @@ Dependencies: TASK-PS-001..006. Release evidence: TASK-PS-007.
    otherwise fixed H/H-5; retain v1 compatibility and common validation.
    Preserve chain identity, ports and directory. Expose preparing state/nulls,
    original historical consensus and mining/assembly rejection.
-2. Add prepare.py: readiness confirmation, full synchronization, paused P2P,
-   verifychain(4,0), consistent active snapshot, configurable one-hour age check,
-   exact H=T+1/A=H-5/parent time/bits/chainwork, evidence checksums, normal stop
-   and non-overwriting fixed output. Never change timestamps or difficulty.
+2. Add prepare.py: readiness confirmation, full unpruned sync with
+   assumevalid=0, paused P2P, full-history verifychain(2,0) for stored block/undo
+   data and bounded verifychain(4,288) for recent chainstate consistency,
+   consistent active snapshot, configurable one-hour age check, exact
+   H=T+1/A=H-5/parent time/bits/chainwork, evidence checksums, normal stop and
+   non-overwriting fixed output. Never change timestamps or difficulty.
 3. Record the Signet rule fingerprint in the block index. On conversion recheck
    H+ headers/data, reset cached script validity for candidate connection,
    isolate inactive conflicts/descendants and validate active/replay heads.

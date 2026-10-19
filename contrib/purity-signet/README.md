@@ -18,11 +18,16 @@ from verified raw blocks in a separate directory.
 For launch, use the schema v2 preparation sample, with real authorities and
 operated endpoints. Wait for full historical sync before choosing H. Then run
 prepare.py with --config, --output, --node-cli (a local JSON CLI argument array)
-and --ready. It pauses networking, runs full verification, derives H=T+1 and
-A=H-5/parent time/bits/chainwork, saves checksummed snapshot evidence and requests
-normal stop. The default one-hour parent-age check is configurable operator
-policy. Wait for clean exit and back up the preparation datadir before its first
-fixed-parameter restart. H=318621 is obsolete. See the operator procedure below.
+and --ready. It pauses networking, runs verifychain(2,0) over all stored blocks
+and undo data, then verifychain(4,288) for recent chainstate consistency. Full
+historical contextual and script validation comes from the completed unpruned
+sync with assumevalid=0; the bounded level-4 pass avoids a history-sized UTXO
+overlay. It derives H=T+1 and A=H-5/parent time/bits/chainwork, saves checksummed
+snapshot evidence and requests normal stop. The full disk scan can still take
+time, but does not call for raising dbcache with chain height. The default
+one-hour parent-age check is configurable operator policy. Wait for clean exit
+and back up the preparation datadir before its first fixed-parameter restart.
+H=318621 is obsolete. See the operator procedure below.
 
 For a small isolated H=11 regression fixture (not launch), from the repository
 root:
@@ -96,6 +101,24 @@ RPC payloads use stdin so large blocks do not exceed command-line size limits.
 Changing tips discards stale work; an interrupted process starts from a fresh
 template. Continuous mode retries RPC/quorum failures at the configured poll
 interval. `--once` reports such failures and exits.
+
+The miner logs timestamped status to stderr while stdout keeps one JSON result
+per accepted block. Waiting logs show the next height and remaining seconds
+every poll; signing logs identify each request and the completed quorum.
+Proposal validation, PoW start/completion, submission and active-chain acceptance
+are visible. During a long grind, elapsed PoW time is reported every
+`poll_seconds` without restarting or imposing a total timeout on the solver.
+Stale work, retry delays and Ctrl+C shutdown are also reported. Logs omit CLI
+credentials, PSBTs, signatures and raw block/header payloads.
+
+To append both channels to a local operator log, run:
+
+```sh
+python3 -u contrib/purity-signet/miner.py --config /absolute/path/to/miner-config.json 2>&1 | tee -a /absolute/path/to/signet-miner.log
+```
+
+Restart an already running miner to load the logging change; no node rebuild,
+wallet change or chain-parameter update is needed. Keep operator logs private.
 
 Scheduling waits for the parent timestamp plus 600 seconds using the node's
 template time. There is no difficulty override or shortened consensus interval.

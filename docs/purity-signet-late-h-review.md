@@ -14,12 +14,16 @@ part of this task. Chinese operational manuals remain outside the repository.
   fixed v2 anchors must be H-5. Preparation uses the inactive height sentinel,
   original challenge and Bitcoin difficulty rules, and blocks both mining RPCs
   and internal assembly. RPC reports preparing with null activation fields.
-- prepare.py checks readiness and synchronization, pauses P2P, runs full
-  verifychain(4,0), samples the active tip and anchor, rechecks snapshot stability,
-  records actual hashes/bits/time/chainwork and checksums, requests normal stop
-  and creates a non-overwriting fixed file. Parent age is checked after full
+- prepare.py checks readiness and synchronization, pauses P2P, scans all stored
+  blocks and undo data with verifychain(2,0), then runs verifychain(4,288) for
+  recent UTXO disconnect/reconnect consistency. Completed unpruned sync with
+  assumevalid=0 provides full historical contextual and script validation; the
+  bounded level-4 window avoids a history-sized UTXO overlay. It samples the
+  active tip and anchor, rechecks snapshot stability, records actual
+  hashes/bits/time/chainwork and both verification results, requests normal
+  stop and creates a non-overwriting fixed file. Parent age is checked after
   verification against wall time, default 3600 seconds. It changes no consensus
-  timestamps or target. Insufficient verification cache prevents freezing.
+  timestamps or target.
 - A Signet-only block-index record stores the consensus fingerprint and the
   first-block pin. Preparation may become fixed; a fixed rule tuple cannot be
   changed without restoring preparation state or explicit full reindex. The
@@ -75,6 +79,13 @@ comparison and finite regression/fuzz runs are evidence for these boundaries,
 not a formal proof over every possible consensus input.
 
 ## Validation
+
+The low-memory verification policy update was added after the original evidence
+below. Its Python regression suite passes 10 cases, including both full-history
+scan and recent chainstate failure paths. The functional freeze test also checks
+the recorded verification depths and actual number of recent blocks checked.
+Linux sanitizer and fuzz campaigns below predate this operational-script-only
+change.
 
 | Acceptance area | Final evidence | Result |
 | --- | --- | --- |

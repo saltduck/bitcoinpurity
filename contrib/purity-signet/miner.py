@@ -6,6 +6,7 @@
 
 import argparse
 import json
+import logging
 from pathlib import Path
 import runpy
 import subprocess
@@ -19,6 +20,7 @@ from test_framework.psbt import PSBT, PSBT_GLOBAL_UNSIGNED_TX, PSBT_IN_NON_WITNE
 from test_framework.script import CScriptOp  # noqa: E402
 
 PRIMITIVES = runpy.run_path(str(ROOT / "contrib/signet/miner"), run_name="signet_primitives")
+LOGGER = logging.getLogger("purity_signet_miner")
 
 
 def rpc(argv, method, *args):
@@ -96,11 +98,16 @@ class Miner:
             raise RuntimeError("Template challenge differs from configured authority")
         parent = rpc(self.node, "getblockheader", template["previousblockhash"])
         if template["curtime"] < parent["time"] + 600:
+            LOGGER.info("Waiting for next block: height=%d remaining=%ds", template["height"],
+                        parent["time"] + 600 - template["curtime"])
             return None
+        LOGGER.info("Preparing block: height=%d parent=%s bits=%s", template["height"],
+                    template["previousblockhash"], template["bits"])
         unsigned = PRIMITIVES["generate_psbt"](template, self.reward)
         original = PSBT.from_base64(unsigned)
         signed = unsigned
-        for signer in self.signers:
+        for index, signer in enumerate(self.signers, start=1):
+            LOGGER.info("Signing request: height=%d signer=%d/%d", template["height"], index, len(self.signers))
             signed = rpc(signer, "walletprocesspsbt", signed,
                          {"sign": True, "sighashtype": "ALL", "bip32derivs": False, "finalize": False})["psbt"]
             parsed = PSBT.from_base64(signed)
@@ -109,9 +116,12 @@ class Miner:
                     raise RuntimeError("Signing wallet changed the block or virtual transaction")
             if parsed.i[0].map.get(PSBT_IN_NON_WITNESS_UTXO) != original.i[0].map[PSBT_IN_NON_WITNESS_UTXO]:
                 raise RuntimeError("Signing wallet changed the challenge transaction")
+            LOGGER.info("Signing request complete: height=%d signer=%d/%d", template["height"], index, len(self.signers))
+        LOGGER.info("Finalizing signatures: height=%d", template["height"])
         final = rpc(self.node, "finalizepsbt", signed, False)
         if not final["complete"]:
             raise RuntimeError("Two wallets did not provide the required signature quorum")
+        LOGGER.info("Signature quorum complete: height=%d", template["height"])
         block, solution = PRIMITIVES["decode_psbt"](final["psbt"])
         block.vtx[0].vout[-1].scriptPubKey += CScriptOp.encode_op_pushdata(PRIMITIVES["SIGNET_HEADER"] + solution)
         if len(block.vtx[0].vout[-1].scriptPubKey) > 195:
@@ -120,15 +130,32 @@ class Miner:
         block.hashMerkleRoot = block.calc_merkle_root()
         raw = block.serialize().hex()
         if rpc(self.node, "getbestblockhash") != template["previousblockhash"]:
+            LOGGER.info("Discarding stale block before PoW: height=%d", template["height"])
             return None
+        LOGGER.info("Checking signed proposal: height=%d", template["height"])
         rejection = rpc(self.node, "getblocktemplate", {"mode": "proposal", "data": raw})
         if rejection is not None:
             raise RuntimeError(f"Signed proposal rejected: {rejection}")
         header = CBlockHeader(block).serialize()
-        result = subprocess.run([self.util, "grind", header.hex()], capture_output=True, text=True)
-        if result.returncode:
+        LOGGER.info("PoW started: height=%d bits=%s solver=%s", template["height"], template["bits"], self.util)
+        pow_started = time.monotonic()
+        with subprocess.Popen([self.util, "grind", header.hex()], stdout=subprocess.PIPE,
+                              stderr=subprocess.PIPE, text=True) as process:
+            try:
+                while True:
+                    try:
+                        solved_header, _ = process.communicate(timeout=self.poll)
+                        break
+                    except subprocess.TimeoutExpired:
+                        LOGGER.info("PoW running: height=%d elapsed=%.0fs", template["height"],
+                                    time.monotonic() - pow_started)
+            except BaseException:
+                process.kill()
+                process.communicate()
+                raise
+        if process.returncode:
             raise RuntimeError("PoW solver failed")
-        solved = from_hex(CBlockHeader(), result.stdout.strip())
+        solved = from_hex(CBlockHeader(), solved_header.strip())
         if solved.serialize()[:76] != header[:76]:
             raise RuntimeError("PoW solver changed signed header fields")
         block.nNonce = solved.nNonce
@@ -137,13 +164,18 @@ class Miner:
         target = mantissa << (8 * (exponent - 3)) if exponent >= 3 else mantissa >> (8 * (3 - exponent))
         if block.sha256 > target:
             raise RuntimeError("PoW solver returned insufficient work")
+        LOGGER.info("PoW complete: height=%d elapsed=%.0fs", template["height"], time.monotonic() - pow_started)
         if rpc(self.node, "getbestblockhash") != template["previousblockhash"]:
+            LOGGER.info("Discarding stale block after PoW: height=%d", template["height"])
             return None
+        LOGGER.info("Submitting block: height=%d hash=%s", template["height"], block.hash)
         rejection = rpc(self.node, "submitblock", block.serialize().hex())
         if rejection is not None:
             raise RuntimeError(f"Block rejected: {rejection}")
         if rpc(self.node, "getblockhash", template["height"]) != block.hash:
+            LOGGER.warning("Submitted block is not active: height=%d hash=%s", template["height"], block.hash)
             return None
+        LOGGER.info("Block accepted: height=%d hash=%s bits=%s", template["height"], block.hash, template["bits"])
         return {"height": template["height"], "hash": block.hash, "bits": template["bits"]}
 
 
@@ -153,6 +185,8 @@ def main():
     parser.add_argument("--once", action="store_true", help="Exit after one accepted block")
     args = parser.parse_args()
     miner = Miner(args.config)
+    LOGGER.info("Starting Signet miner: mode=%s poll=%ds solver=%s",
+                "once" if args.once else "continuous", miner.poll, miner.util)
     while True:
         try:
             block = miner.attempt()
@@ -163,13 +197,18 @@ def main():
         except RuntimeError as error:
             if args.once:
                 raise
-            print(str(error), file=sys.stderr, flush=True)
+            LOGGER.error("Attempt failed: %s; retrying in %ds", error, miner.poll)
         time.sleep(miner.poll)
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s",
+                        datefmt="%Y-%m-%dT%H:%M:%S%z")
     try:
         main()
+    except KeyboardInterrupt:
+        LOGGER.info("Miner stopped")
+        sys.exit(130)
     except (OSError, ValueError, TypeError, KeyError, RuntimeError) as error:
-        print(str(error), file=sys.stderr)
+        LOGGER.error("%s", error)
         sys.exit(1)
