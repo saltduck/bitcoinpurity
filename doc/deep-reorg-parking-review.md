@@ -1,5 +1,8 @@
 # Acceptance-time deep-reorganization parking
 
+This report records the original depth-6 verification. The current default
+is 3; see [TASK-028](../docs/tasks/TASK-028.md).
+
 Scope: parking only. RDTS, replay protection,
 manifests, PoW and transaction consensus are unchanged by this follow-up.
 The prior parking implementation in TASK-014 is superseded.

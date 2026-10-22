@@ -44,6 +44,8 @@
 
 - [TASK-027: Node configuration default updates](TASK-027.md)
 
+- [TASK-028: Set default automatic parking depth to 3](TASK-028.md)
+
 ## Purity Signet
 
 - [TASK-PS-000: Baseline and requirement amendments](TASK-PS-000.md)

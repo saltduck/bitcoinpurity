@@ -240,6 +240,13 @@ Validation is tracked in TASK-013.
 
 ## Validation and signed-manifest corrections
 
+The default automatic parking threshold changes from 6 to 3 blocks. Existing
+configurations with explicit `-parkreorgdepth` retain their chosen threshold.
+On mainnet, a competing chain that rewinds 4 or more active blocks is now
+parked for manual review; rewinds of up to 3 blocks proceed normally. Test
+chains remain disabled by default. This changes node-local chain selection,
+not consensus validity or persisted parking status. See TASK-028.
+
 Automatic parking is now decided in `AcceptBlock` before candidate propagation,
 using the active-chain fork and rewind. The intermediate `DeepReorgPolicy`
 activation override has been removed; manual unpark restores normal activation.

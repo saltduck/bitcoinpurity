@@ -185,8 +185,10 @@ verification criteria, and non-goals are normative in
   while its body is missing. Persisted parked ancestry excludes descendants.
   `ActivateBestChain` has no automatic parking decision or approval override;
   `unparkblock` clears flags and invokes normal activation. Delivery order and
-  `pblock` do not affect parking. `getchaintips.parked`, thresholds/defaults and
-  local-policy semantics are retained; no automatic unparking is implemented.
+  `pblock` do not affect parking. `getchaintips.parked` and local-policy
+  semantics are retained. The default `parkreorgdepth` is 3; rewinds of 3 or
+  fewer proceed normally, while deeper rewinds are parked. Explicit thresholds
+  remain supported; no automatic unparking is implemented.
   Restart and chainstate-only rebuild retain flags. Full reindex reconstructs
   local status from scratch and may select a previously parked branch when
   there is no deep rewind against an established active tip.
