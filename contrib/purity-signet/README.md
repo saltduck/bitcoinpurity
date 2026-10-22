@@ -75,7 +75,7 @@ steps, historical test evidence and the remaining public release gates.
 
 ## Independent signing miner
 
-`miner-simulation.json` configures a separate Python process and two named RPC
+`miner-simulation.json` configures a separate Python process and three named RPC
 wallets. Its payout script is a public fixture address; replace it with your
 simulation payout. All CLI commands are argument arrays. Their paths are
 relative to the process working directory; chain_params is relative to the
@@ -105,6 +105,16 @@ Changing tips discards stale work; an interrupted process starts from a fresh
 template. Continuous mode retries RPC/quorum failures at the configured poll
 interval. `--once` reports such failures and exits.
 
+Configure all three authority wallet CLI arrays in `signer_clis` to enable
+automatic failover. Existing two-entry files remain supported. The miner tries
+pairs 1+2, 1+3, 2+3 from the original PSBT and stops at the first complete quorum.
+Failed or invalid endpoints are skipped for the rest of that attempt; the next
+attempt tries them again. A successful RPC response alone does not count as a
+signature. Distinct endpoint arrays must ultimately supply two different keys.
+`signer_timeout_seconds` is a positive integer (default 30) bounding each signer
+CLI call. It does not limit the PoW solver. All three RPC channels/tunnels must
+be configured and reachable for single-signer fault tolerance.
+
 The miner logs timestamped status to stderr while stdout keeps one JSON result
 per accepted block. Waiting logs show the next height and remaining seconds
 every poll; signing logs identify each request and the completed quorum.
@@ -129,8 +139,11 @@ The functional test advances startup mocktime by 600 seconds for a fast local
 rehearsal. It runs four daemons, stops/restores a signer, restores a wallet backup
 on another daemon and signs with the alternate quorum. The optional
 `tool_purity_signet_miner.py --real-cadence` run waits for a real interval
-without mocktime; one such run passed locally. If a signer is unavailable,
-select the other distinct pair and restart the miner.
+without mocktime; one such run passed locally. With three configured endpoints,
+a signer outage automatically selects an available pair. With only two entries,
+restore the failed signer or configure the other pair and restart. Restart a
+running miner once to load this update and the third endpoint; wallet keys,
+chain parameters and the node binary do not change.
 
 ## Parameter freeze and release gates
 

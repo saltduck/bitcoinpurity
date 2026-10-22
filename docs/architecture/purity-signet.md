@@ -27,7 +27,7 @@ preparing-to-fixed transition without changing the architecture.
 - P2P: check pinned boundaries before Signet DAA classification. Keep valid
   shared headers on a mid-batch fork, use H-1 chainwork for bootstrap, bound
   stale peers, and qualify peers by pinned-chain/full-block evidence.
-- Miner: independent two-wallet PSBT pipeline, exact GBT bits, immutable signed
+- Miner: independent 2-of-3 wallet PSBT pipeline, exact GBT bits, immutable signed
   template apart from nonce, actual SHA256d work and 600s scheduling.
   Timestamped stderr logs expose waiting, signing, quorum/proposal checks,
   elapsed PoW, submission, acceptance, stale work and retries. The same PoW
@@ -35,6 +35,13 @@ preparing-to-fixed transition without changing the architecture.
   it is not restarted or cancelled by heartbeat expiry. Interrupts reap the
   child. Stdout keeps accepted-block JSON, and imports leave logging setup to
   the caller. No signing payloads, RPC credentials or raw blocks are logged.
+  Two-endpoint configs remain supported. Three-endpoint configs try pairs 1+2,
+  1+3, 2+3, each from the original PSBT, skipping failed or invalid endpoints
+  until the next attempt. Each signer RPC has a configurable positive timeout
+  (default 30 seconds); subprocess timeout kills and reaps the CLI child.
+  Incomplete finalization advances to the next pair; coordinator RPC failures
+  abort the attempt. Only the first finalized quorum proceeds to the unchanged
+  full signed-proposal/PoW/submission path. No authority or consensus changes.
 - Storage: signet/; defaults P2P/RPC 38333/38332, matching Bitcoin Signet.
   Concurrent external Core processes need separate base datadirs and port
   overrides. No AssumeUTXO in the first release; preserve replay semantics.

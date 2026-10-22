@@ -121,10 +121,14 @@ gap by miner scheduling, and this procedure never alters its formula.
   custody, and test restoration on an isolated machine. Verify public keys and
   a fresh virtual signature after restoration. Unlock wallets through a protected
   wallet interface; never place passphrases in the public examples.
-- Continuous mining retries a failed signer at poll_seconds without submitting
-  an unsigned block. Restore the same signer and it can resume. If that signer
-  is unavailable for longer, choose the other distinct pair in signer_clis and
-  restart the miner; configuration is loaded once per process.
+- Configure all three distinct authority wallet endpoints in signer_clis for
+  automatic failover. The miner tries available pairs without restarting;
+  signer_timeout_seconds bounds each signer CLI call (default 30 seconds).
+  Ensure all three protected RPC channels/tunnels and loaded, unlocked wallets
+  are ready. If quorum is unavailable, continuous mining retries after
+  poll_seconds without solving or submitting. Two-entry configs still require
+  restoring the failed signer or selecting another pair and restarting.
+  Configuration is loaded once per process; restart once to add the third entry.
 - Recover an existing authority by restoring its backup on another daemon and
   changing the corresponding CLI endpoint/wallet name. Public consensus keys,
   their order, H and all pins remain identical. The functional test exercises

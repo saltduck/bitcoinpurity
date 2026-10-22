@@ -27,6 +27,7 @@ SPEC = importlib.util.spec_from_file_location("signet_miner", MINER_PATH)
 MINER = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MINER)
 REAL_POPEN = subprocess.Popen
+REAL_RPC = MINER.rpc
 
 from test_framework.blocktools import add_witness_commitment, create_block, create_coinbase  # noqa: E402
 
@@ -79,6 +80,10 @@ class MinerLoggingTest(unittest.TestCase):
         add_witness_commitment(self.block)
         self.block.vtx[0].vout[-1].scriptPubKey = bytes(self.block.vtx[0].vout[-1].scriptPubKey)
         self.calls = []
+        self.signing_requests = []
+        self.failed_signers = set()
+        self.non_signing = set()
+        self.signatures = {self.secret: set()}
         self.tips = []
         self.quorum = True
         self.proposal_rejection = None
@@ -104,7 +109,7 @@ class MinerLoggingTest(unittest.TestCase):
         self.stack = ExitStack()
         self.addCleanup(self.stack.close)
         self.stack.enter_context(patch.object(MINER, "rpc", side_effect=self.rpc))
-        self.stack.enter_context(patch.object(MINER.PSBT, "from_base64", return_value=original))
+        self.parse = self.stack.enter_context(patch.object(MINER.PSBT, "from_base64", return_value=original))
         self.stack.enter_context(patch.dict(MINER.PRIMITIVES, {
             "generate_psbt": lambda *_: self.secret,
             "decode_psbt": lambda *_: (self.block, b"private-test-solution"),
@@ -112,7 +117,7 @@ class MinerLoggingTest(unittest.TestCase):
         self.popen = self.stack.enter_context(patch.object(MINER.subprocess, "Popen", side_effect=self.spawn))
         self.miner = MINER.Miner(self.config_path)
 
-    def rpc(self, argv, method, *args):
+    def rpc(self, argv, method, *args, **kwargs):
         self.calls.append(method)
         if method == "getblockchaininfo":
             return {"chain": "signet", "signet_fork": copy.deepcopy(self.fork)}
@@ -121,9 +126,18 @@ class MinerLoggingTest(unittest.TestCase):
         if method == "getblockheader":
             return {"time": self.parent_time}
         if method == "walletprocesspsbt":
-            return {"psbt": self.secret}
+            signer = argv[-1]
+            self.signing_requests.append((signer, args[0], kwargs))
+            if signer in self.failed_signers:
+                raise RuntimeError("RPC walletprocesspsbt failed (exit 1)")
+            signatures = self.signatures[args[0]].copy()
+            if signer not in self.non_signing:
+                signatures.add(signer)
+            signed = self.secret + ":" + ",".join(sorted(signatures))
+            self.signatures[signed] = signatures
+            return {"psbt": signed}
         if method == "finalizepsbt":
-            return {"psbt": self.secret, "complete": self.quorum}
+            return {"psbt": args[0], "complete": self.quorum and len(self.signatures[args[0]]) >= 2}
         if method == "getbestblockhash":
             return self.tips.pop(0) if self.tips else self.template["previousblockhash"]
         if method == "submitblock":
@@ -223,6 +237,139 @@ class MinerLoggingTest(unittest.TestCase):
         self.quorum = False
         with self.assertRaisesRegex(RuntimeError, "signature quorum"):
             self.miner.attempt()
+        self.popen.assert_not_called()
+        self.assertNotIn("submitblock", self.calls)
+
+    def configure_three_signers(self):
+        self.config["signer_clis"].append(["test-cli", "signer-c"])
+        self.config_path.write_text(json.dumps(self.config))
+        self.miner = MINER.Miner(self.config_path)
+
+    def test_any_single_signer_outage_uses_available_pair(self):
+        self.configure_three_signers()
+        original_block = copy.deepcopy(self.block)
+        for failed, expected, pair in (
+            ("signer-a", ["signer-a", "signer-b", "signer-c"], "2+3"),
+            ("signer-b", ["signer-a", "signer-b", "signer-a", "signer-c"], "1+3"),
+            ("signer-c", ["signer-a", "signer-b"], "1+2"),
+        ):
+            with self.subTest(failed=failed):
+                self.block = copy.deepcopy(original_block)
+                self.failed_signers = {failed}
+                self.signing_requests.clear()
+                with self.assertLogs("purity_signet_miner", level="INFO") as logs:
+                    self.assertEqual(self.miner.attempt()["height"], 11)
+                self.assertEqual([request[0] for request in self.signing_requests], expected)
+                self.assertIn("signers=" + pair, "\n".join(logs.output))
+                self.assertNotIn(self.secret, "\n".join(logs.output))
+                for _, _, kwargs in self.signing_requests:
+                    self.assertEqual(kwargs["timeout"], 30)
+
+    def test_non_signing_wallet_cannot_count_as_quorum(self):
+        self.configure_three_signers()
+        self.non_signing = {"signer-a"}
+        with self.assertLogs("purity_signet_miner", level="INFO") as logs:
+            self.assertEqual(self.miner.attempt()["height"], 11)
+        self.assertEqual([request[0] for request in self.signing_requests],
+                         ["signer-a", "signer-b", "signer-a", "signer-c", "signer-b", "signer-c"])
+        self.assertEqual([request[1] for request in self.signing_requests[::2]], [self.secret] * 3)
+        self.assertEqual("\n".join(logs.output).count("Signature quorum complete"), 1)
+        self.assertIn("signers=2+3", "\n".join(logs.output))
+
+    def test_two_unavailable_or_insufficient_signers_never_solve(self):
+        self.configure_three_signers()
+        for failed in ({"signer-a", "signer-b"}, set()):
+            with self.subTest(failed=failed):
+                self.failed_signers = failed
+                self.quorum = bool(failed)
+                self.calls.clear()
+                with self.assertLogs("purity_signet_miner", level="WARNING"):
+                    with self.assertRaisesRegex(RuntimeError, "signature quorum"):
+                        self.miner.attempt()
+                self.popen.assert_not_called()
+                self.assertNotIn("submitblock", self.calls)
+
+    def test_mutating_signer_is_excluded_without_reusing_its_psbt(self):
+        self.configure_three_signers()
+        original = self.parse.return_value
+        original_block = copy.deepcopy(self.block)
+        for field in (MINER.PSBT_GLOBAL_UNSIGNED_TX, MINER.PRIMITIVES["PSBT_SIGNET_BLOCK"],
+                      MINER.PSBT_IN_NON_WITNESS_UTXO, "malformed"):
+            with self.subTest(field=field):
+                self.block = copy.deepcopy(original_block)
+                self.signing_requests.clear()
+                changed = copy.deepcopy(original)
+                if field == MINER.PSBT_IN_NON_WITNESS_UTXO:
+                    changed.i[0].map[field] = b"changed"
+                else:
+                    changed.g.map[field] = b"changed"
+
+                def parse(value):
+                    if "signer-a" in value:
+                        if field == "malformed":
+                            raise ValueError(self.secret)
+                        return changed
+                    return original
+
+                self.parse.side_effect = parse
+                with self.assertLogs("purity_signet_miner", level="INFO") as logs:
+                    self.assertEqual(self.miner.attempt()["height"], 11)
+                self.assertEqual([request[0] for request in self.signing_requests],
+                                 ["signer-a", "signer-b", "signer-c"])
+                self.assertEqual(self.signing_requests[1][1], self.secret)
+                self.assertIn("invalid PSBT", "\n".join(logs.output))
+                self.assertNotIn(self.secret, "\n".join(logs.output))
+
+    def test_invalid_endpoint_count_duplicates_and_timeout_are_rejected(self):
+        valid = copy.deepcopy(self.config)
+        for count in (0, 1, 4):
+            with self.subTest(count=count):
+                self.config = dict(valid, signer_clis=[["test-cli", str(i)] for i in range(count)])
+                self.config_path.write_text(json.dumps(self.config))
+                with self.assertRaises(ValueError):
+                    MINER.Miner(self.config_path)
+        for signers in ([valid["signer_clis"][0]] * 2,
+                        [*valid["signer_clis"], valid["signer_clis"][0]]):
+            self.config_path.write_text(json.dumps(dict(valid, signer_clis=signers)))
+            with self.assertRaises(ValueError):
+                MINER.Miner(self.config_path)
+        for timeout in (0, -1, True, 1.5, "30", None):
+            with self.subTest(timeout=timeout):
+                self.config_path.write_text(json.dumps(dict(valid, signer_timeout_seconds=timeout)))
+                with self.assertRaises(ValueError):
+                    MINER.Miner(self.config_path)
+
+    def test_real_signer_rpc_timeout_hides_payloads_and_reaps_child(self):
+        self.stack.close()
+        command = [sys.executable, "-c", "import sys,time; print('PRIVATE_RPC_PAYLOAD', flush=True); time.sleep(10)"]
+        with self.assertRaisesRegex(RuntimeError, "RPC walletprocesspsbt timed out") as error:
+            REAL_RPC(command, "walletprocesspsbt", self.secret, timeout=1)
+        self.assertNotIn(self.secret, str(error.exception))
+        self.assertNotIn("PRIVATE_RPC_PAYLOAD", str(error.exception))
+
+    def test_node_finalization_failure_is_not_a_signer_failure(self):
+        self.configure_three_signers()
+        original_rpc = self.rpc
+
+        def rpc(argv, method, *args, **kwargs):
+            if method == "finalizepsbt":
+                raise RuntimeError("RPC finalizepsbt failed (exit 1)")
+            return original_rpc(argv, method, *args, **kwargs)
+
+        with patch.object(MINER, "rpc", side_effect=rpc):
+            with self.assertRaisesRegex(RuntimeError, "RPC finalizepsbt failed"):
+                self.miner.attempt()
+        self.assertEqual([request[0] for request in self.signing_requests], ["signer-a", "signer-b"])
+        self.popen.assert_not_called()
+
+    def test_failed_over_quorum_still_requires_a_valid_signed_proposal(self):
+        self.configure_three_signers()
+        self.failed_signers = {"signer-a"}
+        self.proposal_rejection = "bad-signet-blksig"
+        with self.assertLogs("purity_signet_miner", level="INFO") as logs:
+            with self.assertRaisesRegex(RuntimeError, "Signed proposal rejected: bad-signet-blksig"):
+                self.miner.attempt()
+        self.assertIn("Signature quorum complete: height=11 signers=2+3", "\n".join(logs.output))
         self.popen.assert_not_called()
         self.assertNotIn("submitblock", self.calls)
 

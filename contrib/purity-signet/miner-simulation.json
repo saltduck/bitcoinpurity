@@ -18,9 +18,16 @@
       "-datadir=./build/purity-signet-simulation",
       "-rpcwallet=authority-b",
       "-rpcclienttimeout=30"
+    ],
+    [
+      "./build/bin/bitcoin-cli",
+      "-datadir=./build/purity-signet-simulation",
+      "-rpcwallet=authority-c",
+      "-rpcclienttimeout=30"
     ]
   ],
   "bitcoin_util": "./build/bin/bitcoin-util",
   "reward_script": "00149243f727dd5343293eb83174324019ec16c2630f",
-  "poll_seconds": 5
+  "poll_seconds": 5,
+  "signer_timeout_seconds": 30
 }

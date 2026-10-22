@@ -230,7 +230,8 @@ dependency. Mining RPCs and templates are unavailable while preparing.
 During synchronization, finish signer setup, encrypted backups and recovery
 rehearsals. Each wallet imports its own private signing descriptor; all three
 must expand to the same ordered bare 2-of-3 consensus script. Actual mining
-selects two distinct wallets. Keep keys and passphrases out of public parameters
+selects two distinct authorities, with automatic fallback when all three wallet
+endpoints are configured. Keep keys and passphrases out of public parameters
 and miner configuration. Prefer local cookie authentication; remote signing RPC
 needs separately protected transport and access controls.
 
@@ -533,15 +534,19 @@ Edit `miner.json`:
 - `chain_params`: the absolute path to this launch's `fixed-params.json`.
 - `node_cli`: the CLI argument array for the fixed-parameter node, with its
   correct data directory and any RPC port override.
-- `signer_clis`: two different signing wallets' CLI argument arrays, with their
-  own data directories, wallet names and necessary RPC connection arguments.
+- `signer_clis`: all three authority wallets' distinct CLI argument arrays,
+  with their own data directories, wallet names and necessary RPC connection
+  arguments. Two-entry configurations remain supported but cannot automatically
+  replace an unavailable signer.
 - `bitcoin_util`: the absolute path to the matching `bitcoin-util` build.
 - `reward_script`: the actual payout address's hexadecimal scriptPubKey;
   replace the simulation payout script.
 - `poll_seconds`: an integer polling interval from 1 through 60 seconds.
+- `signer_timeout_seconds`: a positive integer per-signer CLI timeout, default
+  30 seconds. Configure every protected RPC channel/tunnel, including signer C.
 
-Never put keys, wallet passphrases or RPC passwords in this file. The two wallets
-must sign for different keys in the fixed challenge. Signer regtest addresses
+Never put keys, wallet passphrases or RPC passwords in this file. The selected
+pair must sign for different keys in the fixed challenge. Signer regtest addresses
 identify authority keys; obtain the payout script from a wallet on the Purity
 Signet chain. Run once:
 
@@ -555,6 +560,14 @@ obtains two signatures, and changes only the nonce to solve actual PoW. It
 checks the tip before solving and again before submission. A signer outage
 never authorizes an unsigned submission. Current mining uses `bitcoin-util
 grind`; this guide does not configure a Signet Stratum or DATUM signing service.
+
+With three configured endpoints, the miner automatically tries pairs 1+2, 1+3,
+2+3, starting each pair from the original PSBT. Failed or invalid endpoints are
+skipped until the next attempt; incomplete quorums try the next pair. Logs show
+the failed endpoint index and successful pair without RPC arguments or PSBTs.
+Restart an existing miner once after installing this update and adding the third
+endpoint. Subsequent single-signer outages need no configuration edit/restart.
+This does not change keys, challenge, activation parameters or node consensus.
 
 Status on stderr shows waiting countdowns, signer requests, quorum/proposal
 checks, elapsed PoW, submission and acceptance. Stdout contains the accepted
@@ -615,9 +628,10 @@ and template/submission errors.
 - The parent-age check runs during freezing. Recheck it after a delayed restart
   or signing attempt. Do not falsify timestamps or override bits to hide a gap.
   ASERT retains H-5 as anchor, 600-second spacing and an 86400-second half-life.
-- For signer failure, restore the same authority's wallet backup or select the
-  other two available signers and restart the miner. Do not replace existing
-  public keys or their order.
+- For signer failure, a three-endpoint miner automatically uses the other two
+  authorities. Restore the failed authority's service/backup for redundancy.
+  If only two endpoints are configured, restore that signer or select the other
+  available pair and restart. Do not replace existing public keys or their order.
 - For a pin mismatch, stop mining, preserve configuration/logs and check the
   actual history before modifying storage. Do not delete indexes first.
 - An older fixed-rule database with active H+ blocks may require explicit

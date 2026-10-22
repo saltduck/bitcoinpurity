@@ -5,6 +5,7 @@
 """Sign a Signet template with two wallets, then solve its actual PoW."""
 
 import argparse
+from itertools import combinations
 import json
 import logging
 from pathlib import Path
@@ -23,10 +24,13 @@ PRIMITIVES = runpy.run_path(str(ROOT / "contrib/signet/miner"), run_name="signet
 LOGGER = logging.getLogger("purity_signet_miner")
 
 
-def rpc(argv, method, *args):
+def rpc(argv, method, *args, timeout=None):
     arguments = [json.dumps(a, separators=(",", ":")) if not isinstance(a, str) else a for a in args]
-    result = subprocess.run(argv + ["-stdin", method], input="\n".join(arguments) + ("\n" if arguments else ""),
-                            capture_output=True, text=True)
+    try:
+        result = subprocess.run(argv + ["-stdin", method], input="\n".join(arguments) + ("\n" if arguments else ""),
+                                capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        raise RuntimeError(f"RPC {method} timed out") from None
     if result.returncode:
         raise RuntimeError(f"RPC {method} failed (exit {result.returncode})")
     try:
@@ -42,11 +46,15 @@ class Miner:
             raise ValueError("Unsupported miner configuration schema")
         self.node = config["node_cli"]
         self.signers = config["signer_clis"]
-        if not isinstance(self.signers, list) or len(self.signers) != 2 or self.signers[0] == self.signers[1]:
-            raise ValueError("Select two distinct signing wallets")
+        if (not isinstance(self.signers, list) or len(self.signers) not in (2, 3)
+                or any(a == b for a, b in combinations(self.signers, 2))):
+            raise ValueError("Select two or three distinct signing wallets")
         for argv in [self.node, *self.signers]:
             if not isinstance(argv, list) or not argv or not all(isinstance(a, str) and a for a in argv):
                 raise ValueError("CLI commands must be nonempty argument arrays")
+        self.signer_timeout = config.get("signer_timeout_seconds", 30)
+        if type(self.signer_timeout) is not int or self.signer_timeout <= 0:
+            raise ValueError("Signer timeout must be a positive integer number of seconds")
         self.util = config["bitcoin_util"]
         self.reward = bytes.fromhex(config["reward_script"])
         self.poll = config.get("poll_seconds", 5)
@@ -105,23 +113,46 @@ class Miner:
                     template["previousblockhash"], template["bits"])
         unsigned = PRIMITIVES["generate_psbt"](template, self.reward)
         original = PSBT.from_base64(unsigned)
-        signed = unsigned
-        for index, signer in enumerate(self.signers, start=1):
-            LOGGER.info("Signing request: height=%d signer=%d/%d", template["height"], index, len(self.signers))
-            signed = rpc(signer, "walletprocesspsbt", signed,
-                         {"sign": True, "sighashtype": "ALL", "bip32derivs": False, "finalize": False})["psbt"]
-            parsed = PSBT.from_base64(signed)
-            for field in (PSBT_GLOBAL_UNSIGNED_TX, PRIMITIVES["PSBT_SIGNET_BLOCK"]):
-                if parsed.g.map.get(field) != original.g.map[field]:
-                    raise RuntimeError("Signing wallet changed the block or virtual transaction")
-            if parsed.i[0].map.get(PSBT_IN_NON_WITNESS_UTXO) != original.i[0].map[PSBT_IN_NON_WITNESS_UTXO]:
-                raise RuntimeError("Signing wallet changed the challenge transaction")
-            LOGGER.info("Signing request complete: height=%d signer=%d/%d", template["height"], index, len(self.signers))
-        LOGGER.info("Finalizing signatures: height=%d", template["height"])
-        final = rpc(self.node, "finalizepsbt", signed, False)
-        if not final["complete"]:
+        unavailable = set()
+        final = None
+        for pair in combinations(range(len(self.signers)), 2):
+            if unavailable.intersection(pair):
+                continue
+            signed = unsigned
+            for index in pair:
+                LOGGER.info("Signing request: height=%d signer=%d/%d", template["height"], index + 1, len(self.signers))
+                try:
+                    response = rpc(self.signers[index], "walletprocesspsbt", signed,
+                                   {"sign": True, "sighashtype": "ALL", "bip32derivs": False, "finalize": False},
+                                   timeout=self.signer_timeout)
+                except (RuntimeError, OSError):
+                    LOGGER.warning("Signing request failed: height=%d signer=%d/%d; RPC walletprocesspsbt failed or timed out",
+                                   template["height"], index + 1, len(self.signers))
+                    unavailable.add(index)
+                    break
+                try:
+                    signed = response["psbt"]
+                    parsed = PSBT.from_base64(signed)
+                    for field in (PSBT_GLOBAL_UNSIGNED_TX, PRIMITIVES["PSBT_SIGNET_BLOCK"]):
+                        if parsed.g.map.get(field) != original.g.map[field]:
+                            raise ValueError("Signing wallet changed the block or virtual transaction")
+                    if parsed.i[0].map.get(PSBT_IN_NON_WITNESS_UTXO) != original.i[0].map[PSBT_IN_NON_WITNESS_UTXO]:
+                        raise ValueError("Signing wallet changed the challenge transaction")
+                except (ValueError, KeyError, TypeError, IndexError, AssertionError):
+                    LOGGER.warning("Signing request rejected: height=%d signer=%d/%d; invalid PSBT",
+                                   template["height"], index + 1, len(self.signers))
+                    unavailable.add(index)
+                    break
+                LOGGER.info("Signing request complete: height=%d signer=%d/%d", template["height"], index + 1, len(self.signers))
+            else:
+                LOGGER.info("Finalizing signatures: height=%d signers=%d+%d", template["height"], pair[0] + 1, pair[1] + 1)
+                final = rpc(self.node, "finalizepsbt", signed, False)
+                if final["complete"]:
+                    LOGGER.info("Signature quorum complete: height=%d signers=%d+%d", template["height"], pair[0] + 1, pair[1] + 1)
+                    break
+                LOGGER.warning("Signature quorum incomplete: height=%d signers=%d+%d", template["height"], pair[0] + 1, pair[1] + 1)
+        if final is None or not final["complete"]:
             raise RuntimeError("Two wallets did not provide the required signature quorum")
-        LOGGER.info("Signature quorum complete: height=%d", template["height"])
         block, solution = PRIMITIVES["decode_psbt"](final["psbt"])
         block.vtx[0].vout[-1].scriptPubKey += CScriptOp.encode_op_pushdata(PRIMITIVES["SIGNET_HEADER"] + solution)
         if len(block.vtx[0].vout[-1].scriptPubKey) > 195:

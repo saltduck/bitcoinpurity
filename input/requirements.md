@@ -81,6 +81,13 @@ The launch example retains explicitly simulated authorities and endpoints.
   acceptance, stale work and retries. Preserve stdout block JSON and omit RPC
   credentials, PSBTs, signatures and raw block/header payloads. Logging must not
   change scheduling, difficulty, signing rules or consensus validation.
+- Allow the standalone miner to configure three distinct signer CLI endpoints
+  and automatically use any available pair without a restart or authority change.
+  Keep existing two-endpoint configurations supported. Bound signer RPC waits,
+  isolate each pair's PSBT, retain immutable-field and signature/proposal checks,
+  and never solve or submit without a valid 2-of-3 quorum. Report failures and
+  selected pairs without credentials or signing payloads. Add regressions before
+  implementation; do not commit, push or create a PR for this change.
 - H, H-1 hash, H-5 anchor tuple, public keys/order, first block hash, ports and
   seeds must be frozen from real evidence before public operation. The owner
   requested a Signet-only chain-parameter JSON file with simulated initial

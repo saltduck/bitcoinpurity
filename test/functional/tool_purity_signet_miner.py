@@ -47,6 +47,12 @@ class PuritySignetMinerTest(PuritySignetTest):
         self.skip_if_no_wallet()
         self.skip_if_no_sqlite()
 
+    def advance_mining_time(self, timestamp):
+        self.restart_node(0, extra_args=self.extra_args[0] + [f"-mocktime={timestamp}"])
+        for index in range(1, self.num_nodes):
+            if self.nodes[index].running:
+                self.connect_nodes(0, index)
+
     def run_test(self):
         node = self.nodes[0]
         for raw in signet_blocks:
@@ -152,6 +158,95 @@ class PuritySignetMinerTest(PuritySignetTest):
         assert_equal(third["height"], 13)
         assert_equal(third["bits"], expected_bits)
         assert third["time"] >= second["time"] + 600
+        self.sync_blocks()
+        assert_equal(node.verifychain(4, 0), True)
+
+        self.log.info("Three configured signers tolerate any single daemon outage without changing the config")
+        config["signer_clis"] = [clis[i + 1] + [f"-rpcwallet=authority-{i}"] for i in range(3)]
+        config["signer_timeout_seconds"] = 3
+        config_path.write_text(json.dumps(config))
+        for missing, pair in ((1, "2+3"), (2, "1+3"), (3, "1+2")):
+            self.stop_node(missing)
+            previous = node.getblockheader(node.getbestblockhash())
+            self.advance_mining_time(previous["time"] + 600)
+            expected_bits = node.getblocktemplate({"rules": ["segwit", "signet"]})["bits"]
+            result = subprocess.run([sys.executable, str(miner), "--config", str(config_path), "--once"],
+                                    capture_output=True, text=True, timeout=90)
+            assert result.returncode == 0, result.stderr
+            assert_equal(json.loads(result.stdout)["height"], previous["height"] + 1)
+            assert_equal(json.loads(result.stdout)["bits"], expected_bits)
+            assert "signers=" + pair in result.stderr, result.stderr
+            self.start_node(missing, extra_args=self.extra_args[missing])
+            self.connect_nodes(0, missing)
+            self.sync_blocks()
+
+        self.log.info("A locked authority wallet is bypassed without weakening signature checks")
+        wallets[0] = self.nodes[1].get_wallet_rpc("authority-0")
+        wallets[0].encryptwallet("test-signer-failover")
+        previous = node.getblockheader(node.getbestblockhash())
+        self.advance_mining_time(previous["time"] + 600)
+        try:
+            result = subprocess.run([sys.executable, str(miner), "--config", str(config_path), "--once"],
+                                    capture_output=True, text=True, timeout=90)
+            assert result.returncode == 0, result.stderr
+            assert "Signing request failed" in result.stderr, result.stderr
+            assert "signers=2+3" in result.stderr, result.stderr
+            assert_equal(json.loads(result.stdout)["height"], previous["height"] + 1)
+        finally:
+            wallets[0].walletpassphrase("test-signer-failover", 3600)
+        self.sync_blocks()
+
+        self.log.info("A wallet without an authority key cannot count as a quorum member")
+        self.nodes[1].createwallet("no-authority", disable_private_keys=True, descriptors=True)
+        config["signer_clis"][0] = clis[1] + ["-rpcwallet=no-authority"]
+        config_path.write_text(json.dumps(config))
+        previous = node.getblockheader(node.getbestblockhash())
+        self.advance_mining_time(previous["time"] + 600)
+        result = subprocess.run([sys.executable, str(miner), "--config", str(config_path), "--once"],
+                                capture_output=True, text=True, timeout=90)
+        assert result.returncode == 0, result.stderr
+        assert "signers=2+3" in result.stderr, result.stderr
+        assert_equal(json.loads(result.stdout)["height"], previous["height"] + 1)
+        self.sync_blocks()
+
+        self.log.info("Two distinct endpoints holding the same key still need the third authority")
+        config["signer_clis"] = [clis[1] + ["-rpcwallet=authority-0"],
+                                 clis[2] + ["-rpcwallet=recovered-a"], clis[3] + ["-rpcwallet=authority-2"]]
+        config_path.write_text(json.dumps(config))
+        previous = node.getblockheader(node.getbestblockhash())
+        self.advance_mining_time(previous["time"] + 600)
+        result = subprocess.run([sys.executable, str(miner), "--config", str(config_path), "--once"],
+                                capture_output=True, text=True, timeout=90)
+        assert result.returncode == 0, result.stderr
+        assert "signers=1+3" in result.stderr, result.stderr
+        assert_equal(json.loads(result.stdout)["height"], previous["height"] + 1)
+        self.sync_blocks()
+
+        self.log.info("Continuous three-endpoint mining pauses below quorum and resumes on recovery")
+        config["signer_clis"] = [clis[i + 1] + [f"-rpcwallet=authority-{i}"] for i in range(3)]
+        config_path.write_text(json.dumps(config))
+        self.stop_node(1)
+        self.stop_node(2)
+        previous = node.getblockheader(node.getbestblockhash())
+        self.advance_mining_time(previous["time"] + 600)
+        with stdout_path.open("w") as stdout, stderr_path.open("w") as stderr:
+            process = subprocess.Popen([sys.executable, str(miner), "--config", str(config_path)], stdout=stdout, stderr=stderr)
+            try:
+                self.wait_until(lambda: "retrying in 1s" in stderr_path.read_text())
+                assert_equal(node.getblockcount(), previous["height"])
+                assert "PoW started" not in stderr_path.read_text()
+                assert "Submitting block" not in stderr_path.read_text()
+                self.start_node(2, extra_args=self.extra_args[2])
+                self.connect_nodes(0, 2)
+                self.wait_until(lambda: node.getblockcount() == previous["height"] + 1, timeout=90)
+                self.wait_until(lambda: stdout_path.read_text().endswith("\n"))
+            finally:
+                process.terminate()
+                process.wait(timeout=30)
+        assert_equal(len(stdout_path.read_text().splitlines()), 1)
+        assert "signers=2+3" in stderr_path.read_text()
+        self.start_node(1, extra_args=self.extra_args[1])
+        self.connect_nodes(0, 1)
         self.sync_blocks()
         assert_equal(node.verifychain(4, 0), True)
 

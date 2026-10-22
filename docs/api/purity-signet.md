@@ -76,14 +76,28 @@ user-agent text. Expected fork announcements do not add peers to the ban list.
 
 The standalone miner-simulation.json selects node/signer CLI argument arrays,
 chain_params, bitcoin_util, reward_script and poll_seconds (1..60). Signer
-arrays must be distinct and exactly two. Chain parameters contain public keys
-only. CLI secrets belong in private node configuration/cookies.
+arrays must be distinct, with two or three entries. Two entries retain the
+existing fixed-pair behavior. Three entries enable automatic failover in order
+1+2, 1+3, 2+3. Each pair starts from the original unsigned PSBT, and only complete
+node finalization supplies quorum. Endpoints returning RPC errors, timing out
+or changing the immutable PSBT fields are excluded for that attempt. Incomplete
+finalization tries the next pair. Every new attempt retries all endpoints;
+configuration is still loaded only at process startup.
+
+Optional `signer_timeout_seconds` is a positive integer, default 30. It bounds
+each `walletprocesspsbt` CLI subprocess, including connection/response waits;
+timeout kills and reaps that child. RPC CLI timeouts may fail sooner. This does
+not change coordinator RPC timeouts, polling, scheduling or PoW runtime. Node
+RPC failures abort the attempt rather than being classified as signer outages.
+Chain parameters contain public keys only. CLI secrets belong in private node
+configuration/cookies.
 
 The miner writes timestamped INFO/WARNING/ERROR status to stderr. Timestamps
 include the local UTC offset. Waiting reports the next height and remaining
 seconds, calculated from `parent.time + 600 - template.curtime`, on each poll.
-Signing reports requests and completed response checks for signer 1/2 and 2/2;
-only successful finalization is reported as a complete signature quorum.
+Signing reports the configured endpoint index/count, completed response checks,
+failed RPCs or invalid PSBTs, incomplete pairs and the successful pair indices.
+Only successful finalization is reported as a complete signature quorum.
 Proposal checking, PoW start/completion, submission, active-chain acceptance,
 discarded stale work and errors/retry delays are reported separately.
 
@@ -98,7 +112,8 @@ Stdout retains the existing `{height, hash, bits}` JSON record, emitted only
 after acceptance and the active-height hash check. `--once` exits after one
 accepted block; continuous operation retries runtime failures after the existing
 poll interval. Ctrl+C stops and reaps the PoW child and exits with status 130.
-The JSON configuration schema and consensus behavior are unchanged.
+Miner schema version 1 remains supported with the optional timeout and expanded
+signer list. Chain-parameter schemas and consensus behavior are unchanged.
 
 Operational freeze and recovery: [operator procedure](../purity-signet-operations.md).
 

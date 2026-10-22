@@ -41,6 +41,15 @@ original plan-only deliverable below is retained as historical baseline text.
    or first-seen activation. Restore the preparation backup if a pre-first-block
    delay requires choosing H again. See TASK-PS-008 and the API contract.
 
+8. Approved signer failover (2026-10-22): accept two or three distinct miner
+   signer CLI arrays. With three configured, try available pairs automatically,
+   bound each signer RPC wait and start each pair from the original PSBT.
+   Preserve immutable-field, signature-quorum, proposal, PoW and stale-tip checks.
+   Failed or invalid endpoints cannot supply quorum; fewer than two valid
+   authorities stop the attempt. Keep private payloads out of status logs.
+   No consensus parameter, wallet custody or node validation changes. Test first;
+   no commit or PR is authorized for this implementation. See TASK-PS-011.
+
 The baseline D/FR/AT identifiers below remain the acceptance index, subject to
 these amendments. AT-15 now protects Mainnet/Regtest/other networks and pre-H
 Signet history, not the removed original/custom Signet runtime modes. AT-17

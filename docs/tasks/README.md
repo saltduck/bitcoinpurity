@@ -55,6 +55,7 @@
 - [TASK-PS-008: Freeze H immediately before mining](TASK-PS-008.md)
 - [TASK-PS-009: Miner runtime status logging](TASK-PS-009.md)
 - [TASK-PS-010: English deployment guide](TASK-PS-010.md)
+- [TASK-PS-011: Automatic miner signer failover](TASK-PS-011.md)
 
 - [Purity Signet acceptance matrix](../purity-signet-acceptance.md)
 - [Purity Signet operator procedure](../purity-signet-operations.md)

@@ -256,16 +256,25 @@ Use a Signet-only 239-bit ASERT entry, GBT bits, real PoW, shared-prefix peers
 and bounded post-fork peer isolation without punishing normal old-chain forks.
 
 The independent miner emits timestamped operational status on stderr, including
-remaining wait time, both signer requests, quorum/proposal checks, periodic PoW
+remaining wait time, signer requests, quorum/proposal checks, periodic PoW
 elapsed time, submission, acceptance, stale work and retry delays. Stdout remains
 one JSON record per accepted active-chain block. Status never includes RPC
 credentials, PSBTs, signatures or raw block/header payloads, and does not change
 the mining interval, required bits, signed fields or consensus checks. See
 [TASK-PS-009](../tasks/TASK-PS-009.md).
 
+The miner accepts two or three distinct signer CLI arrays. Three endpoints
+enable automatic pair failover in order 1+2, 1+3, 2+3 without a process restart.
+Each pair starts with the original PSBT; a failed or invalid endpoint is skipped
+for the rest of that attempt. Incomplete quorums try the next pair. The optional
+positive integer `signer_timeout_seconds` defaults to 30 seconds per signer RPC;
+it does not limit PoW or change the polling interval. Node finalization and
+proposal checks still enforce actual signatures. See
+[TASK-PS-011](../tasks/TASK-PS-011.md).
+
 See [requirements](purity-signet-requirements.md),
 [architecture](../architecture/purity-signet.md),
-[configuration and RPC contract](../api/purity-signet.md), and TASK-PS-000..010.
+[configuration and RPC contract](../api/purity-signet.md), and TASK-PS-000..011.
 
 Validation evidence: [acceptance matrix](../purity-signet-acceptance.md).
 Freeze and recovery: [operator procedure](../purity-signet-operations.md).

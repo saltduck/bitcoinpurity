@@ -403,3 +403,23 @@ Documentation language: the retained Signet v1.0 baseline and source-review
 record were translated into English. All documents maintained for this change
 use English; requirement IDs, consensus parameters and validation evidence were
 preserved. No implementation or data migration accompanies this editorial change.
+
+## Automatic Signet signer failover (TASK-PS-011)
+
+The standalone Python miner previously required exactly two endpoints and
+aborted an attempt on either RPC failure. Keep miner schema version 1 and
+two-entry compatibility; three distinct signer_clis enable ordered pair failover.
+Each pair starts from the original PSBT and requires complete finalization.
+Failed or invalid endpoints are skipped only for the current attempt. Signer
+CLI waits have an optional positive integer timeout, default 30 seconds.
+Immutable fields, signed proposal validation, PoW, scheduling, stale-tip checks
+and payload-free status logging remain enforced. Coordinator failures are not
+treated as signer outages.
+
+Operators must install the updated miner, add the third protected wallet RPC
+endpoint/tunnel and restart that miner once. Subsequent single-endpoint outages
+need no restart. Do not change public keys, chain parameters, node databases or
+wallet custody. No node rebuild, reindex or consensus migration is required.
+Existing two-entry files keep fixed-pair behavior. Local regression evidence
+and remaining checks are recorded in TASK-PS-011; no deployment is part of this
+change.
