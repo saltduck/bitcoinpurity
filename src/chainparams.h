@@ -12,6 +12,8 @@
 
 class ArgsManager;
 
+void ReadSigNetArgs(const ArgsManager& args, CChainParams::SigNetOptions& options);
+
 /**
  * Creates and returns a std::unique_ptr<CChainParams> of the chosen chain.
  */

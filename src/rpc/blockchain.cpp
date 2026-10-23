@@ -43,6 +43,7 @@
 #include <script/descriptor.h>
 #include <script/sign.h>
 #include <serialize.h>
+#include <signet.h>
 #include <streams.h>
 #include <sync.h>
 #include <txdb.h>
@@ -871,7 +872,7 @@ static CBlock GetBlockChecked(BlockManager& blockman, const CBlockIndex& blockin
     return block;
 }
 
-static std::vector<uint8_t> GetRawBlockChecked(BlockManager& blockman, const CBlockIndex& blockindex)
+static std::vector<uint8_t> GetRawBlockChecked(BlockManager& blockman, const CBlockIndex& blockindex, bool signet)
 {
     std::vector<uint8_t> data{};
     FlatFilePos pos{};
@@ -881,7 +882,7 @@ static std::vector<uint8_t> GetRawBlockChecked(BlockManager& blockman, const CBl
         pos = blockindex.GetBlockPos();
     }
 
-    if (!blockman.ReadRawBlock(data, pos)) {
+    if (!(signet ? blockman.ReadRawBlock(data, blockindex) : blockman.ReadRawBlock(data, pos))) {
         // Block not found on disk. This shouldn't normally happen unless the block was
         // pruned right after we released the lock above.
         throw JSONRPCError(RPC_MISC_ERROR, "Block not found on disk");
@@ -1026,7 +1027,7 @@ static RPCHelpMan getblock()
         }
     }
 
-    const std::vector<uint8_t> block_data{GetRawBlockChecked(chainman.m_blockman, *pblockindex)};
+    const std::vector<uint8_t> block_data{GetRawBlockChecked(chainman.m_blockman, *pblockindex, chainman.GetConsensus().signet_blocks)};
 
     if (verbosity <= 0) {
         return HexStr(block_data);
@@ -1819,6 +1820,27 @@ RPCHelpMan getblockchaininfo()
                 {RPCResult::Type::BOOL, "automatic_pruning", /*optional=*/true, "whether automatic pruning is enabled (only present if pruning is enabled)"},
                 {RPCResult::Type::NUM, "prune_target_size", /*optional=*/true, "the target size used by pruning (only present if automatic pruning is enabled)"},
                 {RPCResult::Type::STR_HEX, "signet_challenge", /*optional=*/true, "the block challenge (aka. block script), in hexadecimal (only present if the current network is a signet)"},
+                {RPCResult::Type::NUM, "signet_challenge_height", /*optional=*/true, "Height of the next block using signet_challenge"},
+                {RPCResult::Type::OBJ, "signet_fork", /*optional=*/true, "Configured Signet fork parameters",
+                {
+                    {RPCResult::Type::STR, "state", "preparing or fixed"},
+                    {RPCResult::Type::BOOL, "simulation", "Whether this is a simulation configuration"},
+                    {RPCResult::Type::ANY, "activation_height", "Purity activation height"},
+                    {RPCResult::Type::ANY, "parent_hash", "Pinned hash at activation_height minus one"},
+                    {RPCResult::Type::ANY, "activation_hash", "Pinned first Purity block hash; zero if unfrozen in simulation"},
+                    {RPCResult::Type::ANY, "anchor_height", "ASERT anchor height"},
+                    {RPCResult::Type::ANY, "anchor_hash", "Pinned ASERT anchor hash"},
+                    {RPCResult::Type::ANY, "anchor_bits", "ASERT reference compact target"},
+                    {RPCResult::Type::ANY, "anchor_parent_hash", "Pinned anchor parent hash"},
+                    {RPCResult::Type::ANY, "anchor_parent_time", "ASERT reference parent time"},
+                    {RPCResult::Type::STR_HEX, "historical_challenge", "Challenge before activation"},
+                    {RPCResult::Type::STR_HEX, "postfork_challenge", "Challenge from activation"},
+                    {RPCResult::Type::STR_HEX, "message_start", "Shared P2P message magic"},
+                    {RPCResult::Type::STR_HEX, "pow_limit", "Inherited proof of work limit"},
+                    {RPCResult::Type::STR_HEX, "minimum_chain_work", "Configured minimum chain work"},
+                    {RPCResult::Type::NUM, "target_spacing", "Target block interval in seconds"},
+                    {RPCResult::Type::NUM, "half_life", "ASERT half life in seconds"},
+                }},
                 (IsDeprecatedRPCEnabled("warnings") ?
                     RPCResult{RPCResult::Type::STR, "warnings", "any network and blockchain warnings (DEPRECATED)"} :
                     RPCResult{RPCResult::Type::ARR, "warnings", "any network and blockchain warnings (run with `-deprecatedrpc=warnings` to return the latest warning as a single string)",
@@ -1866,9 +1888,35 @@ RPCHelpMan getblockchaininfo()
         }
     }
     if (chainman.GetParams().GetChainType() == ChainType::SIGNET) {
-        const std::vector<uint8_t>& signet_challenge =
-            chainman.GetParams().GetConsensus().signet_challenge;
+        const auto& signet_challenge = GetSignetChallengeForHeight(chainman.GetConsensus(), height + 1);
         obj.pushKV("signet_challenge", HexStr(signet_challenge));
+        obj.pushKV("signet_challenge_height", height + 1);
+        const auto& consensus = chainman.GetConsensus();
+        UniValue fork{UniValue::VOBJ};
+        fork.pushKV("simulation", consensus.signet_simulation);
+        fork.pushKV("state", consensus.signet_preparing ? "preparing" : "fixed");
+        if (consensus.signet_preparing) {
+            for (const auto* field : {"activation_height", "parent_hash", "activation_hash", "anchor_height", "anchor_hash", "anchor_bits", "anchor_parent_hash", "anchor_parent_time"}) {
+                fork.pushKV(field, UniValue{});
+            }
+        } else {
+            fork.pushKV("activation_height", consensus.nPurityActivationHeight);
+            fork.pushKV("parent_hash", consensus.hashSignetForkParent.GetHex());
+            fork.pushKV("activation_hash", consensus.hashPurityActivationBlock.GetHex());
+            fork.pushKV("anchor_height", consensus.nAsertAnchorHeight);
+            fork.pushKV("anchor_hash", consensus.hashSignetAsertAnchor.GetHex());
+            fork.pushKV("anchor_bits", strprintf("%08x", consensus.nSignetAsertAnchorBits));
+            fork.pushKV("anchor_parent_hash", consensus.hashSignetAsertAnchorParent.GetHex());
+            fork.pushKV("anchor_parent_time", consensus.nSignetAsertAnchorParentTime);
+        }
+        fork.pushKV("historical_challenge", HexStr(consensus.signet_challenge));
+        fork.pushKV("postfork_challenge", HexStr(consensus.signet_challenge_postfork));
+        fork.pushKV("message_start", HexStr(chainman.GetParams().MessageStart()));
+        fork.pushKV("pow_limit", consensus.powLimit.GetHex());
+        fork.pushKV("minimum_chain_work", consensus.nMinimumChainWork.GetHex());
+        fork.pushKV("target_spacing", consensus.nPowTargetSpacing);
+        fork.pushKV("half_life", consensus.nDAAHalfLife);
+        obj.pushKV("signet_fork", std::move(fork));
     }
 
     NodeContext& node = EnsureAnyNodeContext(request.context);

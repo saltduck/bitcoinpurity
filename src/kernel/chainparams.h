@@ -132,6 +132,8 @@ public:
     ChainType GetChainType() const { return m_chain_type; }
     /** Return the list of hostnames to look up for DNS seeds */
     const std::vector<std::string>& DNSSeeds() const { return vSeeds; }
+    uint16_t SignetRPCPort() const { return m_signet_rpc_port; }
+    const std::vector<std::string>& SignetHistoricalSeeds() const { return m_signet_historical_seeds; }
     const std::vector<unsigned char>& Base58Prefix(Base58Type type) const { return base58Prefixes[type]; }
     const std::string& Bech32HRP() const { return bech32_hrp; }
     const std::vector<uint8_t>& FixedSeeds() const { return vFixedSeeds; }
@@ -158,9 +160,27 @@ public:
      * SigNetOptions holds configurations for creating a signet CChainParams.
      */
     struct SigNetOptions {
-        std::optional<std::vector<uint8_t>> challenge{};
+        struct Fork {
+            bool simulation;
+            bool preparing{false};
+            int activation_height{std::numeric_limits<int>::max()};
+            uint256 parent_hash;
+            uint256 activation_hash;
+            int anchor_height;
+            uint256 anchor_hash;
+            uint256 anchor_parent_hash;
+            uint32_t anchor_bits;
+            uint32_t anchor_parent_time;
+            std::vector<uint8_t> challenge;
+            uint256 minimum_chain_work;
+            uint16_t p2p_port;
+            uint16_t rpc_port;
+            std::vector<std::string> dns_seeds;
+            std::vector<uint8_t> fixed_seeds;
+            std::vector<std::string> historical_seed_nodes;
+        };
+        std::optional<Fork> fork{};
         std::optional<std::vector<std::string>> seeds{};
-        int64_t pow_target_spacing{10 * 60};
     };
 
     /**
@@ -203,6 +223,8 @@ protected:
     uint64_t m_assumed_blockchain_size;
     uint64_t m_assumed_chain_state_size;
     std::vector<std::string> vSeeds;
+    uint16_t m_signet_rpc_port{38332};
+    std::vector<std::string> m_signet_historical_seeds;
     std::vector<unsigned char> base58Prefixes[MAX_BASE58_TYPES];
     std::string bech32_hrp;
     ChainType m_chain_type;

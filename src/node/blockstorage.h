@@ -55,6 +55,8 @@ class BlockTreeDB : public CDBWrapper
 {
 public:
     using CDBWrapper::CDBWrapper;
+    bool ReadSignetConsensus(std::string& value, uint256& activation);
+    bool WriteSignetConsensus(const std::string& value, const uint256& activation);
     bool WriteBatchSync(const std::vector<std::pair<int, const CBlockFileInfo*>>& fileInfo, int nLastFile, const std::vector<const CBlockIndex*>& blockinfo, const std::unordered_map<std::string, node::PruneLockInfo>& prune_locks);
     bool ReadBlockFileInfo(int nFile, CBlockFileInfo& info);
     bool ReadLastBlockFile(int& nFile);
@@ -438,9 +440,10 @@ public:
     void UnlinkPrunedFiles(const std::set<int>& setFilesToPrune) const;
 
     /** Functions for disk access for blocks */
-    bool ReadBlock(CBlock& block, const FlatFilePos& pos, const std::optional<uint256>& expected_hash = {}, bool lowprio = false) const;
+    bool ReadBlock(CBlock& block, const FlatFilePos& pos, const std::optional<uint256>& expected_hash = {}, bool lowprio = false, std::optional<int> expected_height = {}) const;
     bool ReadBlock(CBlock& block, const CBlockIndex& index, bool lowprio = false) const;
     bool ReadRawBlock(std::vector<uint8_t>& block, const FlatFilePos& pos, bool lowprio = false) const;
+    bool ReadRawBlock(std::vector<uint8_t>& block, const CBlockIndex& index, bool lowprio = false) const;
 
     bool ReadBlockUndo(CBlockUndo& blockundo, const CBlockIndex& index) const;
 

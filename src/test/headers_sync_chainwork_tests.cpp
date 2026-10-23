@@ -57,6 +57,41 @@ void HeadersGeneratorSetup::GenerateHeaders(std::vector<CBlockHeader>& headers,
 
 BOOST_FIXTURE_TEST_SUITE(headers_sync_chainwork_tests, HeadersGeneratorSetup)
 
+BOOST_AUTO_TEST_CASE(signet_presync_pins_and_shared_prefix)
+{
+    const CBlockIndex* start = m_node.chainman->ActiveChain().Tip();
+    std::vector<CBlockHeader> headers;
+    GenerateHeaders(headers, 11, start->GetBlockHash(), 0x20000000, start->nTime, uint256::ONE, start->nBits);
+    auto params = Params().GetConsensus();
+    params.signet_blocks = true;
+    params.nPurityActivationHeight = 11;
+    params.nAsertAnchorHeight = 6;
+    params.hashSignetForkParent = headers[9].GetHash();
+    params.hashSignetAsertAnchor = headers[5].GetHash();
+    params.hashSignetAsertAnchorParent = headers[4].GetHash();
+    params.hashPurityActivationBlock = uint256::ONE;
+    const auto threshold = start->nChainWork + GetBlockProof(CBlockIndex(headers[0])) * 10;
+    HeadersSyncState sync{0, params, start, threshold};
+    auto result = sync.ProcessNextHeaders(headers, false);
+    BOOST_REQUIRE(result.success);
+    BOOST_CHECK_EQUAL(sync.GetPresyncHeight(), 10);
+    BOOST_REQUIRE(sync.GetState() == HeadersSyncState::State::REDOWNLOAD);
+    result = sync.ProcessNextHeaders(headers, false);
+    BOOST_REQUIRE(result.success);
+    BOOST_REQUIRE_EQUAL(result.pow_validated_headers.size(), 11);
+    BOOST_CHECK_EQUAL(result.pow_validated_headers[9].GetHash(), params.hashSignetForkParent);
+
+    params.hashSignetForkParent = uint256::ONE;
+    HeadersSyncState bad_presync{0, params, start, threshold};
+    BOOST_CHECK(!bad_presync.ProcessNextHeaders(headers, false).success);
+
+    params.hashSignetForkParent = headers[9].GetHash();
+    HeadersSyncState bad_redownload{0, params, start, threshold};
+    BOOST_REQUIRE(bad_redownload.ProcessNextHeaders(headers, false).success);
+    params.hashSignetForkParent = uint256::ONE;
+    BOOST_CHECK(!bad_redownload.ProcessNextHeaders(headers, false).success);
+}
+
 // In this test, we construct two sets of headers from genesis, one with
 // sufficient proof of work and one without.
 // 1. We deliver the first set of headers and verify that the headers sync state

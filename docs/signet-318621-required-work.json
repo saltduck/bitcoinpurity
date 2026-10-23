@@ -1,0 +1,11 @@
+{
+  "activation_height": 318621,
+  "anchor_height": 318616,
+  "anchor_parent_time": 1787261860,
+  "last_time": 1787266302,
+  "time_diff": 4442,
+  "height_diff": 4,
+  "required_bits": "1d13fbb5",
+  "required_target": "00000013fbb542f8000000000000000000000000000000000000000000000000",
+  "note": "Independent Python integer computation; H may claim a harder valid target; H+1 requires exact bits."
+}

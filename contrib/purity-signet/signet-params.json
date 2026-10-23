@@ -1,0 +1,26 @@
+{
+  "schema_version": 2,
+  "simulation": true,
+  "activation_height": null,
+  "parent_hash": null,
+  "activation_hash": null,
+  "anchor": null,
+  "public_keys": [
+    "02fe8d1eb1bcb3432b1db5833ff5f2226d9cb5e65cee430558c18ed3a3c86ce1af",
+    "03d528ecd9b696b54c907a9ed045447a79bb408ec39b68df504bb51f459bc3ffc9",
+    "025d045857332d5b9e541514731622af8d60c180165d971a61e06b70a9b3834765"
+  ],
+  "minimum_chain_work": "000000000000000000000000000000000000000000000000000002b517f3d1a1",
+  "p2p_port": 38333,
+  "rpc_port": 38332,
+  "dns_seeds": [
+    "purity-signet.invalid"
+  ],
+  "fixed_seed_nodes": [
+    "127.0.0.1:38333"
+  ],
+  "historical_seed_nodes": [
+    "seed.signet.bitcoin.sprovoost.nl:38333",
+    "seed.signet.achownodes.xyz:38333"
+  ]
+}

@@ -9,6 +9,12 @@ if(TARGET bitcoin-util AND TARGET bitcoin-tx AND PYTHON_COMMAND)
 endif()
 
 if(PYTHON_COMMAND)
+  add_test(NAME util_signet_miner_test
+    COMMAND ${PYTHON_COMMAND} ${PROJECT_SOURCE_DIR}/test/util/signet_miner_test.py
+  )
+  add_test(NAME util_signet_prepare_test
+    COMMAND ${PYTHON_COMMAND} ${PROJECT_SOURCE_DIR}/test/util/signet_prepare_test.py
+  )
   add_test(NAME util_rpcauth_test
     COMMAND ${PYTHON_COMMAND} ${PROJECT_BINARY_DIR}/test/util/rpcauth-test.py
   )

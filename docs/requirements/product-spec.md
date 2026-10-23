@@ -230,3 +230,78 @@ amounts. See [architecture](../architecture/coinstatsindex.md),
   change consensus, validation, ASERT, RDTS, parking, wallets, P2P or import #34521.
 - Add deterministic cursor-snapshot regressions and concurrent functional scans;
   run hash, index/history/reorg/pruning and AssumeUTXO compatibility tests.
+
+
+## Purity Signet
+
+All requirement, architecture, API, task, operational and review documents
+maintained for this change must be written in English.
+
+The existing `signet` chain directly uses Purity consensus. There is no separate
+chain type or Purity mode. Inherit official Bitcoin Signet through H-1, keep its
+genesis, magic and powLimit, then switch to a fixed bare 2-of-3 challenge,
+permanent RDTS and aserti3-1d (600/86400). Grandfather boundaries are H.
+Mainnet consensus and its original ASERT/224-bit assertion remain unchanged.
+
+Chain parameters are loaded from a Signet-only JSON configuration; the owner
+authorized explicitly labelled simulated initial values. Simulation is not an
+official release. Public configuration contains no private keys. Official
+parameters and first-block pin must be audited before release.
+
+Signet signatures are height-aware on all acceptance, disk, replay and reorg
+paths. Only internal unsigned template construction may omit the unfinished
+solution. The selected canonical bare-multisig BIP141/BIP325 Coinbase output
+has a maximum 195-byte exception after H; other outputs retain 34/83 limits.
+Use a Signet-only 239-bit ASERT entry, GBT bits, real PoW, shared-prefix peers
+and bounded post-fork peer isolation without punishing normal old-chain forks.
+
+The independent miner emits timestamped operational status on stderr, including
+remaining wait time, signer requests, quorum/proposal checks, periodic PoW
+elapsed time, submission, acceptance, stale work and retry delays. Stdout remains
+one JSON record per accepted active-chain block. Status never includes RPC
+credentials, PSBTs, signatures or raw block/header payloads, and does not change
+the mining interval, required bits, signed fields or consensus checks. See
+[TASK-PS-009](../tasks/TASK-PS-009.md).
+
+The miner accepts two or three distinct signer CLI arrays. Three endpoints
+enable automatic pair failover in order 1+2, 1+3, 2+3 without a process restart.
+Each pair starts with the original PSBT; a failed or invalid endpoint is skipped
+for the rest of that attempt. Incomplete quorums try the next pair. The optional
+positive integer `signer_timeout_seconds` defaults to 30 seconds per signer RPC;
+it does not limit PoW or change the polling interval. Node finalization and
+proposal checks still enforce actual signatures. See
+[TASK-PS-011](../tasks/TASK-PS-011.md).
+
+See [requirements](purity-signet-requirements.md),
+[architecture](../architecture/purity-signet.md),
+[configuration and RPC contract](../api/purity-signet.md), and TASK-PS-000..011.
+
+Validation evidence: [acceptance matrix](../purity-signet-acceptance.md).
+Freeze and recovery: [operator procedure](../purity-signet-operations.md).
+The [English deployment guide](../purity-signet-deployment.md) translates the
+external Chinese instructions, including signer setup, preflight, history
+synchronization, bounded-memory freeze, first-block pinning and recovery. It
+uses public placeholders and current interfaces; publishing it does not deploy
+a network or alter consensus. The Chinese original remains outside the repository.
+
+Select H only when signing wallets, software, peers and inherited history are
+ready. Schema v2 preparation uses explicit null activation_height, parent_hash,
+anchor and activation_hash together. It validates original Signet and refuses
+mining/templates. Version 1 fixed files remain supported. Complete unpruned
+sync with assumevalid=0 validates inherited history. At freeze, pause networking,
+scan all stored blocks and undo data with verifychain(2,0), and check recent
+chainstate consistency with verifychain(4,288); then freeze T. This separates
+full-history validation from a bounded-memory UTXO consistency check.
+prepare.py derives H=T+1, A=H-5, actual hashes/bits/parent time and T chainwork,
+records both verification results and requests normal shutdown. The default
+one-hour parent-age policy is configurable
+and does not affect consensus. Restart the same independent datadir with fixed
+parameters (simulation=true, null first pin); revalidate cached H+ candidates,
+isolate conflicting inactive branches and reject incompatible active history.
+After mining/validating H, pin its hash and set simulation=false. No dynamic
+activation, online parameter changes or new chain selection rule is introduced.
+H=318621 is obsolete rehearsal data. Defaults remain 38333/38332 and signet/;
+concurrent clients need separate base datadirs and listener overrides.
+See [TASK-PS-008](../tasks/TASK-PS-008.md) for conversion and acceptance.
+
+Complete audit and actual evidence: [Signet source review](../purity-signet-review.md).

@@ -170,6 +170,15 @@ struct Params {
      */
     bool signet_blocks{false};
     std::vector<uint8_t> signet_challenge;
+    std::vector<uint8_t> signet_challenge_postfork;
+    uint256 hashSignetForkParent{};
+    uint256 hashSignetAsertAnchor{};
+    uint256 hashSignetAsertAnchorParent{};
+    uint32_t nSignetAsertAnchorBits{0};
+    uint32_t nSignetAsertAnchorParentTime{0};
+    bool signet_simulation{false};
+    bool signet_configured{false};
+    bool signet_preparing{false};
 
     int DeploymentHeight(BuriedDeployment dep) const
     {
@@ -200,6 +209,14 @@ inline bool PurityActivationBlockPermitted(int height, const uint256& hash, cons
     return height != params.nPurityActivationHeight ||
            params.hashPurityActivationBlock.IsNull() ||
            hash == params.hashPurityActivationBlock;
+}
+
+inline bool SignetForkBlockPermitted(int height, const uint256& hash, const Params& params)
+{
+    if (!params.signet_blocks) return true;
+    return (height != params.nPurityActivationHeight - 1 || params.hashSignetForkParent.IsNull() || hash == params.hashSignetForkParent) &&
+           (height != params.nAsertAnchorHeight || params.hashSignetAsertAnchor.IsNull() || hash == params.hashSignetAsertAnchor) &&
+           (height != params.nAsertAnchorHeight - 1 || params.hashSignetAsertAnchorParent.IsNull() || hash == params.hashSignetAsertAnchorParent);
 }
 
 } // namespace Consensus
