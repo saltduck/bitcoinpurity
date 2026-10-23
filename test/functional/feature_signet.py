@@ -4,10 +4,13 @@
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test basic signet functionality"""
 
-from decimal import Decimal
+import json
+from pathlib import Path
+import subprocess
 
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import assert_equal
+from test_framework.test_node import ErrorMatch
 
 SIGNET_DEFAULT_CHALLENGE = '512103ad5e0edad18cb1f0fc0d28a3d4f1f3e445640337489abb10404f2d1e086be430210359ef5021964fe22d6f8e05b2463c9540ce96883fe3b278760f048f5189f2e6c452ae'
 
@@ -24,89 +27,55 @@ signet_blocks = [
     '00000020a868e8514be5e46dabd6a122132f423f36a43b716a40c394e2a8d063e1010000f4c6c717e99d800c699c25a2006a75a0c5c09f432a936f385e6fce139cdbd1a5e9964d5fae77031e7d026e0001010000000001010000000000000000000000000000000000000000000000000000000000000000ffffffff025a51feffffff0200f2052a01000000160014aaa671c82b138e3b8f510cd801e5f2bd0aa305940000000000000000776a24aa21a9ede2f61c3f71d1defd3fa999dfa36953755c690689799962b48bebd836974e8cf94c4fecc7daa24900473044022042309f4c3c7a1a2ac8c24f890f962df1c0086cec10be0868087cfc427520cb2702201dafee8911c269b7e786e242045bb57cef3f5b0f177010c6159abae42f646cc501000120000000000000000000000000000000000000000000000000000000000000000000000000',
 ]
 
-class SignetParams:
-    def __init__(self, challenge=None):
-        # Prune to prevent disk space warning on CI systems with limited space,
-        # when using networks other than regtest.
-        if challenge is None:
-            self.challenge = SIGNET_DEFAULT_CHALLENGE
-            self.shared_args = ["-prune=550"]
-        else:
-            self.challenge = challenge
-            self.shared_args = ["-prune=550", f"-signetchallenge={challenge}"]
-
 class SignetBasicTest(BitcoinTestFramework):
     def set_test_params(self):
         self.chain = "signet"
-        self.num_nodes = 6
+        self.num_nodes = 1
         self.setup_clean_chain = True
-        self.signets = [
-            SignetParams(challenge='51'), # OP_TRUE
-            SignetParams(), # default challenge
-            # default challenge as a 2-of-2, which means it should fail
-            SignetParams(challenge='522103ad5e0edad18cb1f0fc0d28a3d4f1f3e445640337489abb10404f2d1e086be430210359ef5021964fe22d6f8e05b2463c9540ce96883fe3b278760f048f5189f2e6c452ae')
-        ]
-
-        self.extra_args = [
-            self.signets[0].shared_args, self.signets[0].shared_args,
-            self.signets[1].shared_args, self.signets[1].shared_args,
-            self.signets[2].shared_args, self.signets[2].shared_args,
-        ]
-
-    def setup_network(self):
-        self.setup_nodes()
-
-        # Setup the three signets, which are incompatible with each other
-        self.connect_nodes(0, 1)
-        self.connect_nodes(2, 3)
-        self.connect_nodes(4, 5)
+        self.params_file = Path(self.config["environment"]["SRCDIR"]) / "contrib/purity-signet/simulation.json"
+        self.extra_args = [[f"-signetparams={self.params_file}"]]
 
     def run_test(self):
-        self.log.info("basic tests using OP_TRUE challenge")
-
-        self.log.info('getblockchaininfo')
-        def check_getblockchaininfo(node_idx, signet_idx):
-            blockchain_info = self.nodes[node_idx].getblockchaininfo()
-            assert_equal(blockchain_info['chain'], 'signet')
-            assert_equal(blockchain_info['signet_challenge'], self.signets[signet_idx].challenge)
-        check_getblockchaininfo(node_idx=1, signet_idx=0)
-        check_getblockchaininfo(node_idx=2, signet_idx=1)
-        check_getblockchaininfo(node_idx=5, signet_idx=2)
-
-        self.log.info('getmininginfo')
-        def check_getmininginfo(node_idx, signet_idx):
-            mining_info = self.nodes[node_idx].getmininginfo()
-            assert_equal(mining_info['blocks'], 0)
-            assert_equal(mining_info['chain'], 'signet')
-            assert 'currentblocktx' not in mining_info
-            assert 'currentblockweight' not in mining_info
-            assert_equal(mining_info['networkhashps'], Decimal('0'))
-            assert_equal(mining_info['pooledtx'], 0)
-            assert_equal(mining_info['signet_challenge'], self.signets[signet_idx].challenge)
-        check_getmininginfo(node_idx=0, signet_idx=0)
-        check_getmininginfo(node_idx=3, signet_idx=1)
-        check_getmininginfo(node_idx=4, signet_idx=2)
-
-        self.generate(self.nodes[0], 1, sync_fun=self.no_op)
-
-        self.log.info("pregenerated signet blocks check")
-
-        height = 0
-        for block in signet_blocks:
-            assert_equal(self.nodes[2].submitblock(block), None)
-            height += 1
-            assert_equal(self.nodes[2].getblockcount(), height)
-
-        self.log.info("pregenerated signet blocks check (incompatible solution)")
-
-        assert_equal(self.nodes[4].submitblock(signet_blocks[0]), 'bad-signet-blksig')
-
-        self.log.info("test that signet logs the network magic on node start")
-        with self.nodes[0].assert_debug_log(["Signet derived magic (message start)"]):
+        node = self.nodes[0]
+        info = node.getblockchaininfo()
+        assert_equal(info["chain"], "signet")
+        assert_equal(info["signet_challenge"], SIGNET_DEFAULT_CHALLENGE)
+        assert_equal(info["signet_challenge_height"], 1)
+        assert_equal(info["signet_fork"]["message_start"], "0a03cf40")
+        assert_equal(info["signet_fork"]["activation_height"], 11)
+        assert_equal(info["signet_fork"]["target_spacing"], 600)
+        assert_equal(info["signet_fork"]["half_life"], 86400)
+        assert_equal(info["signet_fork"]["simulation"], True)
+        assert node.chain_path.name == "signet"
+        assert_equal(node.getmininginfo()["signet_challenge"], SIGNET_DEFAULT_CHALLENGE)
+        with node.assert_debug_log(["Signet derived magic (message start): 0a03cf40"]):
             self.restart_node(0)
         self.stop_node(0)
-        self.nodes[0].assert_start_raises_init_error(extra_args=["-signetchallenge=abc"], expected_msg="Error: -signetchallenge must be hex, not 'abc'.")
-        self.nodes[0].assert_start_raises_init_error(extra_args=["-signetchallenge=abc"] * 2, expected_msg="Error: -signetchallenge cannot be multiple values.")
+        for option in ("-signetchallenge=51", "-signetblocktime=1"):
+            node.assert_start_raises_init_error(
+                extra_args=[f"-signetparams={self.params_file}", option],
+                expected_msg="Signet consensus is configured by -signetparams", match=ErrorMatch.PARTIAL_REGEX)
+        node.assert_start_raises_init_error(
+            extra_args=[], expected_msg="Signet requires a chain-parameter JSON", match=ErrorMatch.PARTIAL_REGEX)
+        node.assert_start_raises_init_error(
+            extra_args=[f"-signetparams={self.params_file}", "-assumevalid=01"],
+            expected_msg="Signet requires -assumevalid=0", match=ErrorMatch.PARTIAL_REGEX)
+        malformed = Path(self.options.tmpdir) / "malformed.json"
+        params = json.loads(self.params_file.read_text())
+        params["simulation"] = False
+        malformed.write_text(json.dumps(params))
+        node.assert_start_raises_init_error(extra_args=[f"-signetparams={malformed}"])
+        result = subprocess.run([node.binary, f"-datadir={self.options.tmpdir}", "-chain=main", "-signetparams=/nonexistent/parameters.json", "-help"], capture_output=True)
+        assert_equal(result.returncode, 0)
+        launch = self.params_file.with_name("signet-params.json")
+        self.start_node(0, extra_args=[f"-signetparams={launch}", "-reindex"])
+        info = node.getblockchaininfo()
+        assert_equal(info["signet_fork"]["activation_height"], None)
+        assert_equal(info["signet_fork"]["anchor_height"], None)
+        assert_equal(info["signet_challenge"], SIGNET_DEFAULT_CHALLENGE)
+        assert_equal(node.chain_path.name, "signet")
+        self.stop_node(0)
+        self.start_node(0, extra_args=self.extra_args[0] + ["-reindex"])
 
 
 if __name__ == '__main__':

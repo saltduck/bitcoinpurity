@@ -14,6 +14,118 @@ Explicit overrides and the opt-in `corepolicy` profile keep their existing
 behavior. Do not alter `minimumchainwork`, fee-estimator buckets, wallet
 `mintxfee`, block reservation, or consensus limits.
 
+## Mainnet DNS seed
+
+Keep only `seed.bitcoinpurity.org` in the built-in mainnet DNS seed list.
+Remove every other mainnet DNS seed. Other networks' seeds and
+explicit peer configuration remain unchanged.
+
+## Mainnet fixed seeds
+
+Replace every existing mainnet fixed seed with these endpoints:
+
+- `207.244.247.51:8333`
+- `[240e:390:6ee0:f370::b40]:8333`
+- `[2a02:4780:79:909::1]:8333`
+- `36.25.72.251:8333`
+- `45.77.139.7:8333`
+- `46.7.6.219:8333`
+- `57.129.53.78:5890`
+- `node0.bitcoinpurity.org:8333`
+- `node0.bitcoinpurity.org:8334`
+- `node1.bitcoinpurity.org:8333`
+- `76.13.13.187:8333`
+
+The fixed-seed format stores numeric IP addresses. Resolve domain entries to
+their current addresses for this update and record the mappings in
+`contrib/seeds/nodes_main.txt`; preserve both node0 ports and the 5890 port.
+Synchronize that source list with the compiled mainnet array, retaining the
+other networks' seed arrays, DNS seeds and explicit peer configuration.
+
+## Purity Signet hard fork
+
+All documentation maintained for this change must be written in English.
+
+Maintain an English [deployment guide](../docs/purity-signet-deployment.md)
+translated from the operator's Chinese deployment instructions. Preserve the
+external Chinese original, use public placeholders, and align commands with the
+current preparation, signing and first-block freeze implementation. This is a
+documentation update only; it does not deploy a network or change consensus.
+
+Latest owner decisions (2026-10-15): select H=T+1 immediately before mining,
+where T is the frozen, fully validated original Signet tip. H=318621 is only
+an obsolete rehearsal record. Keep ports 38333/38332 and the signet/ directory.
+Schema v2 permits preparation only when activation_height, parent_hash, anchor
+and activation_hash are all explicitly null. Preparation validates original
+history and disables block generation/templates. Schema v1 fixed files remain
+supported. Freeze networking, record H-5 anchor evidence and T chainwork, stop,
+then restart the same independent datadir with fixed parameters. Recheck cached
+post-H indexes and isolate conflicting inactive branches without trusting prior
+validity. After the first signed block, pin its hash and disable simulation.
+Do not introduce dynamic activation or another chain/mode. Default preparation
+policy rejects a parent older than one hour; this is not a consensus rule.
+The launch example retains explicitly simulated authorities and endpoints.
+
+
+- In this client, `-signet` / `-chain=signet` selects the Purity consensus chain.
+  Keep `ChainType::SIGNET`, `[signet]` and RPC `chain=signet`; do not add a
+  separate chain type, runtime mode or Purity switch. Bitcoin Signet remains
+  an external reference/history source, not another mode in this client.
+- Inherit official Bitcoin Signet blocks and UTXOs through H-1, switch from
+  the original challenge to a fixed bare 2-of-3 challenge at H, permanently
+  activate RDTS at H and use aserti3-1d (600s spacing, 86400s half-life).
+- Preserve the official genesis, SHA256d PoW, 234-bit powLimit and original
+  magic 0a03cf40. Keep Mainnet consensus parameters, acceptance results and
+  original ASERT calculation/224-bit assertion unchanged.
+- Verify height-dependent signatures on every acceptance, disk-read, replay,
+  reorg and validation path. Only internal unsigned template construction may
+  omit an unfinished solution; submissions and proposals cannot select that
+  exemption. Context-free block caches must not bypass contextual signatures.
+- Limit the RDTS Coinbase exception to the highest-index BIP141 commitment
+  with one canonical BIP325 bare 2-of-3 solution, empty solution witness and
+  no unrelated bytes, at most 195 bytes. Other outputs retain 34/83-byte limits.
+- Use signet/ in the selected base datadir, preserve original-magic historical P2P
+  sync, classify expected competing H blocks without discouragement and
+  require chain evidence rather than unauthenticated service bits.
+- Provide an independent PSBT signing/mining pipeline using GBT bits and
+  600-second target scheduling, with real PoW, two independent signers and
+  backup/recovery. Do not add replay protection or change address formats.
+- Emit timestamped miner status on stderr: remaining wait time, signer requests,
+  signature quorum/proposal checks, periodic PoW elapsed time, submission,
+  acceptance, stale work and retries. Preserve stdout block JSON and omit RPC
+  credentials, PSBTs, signatures and raw block/header payloads. Logging must not
+  change scheduling, difficulty, signing rules or consensus validation.
+- Allow the standalone miner to configure three distinct signer CLI endpoints
+  and automatically use any available pair without a restart or authority change.
+  Keep existing two-endpoint configurations supported. Bound signer RPC waits,
+  isolate each pair's PSBT, retain immutable-field and signature/proposal checks,
+  and never solve or submit without a valid 2-of-3 quorum. Report failures and
+  selected pairs without credentials or signing payloads. Add regressions before
+  implementation; do not commit, push or create a PR for this change.
+- H, H-1 hash, H-5 anchor tuple, public keys/order, first block hash, ports and
+  seeds must be frozen from real evidence before public operation. The owner
+  requested a Signet-only chain-parameter JSON file with simulated initial
+  values; label them explicitly and never treat them as official. Mainnet
+  must not read the file; missing or malformed Signet configuration fails closed.
+- Implement test-first in stages S0-S7 and satisfy AT-01 through AT-17 in
+  docs/requirements/purity-signet-requirements.md. Deployment, key generation
+  and consensus parameter freezing need real owner-provided inputs.
+
+## Unsigned mainnet package manifest generator
+
+- Add a local script that generates unsigned `official-packages-mainnet.json`
+  from one node-data ZIP, without private-key parameters or signing steps.
+- Read package identity, snapshot height/hash and prune target from
+  `bitcoinpurity-package.json` at the detected data root; support a shared
+  enclosing directory around `blocks/` and `chainstate/`, and reject ambiguous
+  roots. Require explicit values when metadata is absent.
+  Reject conflicting overrides, invalid metadata and unusable archive layouts.
+- Stream the ZIP SHA256, use its byte size and sum uncompressed member sizes.
+  Require an official HTTPS download URI. Output has no `signature` field and
+  generation requires only Python's standard library, not OpenSSL.
+- Do not extract or modify the ZIP, overwrite existing outputs, expose private
+  keys, upload files, or change client validation. Document and test the CLI.
+
 ## Default maximum tip age
 
 Default `maxtipage` to 604800 seconds (7 days), replacing 86400 seconds.
@@ -221,6 +333,10 @@ precedence chain.
 - The bit is an unauthenticated discovery hint. The existing block hash at
   height 961637 remains authoritative and must also reject a conflicting
   chain advertised by a bit-25 peer.
+- Issue #32: log a received activation-block hash mismatch at DEBUG in the
+  validation category, including height and both hashes. Preserve the rejection
+  reason and peer handling. A conflicting activation block already stored in
+  the local block index must still produce an ERROR and prevent startup.
 - Automatic outbound selection prefers known bit-25 records in the existing
   AddrMan for the first 20 attempts. If there are no matching records, use normal
   selection immediately; after 20 ineligible draws, return to normal selection.

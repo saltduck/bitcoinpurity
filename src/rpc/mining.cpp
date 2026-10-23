@@ -34,6 +34,7 @@
 #include <script/descriptor.h>
 #include <script/script.h>
 #include <script/signingprovider.h>
+#include <signet.h>
 #include <txmempool.h>
 #include <univalue.h>
 #include <util/check.h>
@@ -162,8 +163,16 @@ static bool GenerateBlock(ChainstateManager& chainman, CBlock&& block, uint64_t&
     return true;
 }
 
+static void CheckSignetMiningReady(const ChainstateManager& chainman)
+{
+    if (chainman.GetConsensus().signet_blocks && chainman.GetConsensus().signet_preparing) {
+        throw JSONRPCError(RPC_MISC_ERROR, "Signet is preparing; freeze activation parameters before mining");
+    }
+}
+
 static UniValue generateBlocks(ChainstateManager& chainman, Mining& miner, const CScript& coinbase_output_script, int nGenerate, uint64_t nMaxTries)
 {
+    CheckSignetMiningReady(chainman);
     UniValue blockHashes(UniValue::VARR);
     while (nGenerate > 0 && !chainman.m_interrupt) {
         std::unique_ptr<BlockTemplate> block_template(miner.createNewBlock({ .coinbase_output_script = coinbase_output_script }));
@@ -345,6 +354,7 @@ static RPCHelpMan generateblock()
     }
 
     NodeContext& node = EnsureAnyNodeContext(request.context);
+    CheckSignetMiningReady(EnsureChainman(node));
     Mining& miner = EnsureMining(node);
     const CTxMemPool& mempool = EnsureMemPool(node);
 
@@ -432,7 +442,9 @@ static RPCHelpMan getmininginfo()
                         {RPCResult::Type::NUM, "networkhashps", "The network hashes per second"},
                         {RPCResult::Type::NUM, "pooledtx", "The size of the mempool"},
                         {RPCResult::Type::STR, "chain", "current network name (" LIST_CHAIN_NAMES ")"},
+                        {RPCResult::Type::STR, "signet_state", /*optional=*/true, "preparing or fixed"},
                         {RPCResult::Type::STR_HEX, "signet_challenge", /*optional=*/true, "The block challenge (aka. block script), in hexadecimal (only present if the current network is a signet)"},
+                        {RPCResult::Type::NUM, "signet_challenge_height", /*optional=*/true, "Height of the next block using signet_challenge"},
                         {RPCResult::Type::OBJ, "next", "The next block",
                         {
                             {RPCResult::Type::NUM, "height", "The next height"},
@@ -485,9 +497,10 @@ static RPCHelpMan getmininginfo()
     obj.pushKV("next", next);
 
     if (chainman.GetParams().GetChainType() == ChainType::SIGNET) {
-        const std::vector<uint8_t>& signet_challenge =
-            chainman.GetConsensus().signet_challenge;
+        obj.pushKV("signet_state", chainman.GetConsensus().signet_preparing ? "preparing" : "fixed");
+        const auto& signet_challenge = GetSignetChallengeForHeight(chainman.GetConsensus(), next_index.nHeight);
         obj.pushKV("signet_challenge", HexStr(signet_challenge));
+        obj.pushKV("signet_challenge_height", next_index.nHeight);
     }
     obj.pushKV("warnings", node::GetWarningsForRpc(*CHECK_NONFATAL(node.warnings), IsDeprecatedRPCEnabled("warnings")));
     return obj;
@@ -720,6 +733,7 @@ static RPCHelpMan getblocktemplate()
     NodeContext& node = EnsureAnyNodeContext(request.context);
     ChainstateManager& chainman = EnsureChainman(node);
     Mining& miner = EnsureMining(node);
+    CheckSignetMiningReady(chainman);
     LOCK(cs_main);
     uint256 tip{CHECK_NONFATAL(miner.getTip()).value().hash};
 
@@ -1096,7 +1110,7 @@ static UniValue TemplateToJSON(const Consensus::Params& consensusParams, const C
     result.pushKV("height", (int64_t)(pindexPrev->nHeight+1));
 
     if (consensusParams.signet_blocks) {
-        result.pushKV("signet_challenge", HexStr(consensusParams.signet_challenge));
+        result.pushKV("signet_challenge", HexStr(GetSignetChallengeForHeight(consensusParams, pindexPrev->nHeight + 1)));
     }
 
     if (!block_template->getCoinbaseCommitment().empty()) {

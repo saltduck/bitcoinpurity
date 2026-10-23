@@ -158,6 +158,7 @@ bool HeadersSyncState::ValidateAndStoreHeadersCommitments(const std::vector<CBlo
     // If it does connect, (minimally) validate and occasionally store
     // commitments.
     for (const auto& hdr : headers) {
+        if (m_consensus_params.signet_blocks && m_current_chain_work >= m_minimum_required_work) break;
         if (!ValidateAndProcessSingleHeader(hdr)) {
             return false;
         }
@@ -181,6 +182,12 @@ bool HeadersSyncState::ValidateAndProcessSingleHeader(const CBlockHeader& curren
     if (m_download_state != State::PRESYNC) return false;
 
     int next_height = m_current_height + 1;
+    if (m_consensus_params.signet_blocks &&
+        (!Consensus::SignetForkBlockPermitted(next_height, current.GetHash(), m_consensus_params) ||
+         !Consensus::PurityActivationBlockPermitted(next_height, current.GetHash(), m_consensus_params))) {
+        LogDebug(BCLog::NET, "Signet presync pin mismatch peer=%d height=%d\n", m_id, next_height);
+        return false;
+    }
 
     // Verify that the difficulty isn't growing too fast; an adversary with
     // limited hashing capability has a greater chance of producing a high
@@ -219,6 +226,14 @@ bool HeadersSyncState::ValidateAndStoreRedownloadedHeader(const CBlockHeader& he
     if (m_download_state != State::REDOWNLOAD) return false;
 
     int64_t next_height = m_redownload_buffer_last_height + 1;
+    // Once enough work has been recovered, full validation classifies the
+    // remaining fork suffix and keeps any accepted shared prefix.
+    if (m_consensus_params.signet_blocks && !m_process_all_remaining_headers &&
+        (!Consensus::SignetForkBlockPermitted(next_height, header.GetHash(), m_consensus_params) ||
+         !Consensus::PurityActivationBlockPermitted(next_height, header.GetHash(), m_consensus_params))) {
+        LogDebug(BCLog::NET, "Signet redownload pin mismatch peer=%d height=%d\n", m_id, next_height);
+        return false;
+    }
 
     // Ensure that we're working on a header that connects to the chain we're
     // downloading.

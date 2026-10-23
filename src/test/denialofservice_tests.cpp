@@ -27,6 +27,7 @@
 #include <stdint.h>
 
 #include <boost/test/unit_test.hpp>
+#include <boost/test/data/test_case.hpp>
 
 static CService ip(uint32_t i)
 {
@@ -110,7 +111,8 @@ BOOST_AUTO_TEST_CASE(outbound_slow_chain_eviction)
     peerman.FinalizeNode(dummyNode1);
 }
 
-BOOST_FIXTURE_TEST_CASE(purity_incompatible_outbound_is_demoted, RegTestingSetup)
+BOOST_DATA_TEST_CASE_F(RegTestingSetup, purity_incompatible_outbound_is_demoted,
+                      boost::unit_test::data::make({false, true}), is_signet)
 {
     LOCK(NetEventsInterface::g_msgproc_mutex);
 
@@ -122,6 +124,7 @@ BOOST_FIXTURE_TEST_CASE(purity_incompatible_outbound_is_demoted, RegTestingSetup
     connman->Init(connman_opts);
     connman->SetMsgProc(peerman.get());
     Consensus::Params& consensus{const_cast<Consensus::Params&>(chainman.GetConsensus())};
+    consensus.signet_blocks = is_signet;
     consensus.nAsertAnchorHeight = 1;
     consensus.nPurityActivationHeight = 6;
     consensus.nDAAHalfLife = 24 * 60 * 60;
@@ -191,7 +194,7 @@ BOOST_FIXTURE_TEST_CASE(purity_incompatible_outbound_is_demoted, RegTestingSetup
     CNodeStateStats stats;
     BOOST_REQUIRE(peerman->GetNodeStateStats(node->GetId(), stats));
     BOOST_REQUIRE_EQUAL(stats.nSyncHeight, consensus.nPurityActivationHeight - 1);
-    BOOST_REQUIRE(stats.m_chain_sync_protected);
+    BOOST_REQUIRE_EQUAL(stats.m_chain_sync_protected, !is_signet);
 
     std::vector<CBlock> conflicting_headers{CBlock{conflicting_637}};
     DataStream conflicting_headers_stream;
@@ -246,6 +249,37 @@ BOOST_FIXTURE_TEST_CASE(purity_stale_outbound_not_connected_after_prefix, RegTes
     BOOST_CHECK(node->fDisconnect);
     BOOST_CHECK(!node->m_is_non_bip110_outbound);
 
+    peerman->FinalizeNode(*node);
+    connman->ClearTestNodes();
+}
+
+BOOST_FIXTURE_TEST_CASE(signet_unverified_outbound_has_bounded_lifetime, RegTestingSetup)
+{
+    LOCK(NetEventsInterface::g_msgproc_mutex);
+    auto& chainman = *m_node.chainman;
+    auto connman = std::make_unique<ConnmanTestMsg>(0x1337, 0x1337, *m_node.addrman, *m_node.netgroupman, Params());
+    auto peerman = PeerManager::make(*connman, *m_node.addrman, nullptr, chainman, *m_node.mempool, *m_node.warnings, {});
+    CConnman::Options options;
+    options.m_max_automatic_connections = DEFAULT_MAX_PEER_CONNECTIONS;
+    connman->Init(options);
+    connman->SetMsgProc(peerman.get());
+    auto& consensus = const_cast<Consensus::Params&>(chainman.GetConsensus());
+    consensus.signet_blocks = true;
+    consensus.nPurityActivationHeight = 6;
+    peerman->SetBestBlock(5, 0s);
+    const auto start = GetTime<std::chrono::seconds>();
+    auto* node = new CNode{0, nullptr, CAddress(ip(0xa0b0c003), NODE_NONE), 0, 0, CAddress(), "",
+                           ConnectionType::OUTBOUND_FULL_RELAY, false, 0};
+    connman->AddTestNode(*node);
+    const auto services = ServiceFlags(NODE_NETWORK | NODE_WITNESS | NODE_REDUCED_DATA | NODE_PURITY_ASERT);
+    connman->Handshake(*node, true, services, services, PROTOCOL_VERSION, true);
+    BOOST_CHECK(!node->fDisconnect);
+    BOOST_CHECK(!node->m_has_all_wanted_services);
+    BOOST_CHECK(!node->m_signet_chain_verified);
+    BOOST_CHECK(peerman->SendMessages(node));
+    SetMockTime(start + 21min);
+    BOOST_CHECK(peerman->SendMessages(node));
+    BOOST_CHECK(node->fDisconnect);
     peerman->FinalizeNode(*node);
     connman->ClearTestNodes();
 }

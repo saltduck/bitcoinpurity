@@ -2,13 +2,85 @@
 
 ## Node configuration default updates
 
-TASK-023 updates wallet fallback, relay, incremental replacement, mining fee,
+TASK-027 updates wallet fallback, relay, incremental replacement, mining fee,
 block-template capacity, mainnet assumevalid and DATUM share difficulty
 defaults. Rebuild and restart to adopt omitted defaults; explicit settings
 remain authoritative. DATUM Qt settings use the daemon's shared difficulty
 constant. No data-format migration, reindex or rescan is required. Existing
 fee-estimator buckets, minimum chain work and consensus rules are unchanged.
 Block size is measured in bytes; block weight is measured in weight units.
+
+## English Signet deployment guide (TASK-PS-010)
+
+Translate the operator's external Chinese deployment instructions into
+docs/purity-signet-deployment.md and retain the Chinese original outside the
+repository. Align the older full-history level-4 instruction with the current
+verifychain(2,0) plus verifychain(4,288) strategy. Use placeholders, suppress raw
+RPC error output in private-descriptor examples, and link the guide from the
+requirements, specification, architecture, API contract and indexes. This is a
+documentation-only change; it performs no deployment, wallet operation, chain
+migration or consensus change.
+
+## Signet miner status logging (TASK-PS-009)
+
+Add timestamped stderr status for waiting, signing, quorum/proposal validation,
+elapsed PoW, submission, acceptance, stale work and retries. Preserve accepted
+block JSON on stdout, CLI/configuration schema, GBT bits, the 600-second gate,
+immutable signed fields, proposal/PoW checks and active-chain acceptance checks.
+Poll a single PoW subprocess for heartbeat output without adding a total solver
+timeout or restarting work. Reap it on an interrupted call. Logging setup runs
+only on direct CLI execution and never logs credentials or signing payloads.
+Restart the Python miner to apply this change. No node rebuild, wallet/chain
+migration or operational configuration update is required. No deployment,
+commit or PR is performed by this implementation task.
+
+## Late Signet activation freeze (TASK-PS-008)
+
+Schema v1 fixed files remain supported. New v2 examples start with four explicit
+null activation fields, retain original historical validation and block mining.
+The operator tool pauses P2P, scans all stored blocks and undo data with
+verifychain(2,0), checks the most recent 288 blocks' chainstate consistency with
+verifychain(4,288), then derives H=T+1/H-5 from the validated active state. Full
+historical contextual and script validation comes from completed unpruned sync
+with assumevalid=0; the bounded level-4 window prevents history-sized memory
+growth. The tool records both results and actual chainwork, requests stop and
+emits a fixed file. Back up the stopped preparation datadir before its first
+fixed-H restart. The block index gains a Signet-only rule fingerprint; cached H+ status
+is rechecked during conversion, inactive conflicts are excluded and incompatible
+active/replay heads fail. Older fixed databases without the fingerprint and
+active post-H state require -reindex-chainstate. A different fixed rule tuple
+requires restoration or full -reindex. Adding the first hash pin remains allowed.
+H=318621 is historical only. Mainnet parameters, RDTS output rules, ASERT formula
+and 224-bit checking path are unchanged. No deployment, commit or PR is implied.
+
+## Unsigned mainnet package manifest generator (TASK-024)
+
+Add an offline Python manifest generator alongside the existing signer. The
+generator now outputs only unsigned JSON at the user's request; the private-key
+argument, automatic signing and OpenSSL dependency have been removed.
+Archives containing package metadata at their data root need no changes.
+Detect common enclosing directories around `blocks/` and `chainstate/`, as
+already supported by the Qt downloader; the original ZIP need not be repacked.
+For older archives
+without it, publishers supply identity, actual height/hash and prune target
+explicitly; LevelDB data is not parsed. ZIP SHA256 and compressed/uncompressed
+sizes are computed automatically, including ZIP64 archives.
+
+The generated JSON uses the existing unsigned catalog format. No node rebuild,
+database migration, reindex, client trust-policy change or dependency-source
+change is required. Existing remote signature verification and the standalone
+signer remain unchanged. No signing, upload or deployment is performed by this
+generator.
+
+## Activation-block mismatch logging (issue #32)
+
+Change only the received-header diagnostic from unconditional logging with an
+ERROR prefix to validation-category DEBUG. Rebuild and restart to use the new
+logging behavior; enable `-debug=validation` to inspect expected chain splits.
+Consensus rejection, peer handling and the local-index startup ERROR remain
+unchanged. No database format change, migration, rescan or reindex is required
+for this logging change. An existing conflicting index still requires the
+previously documented recovery. Regression evidence is recorded in TASK-023.
 
 ## Default maximum tip age
 
@@ -255,6 +327,27 @@ unchanged. The regression checks commit deferral and abort after partial
 deletion failure, before listener registration; database commit/erase failure
 injection and a clean abort after listener registration are not covered.
 
+## Mainnet DNS seed restriction (TASK-025)
+
+Keep `seed.bitcoinpurity.org.` and remove the other eight built-in mainnet DNS
+seed entries. Other networks' DNS seeds, fixed seeds, DNS lookup logic and
+explicit peer configuration remain unchanged. Rebuild and restart to use the
+new list; no database migration, reindex or peers.dat deletion is required.
+Previously learned addresses remain in AddrMan.
+
+## Mainnet fixed seed replacement (TASK-026)
+
+Replace the 1,306 compiled mainnet fixed seeds and the larger upstream source
+list with the 11 endpoints requested by the user. Keep both lists consistent
+and retain all other networks' seed arrays. The BIP155 fixed-seed format requires
+numeric addresses: node0 resolves to 49.190.167.39 (ports 8333/8334) and node1
+to 51.79.241.169 (8333), verified on 2026-10-12. Record these static mappings in
+the source list, without adding runtime hostname resolution.
+
+Rebuild and restart for the compiled replacement to take effect. No database
+migration or reindex is required; existing peers.dat addresses remain, so this
+change does not restrict all connections to the new fixed seeds.
+
 ## UTXO statistics race and refactoring (TASK-020 / TASK-021)
 
 Baseline: master 789f3781a79174bbb4a9fa75efa21c1e0a58f30b, clean detached
@@ -274,3 +367,69 @@ Add deterministic cursor-acquisition tests before fixing production code, then
 concurrent RPC/full/pruned/index tests and existing hash/AssumeUTXO/reorg suites.
 Each logical stage is independently built and validated before its commit.
 See doc/utxostats-backport.md for executed results and lifetime-review limits.
+
+
+## Purity Signet implementation
+
+Baseline cc85cfad90dea5447ff313f3158147ebb7bf1b47. The existing Signet chain
+becomes Purity consensus; original/custom Signet runtime modes are removed.
+Pre-H official history remains mandatory. Mainnet is unchanged. The owner
+authorized chain-parameter JSON with simulated initial values for development.
+No H, public key or simulated hash is an official public-chain decision.
+
+Use isolated signet/ state. Import/revalidate only historical raw blocks;
+do not copy external Signet indexes, chainstate, wallets or peer caches. Fixed
+pins, anchor and height-aware signatures must apply to restart, full reindex
+and chainstate-only replay. Public release waits for real H-1/anchor evidence,
+first-block raw/hash, official keys/seeds and all AT gates.
+
+Current acceptance: macOS and Linux arm64 CTest each 150/150 and nine focused functional runs passed;
+82 UBSan cases passed. The actual ASERT source produced 79 identical results
+on macOS arm64/Clang and Docker Linux x86_64/GCC, preserving the original
+224-bit assertion. Official Core 28.0 confirmed the complete simulated 0..10
+prefix, UTXO hash, shared-magic sync and directory/port isolation. Simulation
+first-block pin freeze/restart passed. Raw RPC/REST/P2P/ZMQ reads now validate
+Signet with index height. Public examples passed a daemon/CLI smoke test.
+Full future official history and production validation remain pending.
+See purity-signet-acceptance.md for the current matrix.
+
+The four-daemon miner rehearsal passed signer outage/resumption and restored
+backup signing. A separate wall-clock run passed one 600-second interval.
+Xcode lacks the libFuzzer runtime; later Linux libFuzzer validation is recorded
+in purity-signet-review.md. See
+purity-signet-operations.md for the freeze and recovery procedure.
+
+Linux arm64 full-node functional validation passed all five selected cases
+with container-local data, including signer outage and restored backup signing.
+
+Historical amendment and audit (superseded for H): H=318621, default P2P/RPC
+38333/38332, standard signet/ directory. Original per-version test-directory
+mapping and wallet directory-scan additions were removed. The complete-field
+JSON regression exposed and fixed omitted activation_hash acceptance.
+See purity-signet-review.md for Mainnet isolation proof, actual boundary-block
+records, Linux fuzz results and remaining full-history/production gates.
+
+Documentation language: the retained Signet v1.0 baseline and source-review
+record were translated into English. All documents maintained for this change
+use English; requirement IDs, consensus parameters and validation evidence were
+preserved. No implementation or data migration accompanies this editorial change.
+
+## Automatic Signet signer failover (TASK-PS-011)
+
+The standalone Python miner previously required exactly two endpoints and
+aborted an attempt on either RPC failure. Keep miner schema version 1 and
+two-entry compatibility; three distinct signer_clis enable ordered pair failover.
+Each pair starts from the original PSBT and requires complete finalization.
+Failed or invalid endpoints are skipped only for the current attempt. Signer
+CLI waits have an optional positive integer timeout, default 30 seconds.
+Immutable fields, signed proposal validation, PoW, scheduling, stale-tip checks
+and payload-free status logging remain enforced. Coordinator failures are not
+treated as signer outages.
+
+Operators must install the updated miner, add the third protected wallet RPC
+endpoint/tunnel and restart that miner once. Subsequent single-endpoint outages
+need no restart. Do not change public keys, chain parameters, node databases or
+wallet custody. No node rebuild, reindex or consensus migration is required.
+Existing two-entry files keep fixed-pair behavior. Local regression evidence
+and remaining checks are recorded in TASK-PS-011; no deployment is part of this
+change.

@@ -46,6 +46,7 @@
 #include <ranges>
 #include <stdexcept>
 #include <system_error>
+#include <tuple>
 #include <unordered_map>
 
 namespace kernel {
@@ -55,10 +56,24 @@ static constexpr uint8_t DB_FLAG{'F'};
 static constexpr uint8_t DB_REINDEX_FLAG{'R'};
 static constexpr uint8_t DB_LAST_BLOCK{'l'};
 static constexpr uint8_t DB_PRUNE_LOCK{'L'};
+static constexpr uint8_t DB_SIGNET_CONSENSUS{'S'};
 // Keys used in previous version that might still be found in the DB:
 // BlockTreeDB::DB_TXINDEX_BLOCK{'T'};
 // BlockTreeDB::DB_TXINDEX{'t'}
 // BlockTreeDB::ReadFlag("txindex")
+
+bool BlockTreeDB::ReadSignetConsensus(std::string& value, uint256& activation)
+{
+    std::pair<std::string, uint256> record;
+    if (!Read(DB_SIGNET_CONSENSUS, record)) return false;
+    std::tie(value, activation) = record;
+    return true;
+}
+
+bool BlockTreeDB::WriteSignetConsensus(const std::string& value, const uint256& activation)
+{
+    return Write(DB_SIGNET_CONSENSUS, std::make_pair(value, activation), /*fSync=*/true);
+}
 
 bool BlockTreeDB::ReadBlockFileInfo(int nFile, CBlockFileInfo& info)
 {
@@ -1142,7 +1157,7 @@ bool BlockManager::WriteBlockUndo(const CBlockUndo& blockundo, BlockValidationSt
     return true;
 }
 
-bool BlockManager::ReadBlock(CBlock& block, const FlatFilePos& pos, const std::optional<uint256>& expected_hash, const bool lowprio) const
+bool BlockManager::ReadBlock(CBlock& block, const FlatFilePos& pos, const std::optional<uint256>& expected_hash, const bool lowprio, std::optional<int> expected_height) const
 {
     block.SetNull();
 
@@ -1169,9 +1184,14 @@ bool BlockManager::ReadBlock(CBlock& block, const FlatFilePos& pos, const std::o
     }
 
     // Signet only: check block solution
-    if (GetConsensus().signet_blocks && !CheckSignetBlockSolution(block, GetConsensus())) {
-        LogError("%s: Errors in block solution at %s\n", __func__, pos.ToString());
-        return false;
+    if (GetConsensus().signet_blocks) {
+        BlockValidationState state;
+        if (!expected_height || !CheckBlock(block, state, GetConsensus(), /*fCheckPOW=*/false, /*fCheckMerkleRoot=*/true) ||
+            IsBlockMutated(block, *expected_height >= GetConsensus().SegwitHeight) ||
+            !CheckSignetBlockSolution(block, GetConsensus(), *expected_height)) {
+            LogError("%s: Errors in Signet block data or block solution at %s\n", __func__, pos.ToString());
+            return false;
+        }
     }
 
     if (expected_hash && block_hash != *expected_hash) {
@@ -1186,7 +1206,7 @@ bool BlockManager::ReadBlock(CBlock& block, const FlatFilePos& pos, const std::o
 bool BlockManager::ReadBlock(CBlock& block, const CBlockIndex& index, const bool lowprio) const
 {
     const FlatFilePos block_pos{WITH_LOCK(cs_main, return index.GetBlockPos())};
-    return ReadBlock(block, block_pos, index.GetBlockHash(), /*lowprio=*/ lowprio);
+    return ReadBlock(block, block_pos, index.GetBlockHash(), /*lowprio=*/ lowprio, index.nHeight);
 }
 
 bool BlockManager::ReadRawBlock(std::vector<uint8_t>& block, const FlatFilePos& pos, const bool lowprio) const
@@ -1235,6 +1255,19 @@ bool BlockManager::ReadRawBlock(std::vector<uint8_t>& block, const FlatFilePos& 
         return false;
     }
 
+    return true;
+}
+
+bool BlockManager::ReadRawBlock(std::vector<uint8_t>& data, const CBlockIndex& index, const bool lowprio) const
+{
+    if (!GetConsensus().signet_blocks) {
+        return ReadRawBlock(data, WITH_LOCK(cs_main, return index.GetBlockPos()), lowprio);
+    }
+    CBlock block;
+    if (!ReadBlock(block, index, lowprio)) return false;
+    data.clear();
+    VectorWriter writer{data, 0};
+    writer << TX_WITH_WITNESS(block);
     return true;
 }
 

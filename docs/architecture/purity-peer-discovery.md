@@ -1,5 +1,17 @@
 # Purity peer discovery
 
+Mainnet's built-in DNS seed list contains only `seed.bitcoinpurity.org.`.
+The trailing dot preserves an absolute DNS name. DNS lookup and service-bit
+filtering use the existing connection code; other networks' DNS seeds,
+AddrMan and explicit peer configuration are unchanged.
+
+Mainnet fixed seeds are the 11 endpoints in `contrib/seeds/nodes_main.txt`,
+serialized as BIP155 address/port tuples in `src/chainparamsseeds.h` using the
+existing generator. Hostnames cannot be stored in this format: node0 and node1
+use the numeric addresses resolved on 2026-10-12, documented in the source
+list. They are not resolved dynamically at node startup. Other networks' fixed
+seeds and the existing fallback/AddrMan behavior are unchanged.
+
 Local services flow from init to CConnman, PeerManager VERSION and local
 CAddress advertisements. VERSION updates AddrMan with SetServices; addr/addrv2
 gossip adds advertised flags with Add. Existing uint64/CompactSize encodings
@@ -23,3 +35,10 @@ connections, anchors, feelers, DNS bootstrap and the 100-attempt cap are retaine
 ProcessNewBlockHeaders still applies the consensus-pinned activation hash.
 PeerManager retains the existing mismatch demotion/disconnection behavior.
 Service advertisement cannot grant chain identity or skip header validation.
+
+ContextualCheckBlockHeader logs an activation-block hash mismatch with
+LogDebug in BCLog::VALIDATION, including the height and received/pinned hashes.
+The mismatch is expected when receiving headers from a non-Purity chain;
+it remains rejected as bad-purity-activation-block. LoadBlockIndex retains
+its ERROR and returns false for a conflicting activation block already stored
+locally, preventing startup with that index.

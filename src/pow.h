@@ -34,6 +34,11 @@ arith_uint256 CalculateASERT(const arith_uint256& refTarget, int64_t nPowTargetS
                              int64_t nHeightDiff, const arith_uint256& powLimit, int64_t nHalfLife);
 unsigned int GetNextASERTWorkRequired(const CBlockIndex* pindexPrev, const CBlockHeader* pblock, const Consensus::Params& params);
 
+/** Same integer ASERT calculation with the Signet-only 239-bit safety bound. */
+arith_uint256 CalculateSignetASERT(const arith_uint256& refTarget, int64_t nPowTargetSpacing, int64_t nTimeDiff,
+                                  int64_t nHeightDiff, const arith_uint256& powLimit, int64_t nHalfLife);
+unsigned int GetNextSignetASERTWorkRequired(const CBlockIndex* pindexPrev, const CBlockHeader* pblock, const Consensus::Params& params);
+
 /**
  * Check a block's claimed nBits against the required value from GetNextWorkRequired.
  *

@@ -5,11 +5,14 @@
 #include <chainparams.h>
 #include <consensus/validation.h>
 #include <kernel/disconnected_transactions.h>
+#include <logging.h>
 #include <node/chainstatemanager_args.h>
 #include <node/kernel_notifications.h>
 #include <node/utxo_snapshot.h>
+#include <pow.h>
 #include <random.h>
 #include <rpc/blockchain.h>
+#include <script/script.h>
 #include <sync.h>
 #include <test/util/chainstate.h>
 #include <test/util/logging.h>
@@ -24,6 +27,8 @@
 
 #include <tinyformat.h>
 
+#include <string>
+#include <unordered_map>
 #include <vector>
 
 #include <boost/test/unit_test.hpp>
@@ -33,6 +38,90 @@ using node::KernelNotifications;
 using node::SnapshotMetadata;
 
 BOOST_FIXTURE_TEST_SUITE(validation_chainstatemanager_tests, TestingSetup)
+
+struct PurityActivationLogSetup : TestChain100Setup {
+    const BCLog::CategoryMask previous_categories{LogInstance().GetCategoryMask()};
+    const BCLog::Level previous_level{LogInstance().LogLevel()};
+    const std::unordered_map<BCLog::LogFlags, BCLog::Level> previous_category_levels{LogInstance().CategoryLevels()};
+    const bool previous_always_print_level{LogInstance().m_always_print_category_level};
+
+    PurityActivationLogSetup()
+    {
+        LogInstance().DisableCategory(BCLog::ALL);
+        LogInstance().SetLogLevel(BCLog::Level::Debug);
+        LogInstance().SetCategoryLogLevel({});
+        LogInstance().m_always_print_category_level = true;
+    }
+
+    ~PurityActivationLogSetup()
+    {
+        LogInstance().DisableCategory(BCLog::ALL);
+        LogInstance().EnableCategory(BCLog::LogFlags{previous_categories});
+        LogInstance().SetLogLevel(previous_level);
+        LogInstance().SetCategoryLogLevel(previous_category_levels);
+        LogInstance().m_always_print_category_level = previous_always_print_level;
+    }
+};
+
+BOOST_FIXTURE_TEST_CASE(purity_activation_header_logging, PurityActivationLogSetup)
+{
+    auto& chainman = *m_node.chainman;
+    const CBlockHeader header{CreateBlock({}, CScript{} << OP_TRUE, chainman.ActiveChainstate())};
+    auto& consensus = const_cast<Consensus::Params&>(chainman.GetConsensus());
+    consensus.nPurityActivationHeight = 101;
+    consensus.hashPurityActivationBlock = uint256::ONE;
+    BOOST_REQUIRE(CheckProofOfWork(header.GetHash(), header.nBits, consensus));
+
+    std::vector<std::string> messages;
+    DebugLogHelper capture{"is not the Purity activation block", [&](const std::string* line) {
+        if (line) messages.push_back(*line);
+        return false;
+    }};
+
+    for (const bool debug_enabled : {false, true}) {
+        if (debug_enabled) LogInstance().EnableCategory(BCLog::VALIDATION);
+        BlockValidationState state;
+        BOOST_CHECK(!chainman.ProcessNewBlockHeaders({&header, 1}, true, state));
+        BOOST_CHECK(state.GetResult() == BlockValidationResult::BLOCK_CONSENSUS);
+        BOOST_CHECK_EQUAL(state.GetRejectReason(), "bad-purity-activation-block");
+        BOOST_CHECK(WITH_LOCK(cs_main, return chainman.m_blockman.LookupBlockIndex(header.GetHash())) == nullptr);
+        if (!debug_enabled) BOOST_CHECK(messages.empty());
+    }
+
+    BOOST_REQUIRE_EQUAL(messages.size(), 1);
+    BOOST_CHECK(messages.front().find("[validation:debug]") != std::string::npos);
+    BOOST_CHECK(messages.front().find("ERROR") == std::string::npos);
+    BOOST_CHECK(messages.front().find(header.GetHash().ToString()) != std::string::npos);
+    BOOST_CHECK(messages.front().find("at height 101") != std::string::npos);
+    BOOST_CHECK(messages.front().find(consensus.hashPurityActivationBlock.ToString()) != std::string::npos);
+
+    consensus.hashPurityActivationBlock = header.GetHash();
+    BlockValidationState state;
+    BOOST_CHECK(chainman.ProcessNewBlockHeaders({&header, 1}, true, state));
+}
+
+BOOST_FIXTURE_TEST_CASE(purity_activation_block_index_error, PurityActivationLogSetup)
+{
+    auto& chainman = *m_node.chainman;
+    LOCK(cs_main);
+    const auto* tip = chainman.ActiveChain().Tip();
+    BOOST_REQUIRE(chainman.m_blockman.WriteBlockIndexDB());
+    auto& consensus = const_cast<Consensus::Params&>(chainman.GetConsensus());
+    consensus.nPurityActivationHeight = tip->nHeight;
+    consensus.hashPurityActivationBlock = uint256::ONE;
+
+    DebugLogHelper capture{"which conflicts with the Purity activation block", [&](const std::string* line) {
+        if (line) {
+            BOOST_CHECK(line->find("[all:error]") != std::string::npos);
+            BOOST_CHECK(line->find(tip->GetBlockHash().ToString()) != std::string::npos);
+            BOOST_CHECK(line->find("at height 100") != std::string::npos);
+            BOOST_CHECK(line->find(consensus.hashPurityActivationBlock.ToString()) != std::string::npos);
+            BOOST_CHECK(line->find("use -reindex") != std::string::npos);
+        }
+        return true;
+    }};
+    BOOST_CHECK(!chainman.LoadBlockIndex());
+}
 
 //! Basic tests for ChainstateManager.
 //!

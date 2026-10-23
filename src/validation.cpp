@@ -2713,11 +2713,50 @@ static unsigned int GetBlockScriptFlags(const CBlockIndex& block_index, const Ch
 
 static bool ContextualCheckBlockHeaderVolatile(const CBlockHeader& block, BlockValidationState& state, const ChainstateManager& chainman, const CBlockIndex* pindexPrev) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
 
+static bool ContextualCheckBlock(const CBlock& block, BlockValidationState& state, const ChainstateManager& chainman,
+                                 const CBlockIndex* pindexPrev, BlockValidationMode mode = BlockValidationMode::Full);
+
+static bool CheckSignetHeaderConstraints(const CBlockHeader& block, BlockValidationState& state,
+                                        const Consensus::Params& params, const CBlockIndex* prev,
+                                        BlockValidationMode mode)
+{
+    const int height = prev ? prev->nHeight + 1 : 0;
+    if (mode == BlockValidationMode::Full) {
+        if (!Consensus::SignetForkBlockPermitted(height, block.GetHash(), params)) {
+            return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-signet-fork-history");
+        }
+        if (!Consensus::PurityActivationBlockPermitted(height, block.GetHash(), params)) {
+            LogDebug(BCLog::VALIDATION, "Signet activation hash mismatch height=%d received=%s expected=%s\n",
+                     height, block.GetHash().ToString(), params.hashPurityActivationBlock.ToString());
+            return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-purity-activation-block");
+        }
+    }
+    if ((height == params.nAsertAnchorHeight && params.nSignetAsertAnchorBits && block.nBits != params.nSignetAsertAnchorBits) ||
+        (height == params.nAsertAnchorHeight - 1 && params.nSignetAsertAnchorParentTime && block.nTime != params.nSignetAsertAnchorParentTime)) {
+        return state.Invalid(BlockValidationResult::BLOCK_INVALID_HEADER, "bad-signet-asert-anchor");
+    }
+    if (height >= params.nPurityActivationHeight) {
+        const CBlockIndex* anchor = prev ? prev->GetAncestor(params.nAsertAnchorHeight) : nullptr;
+        if (!anchor || !anchor->pprev ||
+            (!params.hashSignetAsertAnchor.IsNull() && anchor->GetBlockHash() != params.hashSignetAsertAnchor) ||
+            (!params.hashSignetAsertAnchorParent.IsNull() && anchor->pprev->GetBlockHash() != params.hashSignetAsertAnchorParent) ||
+            (params.nSignetAsertAnchorBits && anchor->nBits != params.nSignetAsertAnchorBits) ||
+            (params.nSignetAsertAnchorParentTime && anchor->pprev->nTime != params.nSignetAsertAnchorParentTime)) {
+            return state.Invalid(BlockValidationResult::BLOCK_INVALID_HEADER, "bad-signet-asert-anchor");
+        }
+    }
+    if (prev && !CheckDifficultyBits(block.nBits, GetNextWorkRequired(prev, &block, params), height, params)) {
+        return state.Invalid(BlockValidationResult::BLOCK_INVALID_HEADER, "bad-diffbits", "incorrect proof of work");
+    }
+    return true;
+}
+
+
 /** Apply the effects of this block (with given index) on the UTXO set represented by coins.
  *  Validity checks that depend on the UTXO set are also done; ConnectBlock()
  *  can fail if those validity checks fail (among other reasons). */
 bool Chainstate::ConnectBlock(const CBlock& block, BlockValidationState& state, CBlockIndex* pindex,
-                               CCoinsViewCache& view, bool fJustCheck)
+                               CCoinsViewCache& view, bool fJustCheck, BlockValidationMode mode)
 {
     AssertLockHeld(cs_main);
     assert(pindex);
@@ -2751,6 +2790,18 @@ bool Chainstate::ConnectBlock(const CBlock& block, BlockValidationState& state, 
         }
         LogError("%s: Consensus::CheckBlock: %s\n", __func__, state.ToString());
         return false;
+    }
+
+    if (params.GetConsensus().signet_blocks) {
+        if (mode == BlockValidationMode::UnsignedTemplate && !fJustCheck) {
+            return state.Error("Unsigned Signet template cannot be connected");
+        }
+        if ((!fJustCheck && !CheckProofOfWork(block.GetHash(), block.nBits, params.GetConsensus())) ||
+            !CheckSignetHeaderConstraints(block, state, params.GetConsensus(), pindex->pprev, mode) ||
+            !ContextualCheckBlock(block, state, m_chainman, pindex->pprev, mode)) {
+            if (state.IsValid()) state.Invalid(BlockValidationResult::BLOCK_INVALID_HEADER, "high-hash");
+            return false;
+        }
     }
 
     // verify that the view's current state corresponds to the previous block
@@ -2935,7 +2986,10 @@ bool Chainstate::ConnectBlock(const CBlock& block, BlockValidationState& state, 
     // Check generation tx output sizes if REDUCED_DATA is active
     if (chk_input_rules.test(CheckTxInputsRules::OutputSizeLimit)) {
         TxValidationState tx_state;
-        if (!Consensus::CheckOutputSizes(*block.vtx[0], tx_state)) {
+        const bool valid_outputs = params.GetConsensus().signet_blocks && mode == BlockValidationMode::Full
+            ? CheckSignetCoinbaseOutputSizes(block, params.GetConsensus(), pindex->nHeight, tx_state)
+            : Consensus::CheckOutputSizes(*block.vtx[0], tx_state);
+        if (!valid_outputs) {
             return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS,
                                  tx_state.GetRejectReason(),
                                  tx_state.GetDebugMessage() + " in generation tx " + block.vtx[0]->GetHash().ToString());
@@ -4230,11 +4284,22 @@ void Chainstate::ResetBlockFailureFlags(CBlockIndex *pindex) {
     AssertLockHeld(cs_main);
 
     int nHeight = pindex->nHeight;
+    std::vector<CBlockIndex*> reconsidered_signet;
 
     // Remove the invalidity flag from this block and all its ancestors and descendants.
     for (auto& [_, block_index] : m_blockman.m_block_index) {
         if ((block_index.nStatus & BLOCK_FAILED_MASK) &&
             (block_index.GetAncestor(nHeight) == pindex || pindex->GetAncestor(block_index.nHeight) == &block_index)) {
+            const auto& consensus = m_chainman.GetConsensus();
+            if (consensus.signet_blocks && !consensus.signet_preparing) {
+                BlockValidationState state;
+                if (!CheckSignetHeaderConstraints(block_index.GetBlockHeader(), state, consensus, block_index.pprev, BlockValidationMode::Full)) continue;
+                if (block_index.nHeight >= consensus.nPurityActivationHeight && (block_index.nStatus & BLOCK_HAVE_DATA)) {
+                    CBlock block;
+                    if (!m_blockman.ReadBlock(block, block_index) ||
+                        !ContextualCheckBlock(block, state, m_chainman, block_index.pprev)) continue;
+                }
+            }
             block_index.nStatus &= ~BLOCK_FAILED_MASK;
             m_blockman.m_dirty_blockindex.insert(&block_index);
             if (block_index.IsValid(BLOCK_VALID_TRANSACTIONS) && block_index.HaveNumChainTxs() && setBlockIndexCandidates.value_comp()(m_chain.Tip(), &block_index)) {
@@ -4245,6 +4310,7 @@ void Chainstate::ResetBlockFailureFlags(CBlockIndex *pindex) {
                 m_chainman.m_best_invalid = nullptr;
             }
             m_chainman.m_failed_blocks.erase(&block_index);
+            if (consensus.signet_blocks && !consensus.signet_preparing) reconsidered_signet.push_back(&block_index);
         } else if ((block_index.nStatus & BLOCK_FAILED_MASK) == BLOCK_FAILED_CHILD &&
                    pindex->GetAncestor(block_index.nHeight - 1) == block_index.pprev) {
             // Sibling branches remain invalid when their shared ancestor is reconsidered.
@@ -4252,6 +4318,15 @@ void Chainstate::ResetBlockFailureFlags(CBlockIndex *pindex) {
             block_index.nStatus = (block_index.nStatus & ~BLOCK_FAILED_CHILD) | BLOCK_FAILED_VALID;
             m_blockman.m_dirty_blockindex.insert(&block_index);
             m_chainman.m_failed_blocks.insert(&block_index);
+        }
+    }
+    // Keep descendants of retained failures out of candidates and the best header.
+    std::sort(reconsidered_signet.begin(), reconsidered_signet.end(), CBlockIndexHeightOnlyComparator());
+    for (CBlockIndex* index : reconsidered_signet) {
+        if (index->pprev && (index->pprev->nStatus & BLOCK_FAILED_MASK)) {
+            index->nStatus |= BLOCK_FAILED_CHILD;
+            m_blockman.m_dirty_blockindex.insert(index);
+            setBlockIndexCandidates.erase(index);
         }
     }
 }
@@ -4503,11 +4578,6 @@ bool CheckBlock(const CBlock& block, BlockValidationState& state, const Consensu
     if (!CheckBlockHeader(block, state, consensusParams, fCheckPOW))
         return false;
 
-    // Signet only: check block solution
-    if (consensusParams.signet_blocks && fCheckPOW && !CheckSignetBlockSolution(block, consensusParams)) {
-        return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-signet-blksig", "signet block signature validation failure");
-    }
-
     // Check the merkle root.
     if (fCheckMerkleRoot && !CheckMerkleRoot(block, state)) {
         return false;
@@ -4651,7 +4721,7 @@ arith_uint256 CalculateClaimedHeadersWork(std::span<const CBlockHeader> headers)
  *  in ConnectBlock().
  *  Note that -reindex-chainstate skips the validation that happens here!
  */
-static bool ContextualCheckBlockHeader(const CBlockHeader& block, BlockValidationState& state, BlockManager& blockman, const ChainstateManager& chainman, const CBlockIndex* pindexPrev) EXCLUSIVE_LOCKS_REQUIRED(::cs_main)
+static bool ContextualCheckBlockHeader(const CBlockHeader& block, BlockValidationState& state, BlockManager& blockman, const ChainstateManager& chainman, const CBlockIndex* pindexPrev, BlockValidationMode mode = BlockValidationMode::Full) EXCLUSIVE_LOCKS_REQUIRED(::cs_main)
 {
     AssertLockHeld(::cs_main);
     assert(pindexPrev != nullptr);
@@ -4659,16 +4729,18 @@ static bool ContextualCheckBlockHeader(const CBlockHeader& block, BlockValidatio
 
     // Check proof of work
     const Consensus::Params& consensusParams = chainman.GetConsensus();
-    if (!CheckDifficultyBits(block.nBits, GetNextWorkRequired(pindexPrev, &block, consensusParams), nHeight, consensusParams))
+    if (consensusParams.signet_blocks && !CheckSignetHeaderConstraints(block, state, consensusParams, pindexPrev, mode)) return false;
+    if (!consensusParams.signet_blocks && !CheckDifficultyBits(block.nBits, GetNextWorkRequired(pindexPrev, &block, consensusParams), nHeight, consensusParams))
         return state.Invalid(BlockValidationResult::BLOCK_INVALID_HEADER, "bad-diffbits", "incorrect proof of work");
 
     // The Purity activation block is pinned to a single hash by consensus.
     // Unlike the checkpoint below, this cannot be disabled with -checkpoints=0.
     // Non-Purity peers (Core/Knots) are expected to announce a different block
     // here; reject it without treating them as malicious (see net_processing).
-    if (!Consensus::PurityActivationBlockPermitted(nHeight, block.GetHash(), consensusParams)) {
-        LogPrintf("ERROR: %s: block %s at height %d is not the Purity activation block %s\n", __func__,
-                  block.GetHash().ToString(), nHeight, consensusParams.hashPurityActivationBlock.ToString());
+    if (!(consensusParams.signet_blocks && mode == BlockValidationMode::UnsignedTemplate) &&
+        !Consensus::PurityActivationBlockPermitted(nHeight, block.GetHash(), consensusParams)) {
+        LogDebug(BCLog::VALIDATION, "%s: block %s at height %d is not the Purity activation block %s\n", __func__,
+                 block.GetHash().ToString(), nHeight, consensusParams.hashPurityActivationBlock.ToString());
         return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-purity-activation-block");
     }
 
@@ -4774,7 +4846,7 @@ static bool ContextualCheckBlockHeaderVolatile(const CBlockHeader& block, BlockV
  *  in ConnectBlock().
  *  Note that -reindex-chainstate skips the validation that happens here!
  */
-static bool ContextualCheckBlock(const CBlock& block, BlockValidationState& state, const ChainstateManager& chainman, const CBlockIndex* pindexPrev)
+static bool ContextualCheckBlock(const CBlock& block, BlockValidationState& state, const ChainstateManager& chainman, const CBlockIndex* pindexPrev, BlockValidationMode mode)
 {
     const int nHeight = pindexPrev == nullptr ? 0 : pindexPrev->nHeight + 1;
 
@@ -4828,6 +4900,10 @@ static bool ContextualCheckBlock(const CBlock& block, BlockValidationState& stat
         return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-blk-weight", strprintf("%s : weight limit failed", __func__));
     }
 
+    if (chainman.GetConsensus().signet_blocks && mode == BlockValidationMode::Full &&
+        !CheckSignetBlockSolution(block, chainman.GetConsensus(), nHeight)) {
+        return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-signet-blksig", "signet block signature validation failure");
+    }
     return true;
 }
 
@@ -5186,7 +5262,7 @@ bool TestBlockValidity(BlockValidationState& state,
                        const CBlock& block,
                        CBlockIndex* pindexPrev,
                        bool fCheckPOW,
-                       bool fCheckMerkleRoot)
+                       bool fCheckMerkleRoot, BlockValidationMode mode)
 {
     AssertLockHeld(cs_main);
     assert(pindexPrev && pindexPrev == chainstate.m_chain.Tip());
@@ -5198,7 +5274,7 @@ bool TestBlockValidity(BlockValidationState& state,
     indexDummy.phashBlock = &block_hash;
 
     // NOTE: CheckBlockHeader is called by CheckBlock
-    if (!ContextualCheckBlockHeader(block, state, chainstate.m_blockman, chainstate.m_chainman, pindexPrev)) {
+    if (!ContextualCheckBlockHeader(block, state, chainstate.m_blockman, chainstate.m_chainman, pindexPrev, mode)) {
         LogError("%s: Consensus::ContextualCheckBlockHeader: %s\n", __func__, state.ToString());
         return false;
     }
@@ -5206,11 +5282,11 @@ bool TestBlockValidity(BlockValidationState& state,
         LogError("%s: Consensus::CheckBlock: %s\n", __func__, state.ToString());
         return false;
     }
-    if (!ContextualCheckBlock(block, state, chainstate.m_chainman, pindexPrev)) {
+    if (!ContextualCheckBlock(block, state, chainstate.m_chainman, pindexPrev, mode)) {
         LogError("%s: Consensus::ContextualCheckBlock: %s\n", __func__, state.ToString());
         return false;
     }
-    if (!chainstate.ConnectBlock(block, state, &indexDummy, viewNew, true)) {
+    if (!chainstate.ConnectBlock(block, state, &indexDummy, viewNew, true, mode)) {
         return false;
     }
     assert(state.IsValid());
@@ -5242,6 +5318,10 @@ bool Chainstate::LoadChainTip()
     // Load pointer to end of best chain
     CBlockIndex* pindex = m_blockman.LookupBlockIndex(coins_cache.GetBestBlock());
     if (!pindex) {
+        return false;
+    }
+    if (m_chainman.GetConsensus().signet_blocks && (pindex->nStatus & BLOCK_FAILED_MASK)) {
+        LogError("Active chain conflicts with configured Signet consensus; restore the preparation backup or reindex\n");
         return false;
     }
     m_chain.SetTip(*pindex);
@@ -5670,7 +5750,7 @@ void Chainstate::ClearBlockIndexCandidates()
     setBlockIndexCandidates.clear();
 }
 
-bool ChainstateManager::LoadBlockIndex()
+bool ChainstateManager::LoadBlockIndex(bool recheck_signet)
 {
     AssertLockHeld(cs_main);
     // Load block index from databases
@@ -5686,12 +5766,39 @@ bool ChainstateManager::LoadBlockIndex()
 
         for (CBlockIndex* pindex : vSortedByHeight) {
             if (m_interrupt) return false;
+            const auto& consensus = GetConsensus();
+            if (consensus.signet_blocks && !consensus.signet_preparing) {
+                if (recheck_signet && pindex->nHeight >= consensus.nPurityActivationHeight &&
+                    (pindex->nStatus & BLOCK_VALID_MASK) > BLOCK_VALID_TRANSACTIONS) {
+                    pindex->nStatus = (pindex->nStatus & ~BLOCK_VALID_MASK) | BLOCK_VALID_TRANSACTIONS;
+                    m_blockman.m_dirty_blockindex.insert(pindex);
+                }
+                BlockValidationState state;
+                if (pindex->pprev && (pindex->pprev->nStatus & BLOCK_FAILED_MASK)) {
+                    pindex->nStatus |= BLOCK_FAILED_CHILD;
+                    m_blockman.m_dirty_blockindex.insert(pindex);
+                } else if (!CheckSignetHeaderConstraints(pindex->GetBlockHeader(), state, consensus, pindex->pprev, BlockValidationMode::Full)) {
+                    pindex->nStatus |= BLOCK_FAILED_VALID;
+                    m_blockman.m_dirty_blockindex.insert(pindex);
+                } else if (recheck_signet && pindex->nHeight >= consensus.nPurityActivationHeight && !(pindex->nStatus & BLOCK_FAILED_MASK)) {
+                    // Cached legacy validation cannot authorize a post-fork candidate.
+                    if (pindex->nStatus & BLOCK_HAVE_DATA) {
+                        CBlock block;
+                        if (!m_blockman.ReadBlock(block, *pindex) ||
+                            !CheckBlock(block, state, consensus) ||
+                            !ContextualCheckBlock(block, state, *this, pindex->pprev)) {
+                            pindex->nStatus |= BLOCK_FAILED_VALID;
+                        }
+                    }
+                    m_blockman.m_dirty_blockindex.insert(pindex);
+                }
+            }
             // A conflicting block at the Purity activation height can only be
             // a leftover accepted before this software enforced the pin (new
             // headers are rejected in ContextualCheckBlockHeader). Refuse to
             // start so the user rebuilds the index instead of following a
             // non-Purity chain.
-            if (!Consensus::PurityActivationBlockPermitted(pindex->nHeight, pindex->GetBlockHash(), GetConsensus())) {
+            if (!GetConsensus().signet_blocks && !Consensus::PurityActivationBlockPermitted(pindex->nHeight, pindex->GetBlockHash(), GetConsensus())) {
                 LogError("Block index contains %s at height %d, which conflicts with the Purity activation block %s. "
                          "This block was stored before upgrading; use -reindex to rebuild the block index.\n",
                          pindex->GetBlockHash().ToString(), pindex->nHeight,

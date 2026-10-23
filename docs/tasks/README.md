@@ -34,4 +34,35 @@
 - [TASK-022: Seven-day default maximum tip age](TASK-022.md)
   (includes minimum-chain-work test isolation from the changed default).
 
-- [TASK-023: Node configuration default updates](TASK-023.md)
+- [TASK-023: Activation-block mismatch DEBUG logging](TASK-023.md)
+
+- [TASK-024: Unsigned mainnet package manifest generator](TASK-024.md)
+
+- [TASK-025: Restrict mainnet DNS seeds to the Purity seed](TASK-025.md)
+
+- [TASK-026: Replace mainnet fixed seeds with selected Purity nodes](TASK-026.md)
+
+- [TASK-027: Node configuration default updates](TASK-027.md)
+
+## Purity Signet
+
+- [TASK-PS-000: Baseline and requirement amendments](TASK-PS-000.md)
+- [TASK-PS-001: Signet parameter configuration and isolation](TASK-PS-001.md)
+- [TASK-PS-002: Height-aware signatures and Coinbase commitment](TASK-PS-002.md)
+- [TASK-PS-003: Signet ASERT numeric compatibility](TASK-PS-003.md)
+- [TASK-PS-004: Shared-magic P2P history and fork isolation](TASK-PS-004.md)
+- [TASK-PS-005: Independent signing miner and RPCs](TASK-PS-005.md)
+- [TASK-PS-006: Real parameters and first-block pin freeze](TASK-PS-006.md)
+- [TASK-PS-007: Release and full acceptance](TASK-PS-007.md)
+- [TASK-PS-008: Freeze H immediately before mining](TASK-PS-008.md)
+- [TASK-PS-009: Miner runtime status logging](TASK-PS-009.md)
+- [TASK-PS-010: English deployment guide](TASK-PS-010.md)
+- [TASK-PS-011: Automatic miner signer failover](TASK-PS-011.md)
+
+- [Purity Signet acceptance matrix](../purity-signet-acceptance.md)
+- [Purity Signet operator procedure](../purity-signet-operations.md)
+- [Purity Signet deployment guide](../purity-signet-deployment.md)
+
+- [Signet complete source audit and Linux fuzz](../purity-signet-review.md)
+
+- [Late-H implementation and final validation](../purity-signet-late-h-review.md)

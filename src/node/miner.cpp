@@ -144,6 +144,9 @@ void BlockAssembler::resetBlock()
 
 std::shared_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock()
 {
+    if (m_chainstate.m_chainman.GetConsensus().signet_blocks && m_chainstate.m_chainman.GetConsensus().signet_preparing) {
+        throw std::runtime_error("Signet is preparing; block assembly is disabled");
+    }
     const auto time_start{SteadyClock::now()};
 
     resetBlock();
@@ -216,7 +219,7 @@ std::shared_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock()
 
     BlockValidationState state;
     if (m_options.test_block_validity && !TestBlockValidity(state, chainparams, m_chainstate, *pblock, pindexPrev,
-                                                            /*fCheckPOW=*/false, /*fCheckMerkleRoot=*/false)) {
+                                                            /*fCheckPOW=*/false, /*fCheckMerkleRoot=*/false, BlockValidationMode::UnsignedTemplate)) {
         throw std::runtime_error(strprintf("%s: TestBlockValidity failed: %s", __func__, state.ToString()));
     }
     const auto time_2{SteadyClock::now()};
