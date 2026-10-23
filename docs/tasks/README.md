@@ -42,6 +42,8 @@
 
 - [TASK-026: Replace mainnet fixed seeds with selected Purity nodes](TASK-026.md)
 
+- [TASK-027: Node configuration default updates](TASK-027.md)
+
 ## Purity Signet
 
 - [TASK-PS-000: Baseline and requirement amendments](TASK-PS-000.md)

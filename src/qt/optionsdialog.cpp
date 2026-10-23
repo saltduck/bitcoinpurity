@@ -786,7 +786,7 @@ OptionsDialog::OptionsDialog(QWidget* parent, bool enableWallet)
     datumAddress->setText(QString::fromStdString(gArgs.GetArg("-datumaddress", "")));
     const UniValue datum_info{mining::GetDatumInfo()};
     const bool datum_running{datum_info.exists("running") && datum_info["running"].get_bool()};
-    datumDifficulty->setValue(datum_running ? datum_info["share_difficulty"].getInt<int>() : gArgs.GetIntArg("-datumdiff", 65536));
+    datumDifficulty->setValue(datum_running ? datum_info["share_difficulty"].getInt<int>() : gArgs.GetIntArg("-datumdiff", mining::DEFAULT_DATUM_DIFFICULTY));
     datumCoinbaseTag->setText(QString::fromStdString(gArgs.GetArg("-datumcoinbasetag", std::string{mining::DEFAULT_DATUM_COINBASE_TAG})));
     datumRpcUrl->setText(QString::fromStdString(gArgs.GetArg("-datumrpcurl", "")));
     datumRpcUser->setText(QString::fromStdString(gArgs.GetArg("-datumrpcuser", "")));

@@ -19,6 +19,7 @@ struct NodeContext;
 namespace mining {
 
 inline constexpr std::string_view DEFAULT_DATUM_COINBASE_TAG{"Bitcoin Purity"};
+inline constexpr int64_t DEFAULT_DATUM_DIFFICULTY{262144};
 
 struct DatumMinerStatus {
     std::string worker;

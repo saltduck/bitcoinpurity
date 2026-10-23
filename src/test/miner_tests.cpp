@@ -68,6 +68,22 @@ struct MinerTestingSetup : public TestingSetup {
 
 BOOST_FIXTURE_TEST_SUITE(miner_tests, MinerTestingSetup)
 
+BOOST_AUTO_TEST_CASE(default_block_limits)
+{
+    ArgsManager args;
+    BlockAssembler::Options options;
+    node::ApplyArgsManOptions(args, options);
+    const auto clamped = options.Clamped();
+    BOOST_CHECK_EQUAL(clamped.nBlockMaxSize, 3985000);
+    BOOST_CHECK_EQUAL(clamped.nBlockMaxWeight, 3985000);
+    BOOST_CHECK_EQUAL(clamped.block_reserved_weight, 8000);
+
+    args.ForceSetArg("-blockmaxweight", "2000000");
+    node::ApplyArgsManOptions(args, options);
+    BOOST_CHECK_EQUAL(options.nBlockMaxWeight, 2000000);
+    BOOST_CHECK_EQUAL(options.nBlockMaxSize, MAX_BLOCK_SERIALIZED_SIZE);
+}
+
 static CFeeRate blockMinFeeRate = CFeeRate(DEFAULT_BLOCK_MIN_TX_FEE);
 
 constexpr static struct {

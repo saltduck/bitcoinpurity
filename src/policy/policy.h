@@ -25,13 +25,13 @@ struct MemPoolOptions;
 };
 
 /** Default for -blockmaxsize, which controls the maximum size of block the mining code will create **/
-static const unsigned int DEFAULT_BLOCK_MAX_SIZE = 300000;
+static const unsigned int DEFAULT_BLOCK_MAX_SIZE = 3985000;
 /** Default for -blockprioritysize, maximum space for zero/low-fee transactions **/
 static const unsigned int DEFAULT_BLOCK_PRIORITY_SIZE = 100000;
 /** Minimum priority for transactions to be accepted into the priority area **/
 static const double MINIMUM_TX_PRIORITY = COIN * 144 / 250;
 /** Default for -blockmaxweight, which controls the range of block weights the mining code will create **/
-static constexpr unsigned int DEFAULT_BLOCK_MAX_WEIGHT{DEFAULT_BLOCK_MAX_SIZE * WITNESS_SCALE_FACTOR};
+static constexpr unsigned int DEFAULT_BLOCK_MAX_WEIGHT{3985000};
 /** Default for BlockCreateOptions.block_reserved_size **/
 static constexpr unsigned int DEFAULT_BLOCK_RESERVED_SIZE{1000};
 /** Default for -blockreservedweight **/
@@ -42,7 +42,7 @@ static constexpr unsigned int DEFAULT_BLOCK_RESERVED_WEIGHT{8000};
  * Setting a lower value is prevented at startup. */
 static constexpr unsigned int MINIMUM_BLOCK_RESERVED_WEIGHT{2000};
 /** Default for -blockmintxfee, which sets the minimum feerate for a transaction in blocks created by mining code **/
-static constexpr unsigned int DEFAULT_BLOCK_MIN_TX_FEE{1000};
+static constexpr unsigned int DEFAULT_BLOCK_MIN_TX_FEE{400};
 /** The maximum weight for transactions we're willing to relay/mine */
 static constexpr int32_t MAX_STANDARD_TX_WEIGHT{400000};
 /** The minimum non-witness size for transactions we're willing to relay/mine: one larger than 64  */
@@ -54,7 +54,7 @@ static constexpr unsigned int MAX_STANDARD_TX_SIGOPS_COST{MAX_BLOCK_SIGOPS_COST/
 /** The maximum number of potentially executed legacy signature operations in a single standard tx */
 static constexpr unsigned int MAX_TX_LEGACY_SIGOPS{2'500};
 /** Default for -incrementalrelayfee, which sets the minimum feerate increase for mempool limiting or replacement **/
-static constexpr unsigned int DEFAULT_INCREMENTAL_RELAY_FEE{1000};
+static constexpr unsigned int DEFAULT_INCREMENTAL_RELAY_FEE{10};
 static constexpr CAmount CORE_INCREMENTAL_RELAY_FEE{100};
 /** Default for -maxscriptsize */
 static constexpr unsigned int DEFAULT_SCRIPT_SIZE_POLICY_LIMIT{1650};
@@ -105,7 +105,7 @@ static const std::string DEFAULT_DUST_DYNAMIC{"off"};
 static const int DEFAULT_DUST_RELAY_MULTIPLIER{3'000};
 static const std::string DEFAULT_SPKREUSE{"allow"};
 /** Default for -minrelaytxfee, minimum relay fee for transactions */
-static constexpr unsigned int DEFAULT_MIN_RELAY_TX_FEE{1000};
+static constexpr unsigned int DEFAULT_MIN_RELAY_TX_FEE{100};
 /** Default for -limitancestorcount, max number of in-mempool ancestors */
 static constexpr unsigned int DEFAULT_ANCESTOR_LIMIT{25};
 /** Default for -limitancestorsize, maximum kilobytes of tx + all in-mempool ancestors */

@@ -153,6 +153,7 @@ BASE_SCRIPTS = [
     'wallet_basic.py --legacy-wallet',
     'wallet_basic.py --descriptors',
     'feature_maxtipage.py',
+    'feature_policy_defaults.py',
     'wallet_multiwallet.py --legacy-wallet',
     'wallet_multiwallet.py --descriptors',
     'wallet_multiwallet.py --usecli',

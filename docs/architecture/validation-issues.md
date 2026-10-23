@@ -1,5 +1,16 @@
 # Validation and signed-manifest architecture
 
+Fee defaults are expressed in sat/kvB: relay 100, incremental replacement 10,
+mining 400 and wallet fallback 1000. Relay and incremental defaults are
+independent; their compile-time check requires relay >= incremental. The
+existing explicit incremental-fee override can still raise the relay floor.
+Fee-filter rounding orders the native and Core incremental-fee defaults
+before selecting a bucket floor, supporting the native default below Core's.
+Block size and weight defaults are independently 3985000; the weight default
+is not derived by multiplying the size by four. Mainnet assumevalid points to
+the user-selected pre-fork block 961631. Minimum chain work, consensus limits,
+fee-estimator buckets and block reservation are unchanged.
+
 `DEFAULT_MAX_TIP_AGE` is 168 hours (604800 seconds). It initializes
 `ChainstateManagerOpts::max_tip_age` and supplies the debug help default.
 `node::ApplyArgsManOptions` retains explicit `-maxtipage` overrides.
