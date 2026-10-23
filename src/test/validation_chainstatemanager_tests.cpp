@@ -999,7 +999,7 @@ BOOST_FIXTURE_TEST_CASE(parking_disabled_by_default_on_test_chains, BasicTesting
         ChainstateManager::Options options{.chainparams=*params, .datadir={}, .notifications=notifications};
         BOOST_REQUIRE(node::ApplyArgsManOptions(*m_node.args, options));
         BOOST_CHECK(!options.park_deep_reorg);
-        BOOST_CHECK_EQUAL(options.park_reorg_depth, 6);
+        BOOST_CHECK_EQUAL(options.park_reorg_depth, 3);
     }
 }
 
