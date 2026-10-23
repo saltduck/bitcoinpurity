@@ -5,8 +5,8 @@
 """Park competing chains that would rewind more than -parkreorgdepth blocks.
 
 Deep-reorg parking is a node-local chain-selection policy, not consensus.
-The default threshold is 6: a 6-block reorg proceeds automatically, a
-7-block reorg is parked for manual review.
+The default threshold is 3: a 3-block reorg proceeds automatically, a
+4-block reorg is parked for manual review.
 """
 
 from io import BytesIO
@@ -26,7 +26,7 @@ class ParkDeepReorgTest(BitcoinTestFramework):
         self.num_nodes = 2
         self.setup_clean_chain = True
         self.extra_args = [
-            ["-parkdeepreorg=1", "-parkreorgdepth=6", "-checkblockindex=1"],
+            ["-parkdeepreorg=1", "-checkblockindex=1"],
             ["-parkdeepreorg=0", "-checkblockindex=1"],
         ]
 
@@ -82,15 +82,15 @@ class ParkDeepReorgTest(BitcoinTestFramework):
         # Adapted from ABC 335857dbf6fc706910c1e888ae3afd3cecf859e0
         # abc_feature_parkedchain.py and BCHN
         # 07576013c91ff4a3a74acd85f189c69121cdad1b abc-parkedchain.py.
-        # Preserve Purity's rewind > 6 rule and explicit unpark, rather than
+        # Preserve Purity's rewind > 3 rule and explicit unpark, rather than
         # upstream's numeric thresholds or delayed PoW-based recovery.
-        for rewind in (1, 2, 5, 6):
-            self.log.info("Default depth=6: %d-block rewind follows automatically", rewind)
+        for rewind in (1, 2, 3):
+            self.log.info("Default depth=3: %d-block rewind follows automatically", rewind)
             _, _, long_height = self._build_fork(0, 1, rewind=rewind)
             self._connect_expect_follow(0, 1, long_height)
 
-        for rewind in (7, 8, 20):
-            self.log.info("Default depth=6: %d-block rewind is parked", rewind)
+        for rewind in (4, 5, 7, 20):
+            self.log.info("Default depth=3: %d-block rewind is parked", rewind)
             fork_hash, short_height, _ = self._build_fork(0, 1, rewind=rewind)
             competing_tip = self.nodes[1].getbestblockhash()
             self._connect_expect_parked(0, 1, short_height, competing_tip)

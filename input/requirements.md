@@ -360,7 +360,7 @@ precedence chain.
 - Deep-reorg parking is determined in `AcceptBlock`, after contextual checks
   and before `ReceivedBlockTransactions` can propagate candidates. Use the
   active tip and fork point; park the first competing block when rewind exceeds
-  `parkreorgdepth` (default 6), independently of delivery order and `pblock`.
+  `parkreorgdepth` (default 3), independently of delivery order and `pblock`.
   Persist the root status, exclude parked descendants, and retain the additive
   `getchaintips.parked` boolean. `unparkblock` restores normal activation without
   a special `ActivateBestChain` approval mode. Parking remains local policy;

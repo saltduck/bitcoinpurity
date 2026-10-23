@@ -22,7 +22,8 @@ clock offset continues to keep it in IBD after the minimum work is reached.
 `ChainstateManager::AcceptBlock` evaluates the active-chain fork depth after
 contextual checks and successful block storage, immediately before
 `ReceivedBlockTransactions`. It marks the first competing header index
-`BLOCK_PARKED` even if that ancestor's body is missing, and dirties the index.
+`BLOCK_PARKED` when the rewind exceeds the configured depth (default 3),
+even if that ancestor's body is missing, and dirties the index.
 `TryAddBlockIndexCandidate` excludes parked ancestry and records descendant
 `BLOCK_PARKED_CHILD`; `FindMostWorkChain` retains its ancestor exclusion.
 `UnparkBlock` clears relevant descendants and ancestors before restoring

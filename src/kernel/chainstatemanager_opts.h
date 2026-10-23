@@ -25,7 +25,7 @@ static constexpr bool DEFAULT_CHECKPOINTS_ENABLED{true};
 static constexpr bool DEFAULT_PARK_DEEP_REORG{false};
 //! Local chain-selection policy: park a competing chain if activating it
 //! would rewind more than this many active-chain blocks. Not a consensus rule.
-static constexpr int DEFAULT_PARK_REORG_DEPTH{6};
+static constexpr int DEFAULT_PARK_REORG_DEPTH{3};
 static constexpr int MIN_PARK_REORG_DEPTH{1};
 static constexpr auto DEFAULT_MAX_TIP_AGE{168h};
 

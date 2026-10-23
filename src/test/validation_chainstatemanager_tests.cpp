@@ -963,7 +963,7 @@ BOOST_FIXTURE_TEST_CASE(chainstatemanager_args, BasicTestingSetup)
     BOOST_CHECK(!get_opts({"-minimumchainwork=01234567890123456789012345678901234567890123456789012345678901234"})); // > 64 hex chars
 
     // -parkreorgdepth is a node-local policy parameter, not consensus.
-    BOOST_CHECK_EQUAL(get_valid_opts({}).park_reorg_depth, DEFAULT_PARK_REORG_DEPTH);
+    BOOST_CHECK_EQUAL(get_valid_opts({}).park_reorg_depth, 3);
     BOOST_CHECK_EQUAL(get_valid_opts({"-parkreorgdepth=1"}).park_reorg_depth, 1);
     BOOST_CHECK_EQUAL(get_valid_opts({"-parkreorgdepth=4"}).park_reorg_depth, 4);
     BOOST_CHECK_EQUAL(get_valid_opts({"-parkreorgdepth=6"}).park_reorg_depth, 6);
@@ -999,7 +999,7 @@ BOOST_FIXTURE_TEST_CASE(parking_disabled_by_default_on_test_chains, BasicTesting
         ChainstateManager::Options options{.chainparams=*params, .datadir={}, .notifications=notifications};
         BOOST_REQUIRE(node::ApplyArgsManOptions(*m_node.args, options));
         BOOST_CHECK(!options.park_deep_reorg);
-        BOOST_CHECK_EQUAL(options.park_reorg_depth, 6);
+        BOOST_CHECK_EQUAL(options.park_reorg_depth, 3);
     }
 }
 

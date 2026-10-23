@@ -199,11 +199,11 @@ Default local policy:
 
 - Parking is enabled on mainnet (`-parkdeepreorg=1`) and disabled by default
   on test chains.
-- The default threshold is **6** (`-parkreorgdepth=6`).
+- The default threshold is **3** (`-parkreorgdepth=3`).
 - If connecting a competing chain would rewind the active chain by **more
-  than 6** blocks (`rewind > 6`), mark the competing chain **parked** and do
+  than 3** blocks (`rewind > 3`), mark the competing chain **parked** and do
   not reorg automatically.
-- Reorgs of 6 blocks or fewer proceed under normal most-work chain selection.
+- Reorgs of 3 blocks or fewer proceed under normal most-work chain selection.
 
 Operators may override the threshold with `-parkreorgdepth=<n>` (minimum 1).
 For example, `parkreorgdepth=4` means reorg depths 1–4 may activate
