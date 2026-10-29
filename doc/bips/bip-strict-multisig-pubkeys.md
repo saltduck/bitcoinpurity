@@ -1,18 +1,18 @@
 ```
   BIP: ?
   Layer: Consensus (soft fork)
-  Title: Strict Multisig Public Key Validation
+  Title: Strict Multisig Public Keys and Minimum Threshold
   Authors: [Author Name] <[author email]>
   Status: Draft
   Type: Specification
   Assigned: ?
   License: BSD-2-Clause
-  Version: 0.1.0
+  Version: 0.2.0
 ```
 
 ## Abstract
 
-This proposal requires every public-key operand consumed by an executed `OP_CHECKMULTISIG` or `OP_CHECKMULTISIGVERIFY` instruction to encode a fully valid secp256k1 public key. Only 33-byte compressed and 65-byte uncompressed public keys are permitted. The existing threshold, matching order, signature-verification algorithm, and signature count are unchanged.
+This proposal requires every public-key operand consumed by an executed `OP_CHECKMULTISIG` or `OP_CHECKMULTISIGVERIFY` instruction to encode a fully valid secp256k1 public key. Only 33-byte compressed and 65-byte uncompressed public keys are permitted. It also requires the multisignature threshold `n` and number of public-key operands `m` to satisfy `1 <= n <= m <= 20` and `3 * n >= m` (equivalently, `n >= ceil(m / 3)`). The signature-matching order, ECDSA verification algorithm, and existing rules for producing and checking the `n` signatures remain unchanged.
 
 The rule uses two independent block heights: an **UTXO eligibility height** `H_a` and an **enforcement height** `H_b`, with `H_a < H_b`. It is enforced when an input spends an output created at or above `H_a` in a block at or above `H_b`. Outputs created below `H_a` remain permanently exempt. The restriction has no expiry.
 
@@ -30,7 +30,7 @@ Consequently, a public-key operand that the matching loop never visits can conta
 
 Such direct embedding differs from encoding information into mathematical public keys, signatures, or hashes. This proposal targets the former. It does **not** seek to eliminate steganography, prove ownership of every listed private key, identify file formats, or impose a universal limit on all transaction data.
 
-Relay and mining policies that count data-carrying bytes are useful but do not by themselves change block validity. The proposed check is an objective consensus rule: a multisig public-key operand must actually be a valid public key, whether or not it was used to satisfy the threshold.
+Relay and mining policies that count data-carrying bytes are useful but do not by themselves change block validity. The proposed checks are objective consensus rules: a multisig public-key operand must actually be a valid public key, whether or not it was used to satisfy the threshold, and a multisig operation must meet a minimum one-third signature threshold. The minimum-threshold constraint is an additional restriction on spending-policy expressiveness; it is not required for full public-key validation and its incremental data-reduction benefit and compatibility cost require separate evaluation.
 
 ## Specification
 
@@ -68,15 +68,24 @@ The rule applies in legacy Script (`SigVersion::BASE`) and witness version 0 Scr
 
 Instructions located in non-executed conditional branches are not subject to this runtime check. No static scan of all script bytes is required. The rule does not apply to Tapscript `OP_CHECKSIGADD`: `OP_CHECKMULTISIG` and `OP_CHECKMULTISIGVERIFY` are already disabled in Tapscript under BIP 342. This proposal does not modify `OP_CHECKSIG` or other signature opcodes.
 
-### 3. Public-key operand validity
+### 3. Minimum threshold and public-key operand validity
 
 Upon executing an affected opcode, the interpreter SHALL perform the existing stack-size and multisig-count checks, establishing:
 
-- `m`: the number of public-key operands, with `0 <= m <= MAX_PUBKEYS_PER_MULTISIG`;
-- `n`: the number of supplied signatures, with `0 <= n <= m`; and
+- `m`: the number of public-key operands, with the existing range `0 <= m <= MAX_PUBKEYS_PER_MULTISIG`;
+- `n`: the number of supplied signatures, with the existing range `0 <= n <= m`; and
 - the actual `m` public-key byte strings consumed as operands by that opcode.
 
-For every one of these `m` operands, before the multisig signature-matching loop, the interpreter MUST establish that the operand represents a **fully valid secp256k1 public key** in one of precisely two encodings:
+For an input to which this proposal applies, every executed affected opcode MUST additionally satisfy both of the following consensus conditions:
+
+```
+1 <= n <= m <= 20
+3 * n >= m
+```
+
+The second condition is equivalent to `n >= ceil(m / 3)` and MUST be evaluated using exact integer arithmetic. The input MUST fail consensus script validation when either condition fails, even if the opcode would otherwise return true, return false and be inverted by a later opcode, or be otherwise neutralized by the enclosing script. In particular, `0-of-m`, including `0-of-0`, is invalid under this rule. `n` is the number of signatures required by the currently executed multisig operation, **not** the count of distinct public keys or private-key holders. The existing interpretation of stack-supplied `n` and `m` is unchanged; this restriction applies regardless of whether those values were supplied by static `OP_N` instructions or computed by other script operations.
+
+After the existing argument and operation-count checks, and the additional minimum-threshold check, but before the multisig signature-matching loop, the interpreter MUST establish that **every one** of the `m` operands represents a **fully valid secp256k1 public key** in one of precisely two encodings:
 
 1. **Compressed**: exactly 33 bytes, starting with `0x02` or `0x03`, followed by a 32-byte field element `x` for which the indicated even or odd point `(x, y)` exists on secp256k1.
 2. **Uncompressed**: exactly 65 bytes, starting with `0x04`, followed by 32-byte field elements `x` and `y` representing a point on secp256k1.
@@ -87,29 +96,29 @@ The following are invalid: wrong lengths; wrong prefixes; hybrid encodings (`0x0
 
 A non-grandfathered input MUST fail consensus script validation if **any** one of the `m` operands fails these checks, regardless of which public keys would have been visited by the original matching algorithm.
 
-This requirement applies when `n = 0`, when the multisig result would otherwise be false, and when a subsequent script instruction would otherwise transform a false result into a successful overall script. It also applies to `OP_CHECKMULTISIGVERIFY`.
+Both the minimum-threshold and public-key-validity checks apply regardless of whether the multisig result would otherwise be true or false, including when a subsequent script instruction would otherwise transform a false result into a successful overall script. They also apply to `OP_CHECKMULTISIGVERIFY`. For `n = 0`, the minimum-threshold check itself mandates rejection.
 
 Duplicate fully valid public keys remain permitted. No proof of possession of the corresponding private keys is required.
 
 ### 4. Signature verification remains unchanged
 
-After the checks in Section 3 succeed, the interpreter MUST execute the pre-existing `OP_CHECKMULTISIG` or `OP_CHECKMULTISIGVERIFY` signature-matching algorithm without modifying:
+After the additional threshold and public-key-validity checks in Section 3 succeed, the interpreter MUST execute the pre-existing `OP_CHECKMULTISIG` or `OP_CHECKMULTISIGVERIFY` signature-matching algorithm without modifying:
 
-- the required signature threshold `n`;
+- the threshold `n` supplied to the opcode (subject to Section 3's new lower bound);
 - public-key or signature traversal order;
 - signature-hash construction;
 - ECDSA verification behavior;
-- the number of signatures supplied or required;
+- the number of signatures processed by the original matching algorithm for the permitted value of `n`;
 - `NULLDUMMY`, `NULLFAIL`, or other pre-existing validation rules; or
 - the resulting Boolean/script-stack behavior.
 
-In particular, the interpreter MUST NOT require a signature for every public key and MUST NOT perform additional ECDSA signature verifications merely to validate otherwise unused public keys. The new mandatory work consists of public-key parsing and curve-point validation only.
+In particular, the interpreter MUST NOT require a signature for every public key and MUST NOT perform additional ECDSA signature verifications merely to validate otherwise unused public keys. The new mandatory work consists of a constant-time integer threshold comparison plus public-key parsing and curve-point validation only. The required `n` signatures continue to be checked under the original algorithm; this proposal does not require distinct public keys or distinct signers.
 
 Any public key encountered during the original matching loop is covered by Section 3, including keys whose attempted signature match fails. A public key already checked by the matching loop is not exempt from full curve-point validation.
 
 ### 5. Repetition within and across inputs
 
-Every **executed instance** of an affected opcode in a non-grandfathered input MUST independently satisfy Section 3. This includes scripts containing multiple multisig operations, transactions containing multiple inputs, and transactions in which multiple inputs each execute multiple multisig operations.
+Every **executed instance** of an affected opcode in a non-grandfathered input MUST independently satisfy **both** conditions in Section 3: the minimum-threshold relation and full validity of every public-key operand. This includes scripts containing multiple multisig operations, transactions containing multiple inputs, and transactions in which multiple inputs each execute multiple multisig operations. Validity of one multisig operation does not exempt any other operation in the same input or transaction.
 
 No new transaction-wide limit on the number of `OP_CHECKMULTISIG` invocations is introduced. Existing script-size, operation-count, signature-operation, stack, and block-weight constraints remain in force.
 
@@ -128,6 +137,8 @@ When OP_CHECKMULTISIG or OP_CHECKMULTISIGVERIFY executes:
     enforce all existing stack, m, n, and operation-count rules
 
     if strict_flag:
+        if not (1 <= n <= m <= 20 and 3 * n >= m):
+            fail script immediately
         for key_bytes in all m public-key operands:
             if not IsFullyValidCompressedOrUncompressedSecp256k1(key_bytes):
                 fail script immediately
@@ -154,7 +165,17 @@ Hash-committed scripts (including P2SH and P2WSH) need not be disclosed when the
 
 The original multisig algorithm can stop once `n` signatures have matched. Public-key operands not visited by that algorithm are otherwise untyped byte strings. Requiring all operands to encode actual curve points closes this discrepancy without changing the legitimate ability of backup signers to remain inactive.
 
-The check is unconditional once an affected opcode is executed. Restricting it to successful multisig results would permit bypasses using `n = 0` or scripts that deliberately expect a multisig failure and subsequently invert its Boolean result.
+The checks are unconditional once an affected opcode is executed. Restricting them to successful multisig results would permit bypasses using scripts that deliberately expect a multisig failure and subsequently invert its Boolean result; the new threshold condition independently rules out `n = 0`.
+
+### Why require at least one-third of the public keys as signatures?
+
+The added requirement `3 * n >= m` preserves common low-threshold multisig arrangements such as 1-of-3, 2-of-5, 2-of-6, 3-of-9, 5-of-15, and 7-of-20 while disallowing particularly imbalanced arrangements such as 1-of-4, 2-of-7, 3-of-10, and 3-of-15. The intent is to limit the number of unused public-key operands relative to the required signature count, without imposing a requirement that every public key sign.
+
+For the maximum `m = 20`, the lowest permitted threshold becomes `n = 7`, leaving at most 13 non-signing public-key operands instead of the 19 possible under 1-of-20. In a 3-of-15 example, the lowest permitted threshold becomes 5-of-15. These counts concern the public-key slots left unused by the threshold, not guaranteed independently usable file-data capacity: full curve-point validity is a separate, stricter condition.
+
+The one-third ratio is a **design choice**, not a cryptographic security theorem or a proof of an optimal data limit. In particular, valid repeated public keys and repeated matching signatures remain allowed: increasing `n` does not necessarily require `n` distinct private keys or proportionally more signing work. It also does not impose any transaction-wide or block-wide total-data limit. The incremental deterrence provided by this ratio beyond full public-key validation MUST be assessed against the loss of legitimate low-threshold multisig arrangements before `H_a` and `H_b` are finalized.
+
+Alternatives considered include `n >= 1` alone, `n >= ceil(m / 2)`, and a fixed cap such as `m - n <= 2`. The first has little effect on the unused-key share, while the latter two prohibit a larger set of legitimate low-threshold and backup-signer arrangements. The one-third rule is a provisional balance chosen for this draft; it is normatively specified here so implementations and test vectors can evaluate a concrete rule.
 
 ### Why retain 65-byte uncompressed keys?
 
@@ -164,7 +185,7 @@ Legacy scripts may legitimately include uncompressed secp256k1 public keys. Perm
 
 A 33- or 65-byte array with a plausible prefix is not necessarily a public key. Checking only its length and prefix would still permit intentionally invalid, largely unconstrained data arrays as unused operands. Full curve-point validity makes the rule objectively testable and removes that raw-byte loophole.
 
-This rule is not a proof-of-possession scheme. Encoding information in selected valid elliptic-curve points remains possible; preventing such steganography is expressly outside scope.
+This rule is not a proof-of-possession scheme. Encoding information in selected valid elliptic-curve points remains possible; preventing such steganography is expressly outside scope. In particular, an encoder may preserve much of an intended payload in a compressed point's x-coordinate while searching a small number of other bytes for a valid point. Whether such lightly modified bytes constitute sufficiently "nearly contiguous" file storage under the project's data-abuse objective is an unresolved threat-model question, not a protection guaranteed by the present checks.
 
 ### Why no new signatures or global multisig-operation quota?
 
@@ -182,11 +203,11 @@ Relay policy may separately count suspicious data or reject otherwise consensus-
 
 This is a **soft fork on the Bitcoin Purity chain**: after `H_b`, upgraded validators reject some transactions that older validators would accept. Non-upgraded validating nodes and miners must upgrade to follow the new consensus rule.
 
-An output created below `H_a` retains its original multisig validation semantics when spent at any future height. Outputs created at or above `H_a` are **not** guaranteed permanent spendability under the original semantics: scripts relying on malformed or non-curve multisig public-key operands may become unspendable at `H_b` unless they can be redeemed using another valid spending path.
+An output created below `H_a` retains its original multisig validation semantics when spent at any future height. Outputs created at or above `H_a` are **not** guaranteed permanent spendability under the original semantics: scripts relying on malformed or non-curve multisig public-key operands **or on a multisig threshold below one-third** may become unspendable at `H_b` unless they can be redeemed using another valid spending path.
 
-This risk includes presigned transactions, script-hash outputs whose script is revealed only on spending, and users who continue reusing legacy multisig scripts containing invalid operands. The presence of a valid 33-byte or 65-byte public key is not enough unless the point itself is valid.
+This risk includes presigned transactions, script-hash outputs whose script is revealed only on spending, and users who continue reusing legacy multisig scripts containing invalid operands or disallowed `n:m` ratios. A valid public-key curve point does not compensate for a threshold below `ceil(m / 3)`; a compliant threshold does not compensate for an invalid public key. This compatibility impact is broader than the public-key-validation requirement alone.
 
-Existing standard multisig constructions whose listed keys are all real compressed or uncompressed secp256k1 keys, including those with unused backup signers, retain the same n-of-m authorization semantics. Identical-key duplication remains permitted.
+Existing multisig constructions whose listed keys are all real compressed or uncompressed secp256k1 keys **and whose threshold satisfies `3 * n >= m`** retain the same n-of-m authorization semantics, including unused backup signers. Otherwise-valid multisig constructions with lower thresholds, such as 1-of-4, 2-of-7, 3-of-10, and 3-of-15, become invalid for non-grandfathered inputs after `H_b`, irrespective of whether their public keys are fully valid. Identical-key duplication remains permitted.
 
 The rule changes neither transaction serialization nor addresses, and it does not alter the behavior of scripts in branches that are not executed. Transactions may contain a mixture of grandfathered and non-grandfathered inputs.
 
@@ -198,15 +219,23 @@ Implementations MUST account for chain reorganizations that change UTXO creation
 
 All required new cryptographic operations are public-key parsing and curve-point validation, not signature verification. `OP_CHECKMULTISIG` already enforces at most 20 public-key operands per invocation. In legacy and witness-version-0 scripts, the existing 201-operation budget also charges the public-key count for each multisig invocation. Thus, within one script execution, the number of newly parsed multisig operands is bounded by the existing operation budget.
 
-Nevertheless, a malicious block may contain many script executions. Implementations SHOULD benchmark worst-case blocks containing numerous valid and invalid points, duplicate keys, `0-of-m` constructions, and repeated multisig operations. Caching already parsed points is an optional optimization and MUST NOT change observable consensus behavior.
+The new `3 * n >= m` comparison is inexpensive and MUST NOT introduce additional ECDSA verification. It does not guarantee increased computational costs for the transaction creator because repeated valid keys and signatures remain permitted. Nevertheless, a malicious block may contain many script executions. Implementations SHOULD benchmark worst-case blocks containing numerous valid and invalid points, duplicate keys, rejected `0-of-m` constructions, boundary-ratio multisigs, and repeated multisig operations. Caching already parsed points is an optional optimization and MUST NOT change observable consensus behavior.
 
 ### Historical-UTXO stockpiling
 
 An attacker may stockpile outputs created before `H_a` and spend them after `H_b` under the grandfathered rules. The amount of such future activity is limited by the pre-`H_a` UTXO inventory, not eliminated. Choosing `H_a` early reduces the preparation opportunity but does not justify unexpectedly restricting previously created legitimate outputs.
 
-### Scope and remaining data channels
+### Scope, cumulative capacity, and remaining data channels
 
-This proposal prevents non-public-key arbitrary byte strings from being used as multisig public-key operands in affected spends. It does not prevent data encoded into actual public keys, signatures, hashes, ordinary script pushes, dead branches, witness-stack arguments, or other consensus-valid structures. In particular, it is **not** a general transaction data-budget rule and does not by itself guarantee that a block contains no large file payloads.
+This proposal prevents non-public-key arbitrary byte strings from being used as multisig public-key operands in affected spends and limits each executed multisig's unused public-key operands to at most `m - ceil(m / 3)`. The additional ratio limits **per-operation** unused slots, not their cumulative total within an input, transaction, or block. Attackers can execute multiple qualifying multisig operations, use multiple inputs, or use multiple transactions; existing script operation, signature-operation, stack, and weight limits still apply, but no new aggregate data budget is introduced.
+
+It does not prevent data encoded into actual public keys, signatures, hashes, ordinary script pushes, dead branches, witness-stack arguments, or other consensus-valid structures. Using compressed-curve-point search, an attacker may preserve substantial runs of original file bytes while modifying a few bytes to form valid points. That encoding may be inexpensive; the minimum threshold does not make such reconstruction cryptographically infeasible. Whether this qualifies as "large, nearly contiguous" storage for purposes of a broader consensus policy requires a separate quantitative threat-model decision. In particular, this proposal is **not** a general transaction data-budget rule and does not by itself guarantee that a block contains no large file payloads.
+
+### Threshold compatibility and open effectiveness questions
+
+The minimum-threshold requirement removes legitimate low-threshold signing arrangements even when every key is mathematically valid. This is independent of the malformed-key issue addressed by the rest of the proposal. Prior to choosing deployment heights, the deploying chain SHOULD audit confirmed script reveals and representative wallet/contract implementations, including 1-of-4, 2-of-7, 3-of-10, 3-of-15, and dynamic stack-generated `n`/`m`. Such a historical scan cannot fully reveal never-spent script-hash UTXOs, so it is not a complete measure of compatibility risk.
+
+The following security and policy questions remain open and do not relax the normative threshold stated in this draft: (1) how much additional suppression the one-third rule delivers beyond full curve validation; (2) whether repeated public keys make the expected signing-cost increase negligible; (3) how much data can be embedded across many permitted multisig invocations and inputs under existing resource limits; and (4) whether cheaply constructed valid curve points containing largely unmodified file substrings fall inside the desired notion of nearly contiguous storage. These questions MUST be resolved or explicitly accepted as limitations before finalizing the deployment.
 
 ## Deployment
 
@@ -240,9 +269,10 @@ The implementation was expected to:
 1. Define the two fixed heights in its chain consensus parameters.
 2. Introduce a distinct mandatory script-verification flag, for example `SCRIPT_VERIFY_STRICT_MULTISIG_PUBKEYS`.
 3. Activate the flag at `H_b`, with per-input relaxation for coins created below `H_a`, using the existing UTXO-height-aware validation mechanism.
-4. Add the unconditional, full-point-validation loop to both affected opcodes' shared interpreter case after stack/count validation and before ECDSA matching.
-5. Preserve existing legacy/P2SH/P2WSH checks and signing semantics.
-6. Handle mempool, same-block parent/child spends, reorgs, cached execution results, and block connection consistently.
+4. Check `1 <= n <= m <= 20` and `3 * n >= m` for every affected executed opcode under the new flag, after existing stack/count validation and before ECDSA matching.
+5. Add the unconditional, full-point-validation loop to both affected opcodes' shared interpreter case after threshold validation and before ECDSA matching.
+6. Preserve existing legacy/P2SH/P2WSH checks and ECDSA matching semantics.
+7. Handle mempool, same-block parent/child spends, reorgs, cached execution results, and block connection consistently.
 
 Relevant pre-change implementation references:
 
@@ -259,13 +289,13 @@ Relevant pre-change implementation references:
 | T01 | 3-of-15 multisig: three valid signing keys; twelve unused 256-byte arbitrary data operands | Reject |
 | T02 | Same construction, but spent UTXO created at `H_a - 1` | Accept under pre-existing rules |
 | T03 | Same construction, UTXO created at `H_a`, spent at `H_b - 1` | Accept under pre-existing rules |
-| T04 | 3-of-15 with fifteen valid compressed curve points and three valid signatures | Accept |
+| T04 | 5-of-15 with fifteen valid compressed curve points and five valid signatures | Accept |
 | T05 | Valid uncompressed 65-byte keys with prefix `0x04` in legacy/P2SH multisig | Accept |
 | T06 | One unused operand has length 32, 64, or 256 bytes | Reject |
 | T07 | One unused operand has 33 bytes and `0x02`/`0x03` prefix but invalid curve coordinates | Reject |
 | T08 | One unused operand has 65 bytes and `0x04` prefix but invalid curve coordinates | Reject |
 | T09 | One unused operand is a valid-looking 65-byte hybrid (`0x06`/`0x07`) encoding | Reject |
-| T10 | `0-of-m` executed with an invalid public-key operand; no ECDSA signatures requested | Reject |
+| T10 | `0-of-m` executed with **all valid** public-key operands and no ECDSA signatures | Reject: threshold below minimum |
 | T11 | Multisig produces false and a subsequent `OP_NOT` would produce true, but one public-key operand is invalid | Reject |
 | T12 | Executed `OP_CHECKMULTISIGVERIFY` with an invalid operand | Reject |
 | T13 | Multisig instruction occurs only in a non-executed branch | New rule imposes no check |
@@ -277,7 +307,22 @@ Relevant pre-change implementation references:
 | T19 | A reorganization changes the relevant coin's creation height across `H_a` | Re-evaluate according to the new active-chain height |
 | T20 | Valid 65-byte uncompressed key in P2WSH | No rejection from this rule; other consensus/policy rules remain applicable |
 
-Vectors MUST additionally exercise boundaries `H_a - 1`, `H_a`, `H_b - 1`, and `H_b`; both opcodes; 0, 1, and 20 public-key operands; mixed-input flag handling; script caches; and an attempted policy bypass via direct block submission. A test passed by `testmempoolaccept` alone is not evidence of block-level consensus validity.
+| T21 | 3-of-15 with fifteen valid compressed curve points and three valid signatures | Reject: `3 * 3 < 15` |
+| T22 | 1-of-3 with three fully valid public keys and one valid signature | Accept: boundary `3 * 1 == 3` |
+| T23 | 1-of-4 with four fully valid public keys and one valid signature | Reject: `3 * 1 < 4` |
+| T24 | 2-of-6 with six fully valid public keys and two valid signatures | Accept: boundary `3 * 2 == 6` |
+| T25 | 2-of-7 with seven fully valid public keys and two valid signatures | Reject: `3 * 2 < 7` |
+| T26 | 7-of-20 with twenty fully valid public keys and seven valid signatures | Accept: minimum threshold for `m = 20` |
+| T27 | `0-of-0` with no public keys or signatures, when the opcode would previously succeed | Reject: `n >= 1` |
+| T28 | 7-of-20 with enough repeated valid public keys and repeated matching valid ECDSA signatures to satisfy the existing matching order | No rejection solely for duplicated keys/signatures |
+| T29 | An executed multisig obtains `n` and `m` from stack computations instead of literal `OP_N` instructions, with an otherwise valid but below-one-third ratio | Reject: apply to actual stack operands |
+| T30 | Multiple executed multisigs in one eligible input, all valid keys, with only the second operation violating `3 * n >= m` | Reject |
+| T31 | Multiple eligible inputs each satisfy the one-third threshold independently, potentially carrying data inside valid curve points | No rejection solely because of aggregate unused slots; evaluate other applicable rules |
+| T32 | A 1-of-4 multisig with all valid keys, funded at `H_a - 1` and spent after `H_b` | No rejection from this new rule (grandfathered) |
+| T33 | A 1-of-4 multisig with all valid keys, funded at `H_a` and spent at `H_b - 1` | No rejection from this new rule (not yet enforced) |
+| T34 | A 1-of-4 multisig with all valid keys, funded at `H_a` and spent at `H_b` | Reject: threshold below minimum |
+
+Vectors MUST additionally exercise boundaries `H_a - 1`, `H_a`, `H_b - 1`, and `H_b`; both opcodes; `m` values 0, 1, 3, 4, 6, 7, 15, and 20; `n = 0`; ratios exactly on and immediately below the `3 * n = m` boundary; mixed-input flag handling; repeated keys/signatures; script caches; and an attempted policy bypass via direct block submission. A test passed by `testmempoolaccept` alone is not evidence of block-level consensus validity.
 
 ## References
 
@@ -297,5 +342,6 @@ The following items MUST be resolved before deployment and do not change the tec
 1. Assign `H_a` and `H_b` for the intended network.
 2. Identify submitting author(s) and contact address(es); obtain any formal proposal number, if applicable.
 3. Publish an implementation and block-validated machine-readable test vectors.
-4. Complete a UTXO/script compatibility audit, especially if `H_a` is set in the past.
-5. Benchmark adversarial curve parsing and validate script-cache/reorganization behavior.
+4. Complete a UTXO/script compatibility audit for full curve validation **and the independent one-third threshold requirement**, especially if `H_a` is set in the past; pay particular attention to legitimate low-threshold and hidden script-hash spending conditions.
+5. Benchmark adversarial curve parsing, threshold-boundary cases, repeated keys/signatures, and validate script-cache/reorganization behavior.
+6. Quantify the incremental effectiveness of `3 * n >= m` against large, nearly contiguous data storage compared with curve validation alone, including multi-operation and multi-input aggregation; record any accepted limitation concerning low-cost curve-point encoding.
