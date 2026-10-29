@@ -225,9 +225,17 @@ Before release, the deploying implementation MUST publish concrete mainnet value
 
 ## Reference Implementation
 
-**Not yet published.** This section records the intended implementation points; it does not claim that a consensus patch is complete.
+**Implemented in Bitcoin Purity; network heights not yet assigned.** The rule is dormant on every public network until `H_a` and `H_b` are set. Regtest enables it with `-testactivationheight=strictmultisigutxo@H_a -testactivationheight=strictmultisig@H_b`.
 
-A Bitcoin Purity implementation is expected to:
+Implementation points:
+
+- `SCRIPT_VERIFY_STRICT_MULTISIG_PUBKEYS` and `SCRIPT_ERR_MULTISIG_PUBKEY` in `src/script/interpreter.h` and `src/script/script_error.h`; the full-operand check in the shared `OP_CHECKMULTISIG(VERIFY)` case of `src/script/interpreter.cpp`.
+- `Consensus::Params::nStrictMultisigUtxoHeight` (`H_a`) and `nStrictMultisigEnforcementHeight` (`H_b`) in `src/consensus/params.h`.
+- Block flag at `H_b` in `GetBlockScriptFlags` and per-input relaxation for coins below `H_a` in `Chainstate::ConnectBlock` (`src/validation.cpp`).
+- Relay-policy enforcement through `STANDARD_SCRIPT_VERIFY_FLAGS` (`src/policy/policy.h`).
+- Tests in `src/test/strict_multisig_tests.cpp`.
+
+The implementation was expected to:
 
 1. Define the two fixed heights in its chain consensus parameters.
 2. Introduce a distinct mandatory script-verification flag, for example `SCRIPT_VERIFY_STRICT_MULTISIG_PUBKEYS`.

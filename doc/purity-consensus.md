@@ -149,6 +149,33 @@ before rollout. If history cannot be fully checked, the historical audit remains
 incomplete even though the code parameter has been selected. See
 [validation-issues.md](validation-issues.md).
 
+### Strict multisig public keys (soft fork, heights pending)
+
+Specified in [bips/bip-strict-multisig-pubkeys.md](bips/bip-strict-multisig-pubkeys.md).
+`SCRIPT_VERIFY_STRICT_MULTISIG_PUBKEYS` requires every public-key operand
+consumed by an executed `OP_CHECKMULTISIG` or `OP_CHECKMULTISIGVERIFY` to be a
+33-byte `0x02`/`0x03` or 65-byte `0x04` encoding of a valid secp256k1 point
+(`CPubKey::IsFullyValid()` after the prefix/length check, so hybrid `0x06`/`0x07`
+keys fail). The check runs after the existing stack and count checks and before
+signature matching. It fails with `SCRIPT_ERR_MULTISIG_PUBKEY` regardless of the
+multisig result. Signature semantics are unchanged.
+
+Consensus parameters `nStrictMultisigUtxoHeight` (`H_a`) and
+`nStrictMultisigEnforcementHeight` (`H_b`) must satisfy `H_a < H_b`.
+`GetBlockScriptFlags` sets the flag for blocks at or above `H_b`. `ConnectBlock`
+clears it per input when the spent coin height is below `H_a`, using the same
+per-input mechanism as RDTS grandfathering. The rule is permanent once enforced.
+
+Both heights are **unset (never enforced)** on mainnet, testnet, testnet4 and
+signet until concrete values and a UTXO compatibility audit are published.
+Regtest sets them with `-testactivationheight=strictmultisigutxo@H_a` and
+`-testactivationheight=strictmultisig@H_b`; supplying only one, or `H_a >= H_b`,
+is a startup error.
+
+The flag is also in `STANDARD_SCRIPT_VERIFY_FLAGS`, so relay policy rejects
+violating spends for all inputs before `H_b` and for grandfathered inputs after
+it. That is policy, not consensus invalidity.
+
 ## 2. Difficulty: aserti3-1d
 
 Port of Bitcoin Cash **aserti3** (integer cubic approximation; no floating
