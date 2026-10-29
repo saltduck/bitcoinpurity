@@ -872,6 +872,46 @@ void Intro::onSyncModeChanged()
     }
 }
 
+bool Intro::confirmNonEmptyDataDirectory()
+{
+    QString display_path = QDir::toNativeSeparators(getDataDirectory());
+    QString error;
+    try {
+        const fs::path datadir = fs::absolute(GUIUtil::QStringToPath(getDataDirectory()));
+        display_path = QDir::toNativeSeparators(GUIUtil::PathToQString(datadir));
+        if (!fs::exists(datadir)) return true;
+        if (!fs::is_directory(datadir)) {
+            error = tr("The selected path is not a directory.");
+        } else if (fs::is_empty(datadir)) {
+            return true;
+        }
+    } catch (const fs::filesystem_error&) {
+        error = tr("Could not inspect the data directory. Check that it is accessible.");
+    }
+
+    if (!error.isEmpty()) {
+        QMessageBox message(QMessageBox::Critical, windowTitle(),
+            tr("Cannot use the selected data directory:\n\n%1\n\n%2").arg(display_path, error),
+            QMessageBox::Ok, this);
+        message.setTextFormat(Qt::PlainText);
+        message.exec();
+        return false;
+    }
+
+    QMessageBox message(QMessageBox::Warning, tr("Data directory is not empty"),
+        tr("The selected data directory already exists and is not empty:\n\n%1").arg(display_path),
+        QMessageBox::Cancel, this);
+    message.setTextFormat(Qt::PlainText);
+    message.setInformativeText(syncMode() == IntroSyncMode::OFFICIAL_PACKAGE
+        ? tr("Installing the official data package may overwrite existing blockchain data (blocks/ and chainstate/) and bitcoin.conf in this directory. Back up any data you want to keep before continuing.")
+        : tr("Continuing will use this directory and may update existing node data and settings. Make sure this is the directory you intend to use."));
+    QPushButton* continue_button = message.addButton(tr("Continue"), QMessageBox::AcceptRole);
+    message.setDefaultButton(QMessageBox::Cancel);
+    message.setEscapeButton(QMessageBox::Cancel);
+    message.exec();
+    return message.clickedButton() == continue_button;
+}
+
 bool Intro::validateCurrentPage()
 {
     if (currentId() == 0) {
@@ -895,6 +935,9 @@ bool Intro::validateCurrentPage()
                 tr("Not enough disk space. At least %1 GB is required.").arg(m_required_space_gb));
             return false;
         }
+        // Check on every Start, including CLI-selected directories and download retries,
+        // before creating wallets/ or starting an official package download.
+        return confirmNonEmptyDataDirectory();
     }
     return true;
 }

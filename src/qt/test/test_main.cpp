@@ -9,6 +9,7 @@
 #include <qt/bitcoin.h>
 #include <qt/guiconstants.h>
 #include <qt/test/apptests.h>
+#include <qt/test/introtests.h>
 #include <qt/test/optiontests.h>
 #include <qt/test/rpcnestedtests.h>
 #include <qt/test/uritests.h>
@@ -107,6 +108,9 @@ int main(int argc, char* argv[])
         AddressBookTests test6(app.node());
         num_test_failures += QTest::qExec(&test6);
 #endif
+
+        IntroTests intro_tests;
+        num_test_failures += QTest::qExec(&intro_tests);
 
         if (num_test_failures) {
             qWarning("\nFailed tests: %d\n", num_test_failures);
