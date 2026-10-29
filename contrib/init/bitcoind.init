@@ -30,7 +30,7 @@ bitcoind_opts=${BITCOIND_OPTS--disablewallet}
 
 start() {
     echo -n $"Starting $prog: "
-    daemon $DAEMONOPTS $bitcoind $bitcoind_opts
+    daemon $DAEMONOPTS $bitcoind $bitcoind_opts -service-mode=1
     RETVAL=$?
     echo
     [ $RETVAL -eq 0 ] && touch $lockfile

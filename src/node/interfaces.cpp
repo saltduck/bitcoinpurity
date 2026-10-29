@@ -37,6 +37,7 @@
 #include <node/blockstorage.h>
 #include <node/coin.h>
 #include <node/context.h>
+#include <node/datadir_confirm.h>
 #include <node/interface_ui.h>
 #include <node/mini_miner.h>
 #include <node/miner.h>
@@ -193,11 +194,9 @@ public:
     {
         args().WriteSettingsFile(/*errors=*/nullptr, /*backup=*/true);
         args().LockSettings([&](common::Settings& settings) {
-            std::map<std::string, common::SettingsValue> new_rw_settings;
-            if (auto it = settings.rw_settings.find(CONSENSUSRULES_CONFIG_NAME); it != settings.rw_settings.end()) {
-                new_rw_settings.emplace(it->first, std::move(it->second));
-            }
-            settings.rw_settings.swap(new_rw_settings);
+            // GUI Reset clears ordinary settings. Keep the consensus compatibility
+            // record and the CLI first-use marker; the GUI does not use the marker.
+            node::PreserveInternalRwSettings(settings.rw_settings);
         });
         args().WriteSettingsFile();
     }

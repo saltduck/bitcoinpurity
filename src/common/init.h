@@ -32,8 +32,21 @@ struct ConfigError {
 //! overwrite the file.
 using SettingsAbortFn = std::function<bool(const bilingual_str& message, const std::vector<std::string>& details)>;
 
-/* Read config files, and create datadir and settings.json if they don't exist. */
-std::optional<ConfigError> InitConfig(ArgsManager& args, SettingsAbortFn settings_abort_fn = nullptr);
+//! Result of a data-directory first-use check. Runs after the effective
+//! datadir is known and before InitConfig creates directories or settings.
+struct DataDirPreflight {
+    std::optional<ConfigError> error;
+    //! When set to "created" or "approved", merge that marker into rw_settings
+    //! before the settings file is written. Leave unset to keep the file unchanged.
+    std::optional<std::string> persist_status;
+};
+using DataDirPreflightFn = std::function<DataDirPreflight(ArgsManager& args)>;
+
+/* Read config files, and create datadir and settings.json if they don't exist.
+ * preflight, when set, runs after configuration and network resolution and
+ * before any directory creation or settings write.
+ */
+std::optional<ConfigError> InitConfig(ArgsManager& args, SettingsAbortFn settings_abort_fn = nullptr, DataDirPreflightFn preflight = nullptr);
 } // namespace common
 
 #endif // BITCOIN_COMMON_INIT_H

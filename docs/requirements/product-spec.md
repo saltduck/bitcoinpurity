@@ -1,5 +1,28 @@
 # Bitcoin Purity Product Specification
 
+## First-use data directory confirmation
+
+`bitcoin-qt` asks before its startup wizard uses an existing non-empty data
+directory. Cancel is the default, and the choice is not stored. Nodes that
+skip the wizard start as before.
+
+`bitcoind` keeps a separate record in the network `settings.json`:
+
+```json
+{"purity-cli-datadir": {"schema": 1, "status": "created"}}
+```
+
+`created` means the directory was missing or empty. `approved` means the
+operator answered `y` for a non-empty directory. A manual start, including
+`-daemon` and `-daemonwait`, asks before forking when that record is missing.
+Enter, `n`, EOF, and a missing terminal do not approve. systemd is detected
+from `INVOCATION_ID`. launchd is detected when it starts `bitcoind` directly
+(parent pid 1, session id 1, and a job label in `XPC_SERVICE_NAME`). `-daemon`,
+`nohup`, and `ssh` do not qualify. Other service managers, and a launchd
+wrapper script, pass `-service-mode=1` on the command line; the same setting
+in `bitcoin.conf` is ignored. Skipping the prompt does not write `approved`.
+See [init scripts](../../doc/init.md).
+
 ## Node configuration defaults
 
 The wallet fallback fee is 1 sat/vB. Mining templates default to 3985000 bytes

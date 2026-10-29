@@ -73,7 +73,8 @@ start() {
 		-daemonwait \
 		-debuglogfile="${BITCOIND_LOGDIR}/debug.log" \
 		-rpccookieperms=group \
-		${BITCOIND_OPTS}
+		${BITCOIND_OPTS} \
+		-service-mode=1
 	then
 		IN_BACKGROUND=yes rc-service "${SVCNAME}" --quiet start
 	else

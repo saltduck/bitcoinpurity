@@ -16,6 +16,7 @@
 #include <interfaces/init.h>
 #include <kernel/context.h>
 #include <node/context.h>
+#include <node/datadir_confirm.h>
 #include <node/interface_ui.h>
 #include <node/warnings.h>
 #include <noui.h>
@@ -114,12 +115,24 @@ static bool ParseArgs(NodeContext& node, int argc, char* argv[])
     ArgsManager& args{*Assert(node.args)};
     // If Qt is used, parameters/bitcoin.conf are parsed in qt/bitcoin.cpp's main()
     SetupServerArgs(args, node.init->canListenIpc());
+    // bitcoind-only. A bitcoin.conf value is parsed but deliberately ignored so
+    // it cannot turn a manual launch into an unattended one. See ConfirmDataDirFirstUse.
+    args.AddArg("-service-mode",
+        "Skip interactive first-use confirmation for a non-empty data directory because this process is a managed service (default: 0). "
+        "Command-line only; the same setting in bitcoin.conf is ignored. systemd sets INVOCATION_ID and is detected without this option. "
+        "launchd is detected when it starts bitcoind directly. Pass -service-mode=1 for other service managers, or when a wrapper script is the launchd program. "
+        "-daemon and -daemonwait do not enable service mode.",
+        ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
     std::string error;
     if (!args.ParseParameters(argc, argv, error)) {
         return InitError(Untranslated(strprintf("Error parsing command line arguments: %s", error)));
     }
 
-    if (auto error = common::InitConfig(args)) {
+    // Confirm a non-empty data directory before InitConfig creates directories
+    // or writes settings, and before AppInit forks for -daemon/-daemonwait.
+    if (auto error = common::InitConfig(args, nullptr, [](ArgsManager& config_args) {
+            return node::ConfirmDataDirFirstUse(config_args);
+        })) {
         return InitError(error->message, error->details);
     }
 
@@ -233,6 +246,11 @@ static bool AppInit(NodeContext& node)
         {
             // If locking a directory failed, exit immediately
             return false;
+        }
+        // The directory can change between the preflight check and this lock.
+        // Hold the existing lock, then fail closed if confirmation disappeared.
+        if (const auto recheck = node::RecheckDataDirFirstUse(args)) {
+            return InitError(*recheck);
         }
         fRet = AppInitInterfaces(node) && AppInitMain(node);
     }

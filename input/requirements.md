@@ -1,5 +1,33 @@
 # Embedded DATUM Solo Mining
 
+## First-use data directory confirmation
+
+Warn before Bitcoin Purity uses an existing, non-empty data directory for the
+first time. GUI and CLI policies are independent. This does not change
+consensus, P2P, mining, or database compatibility checks.
+
+The GUI wizard confirms on Start. A missing or empty directory continues. A
+non-empty directory asks, with Cancel as the default; Enter and Esc cancel.
+The official data package warning names `blocks/`, `chainstate/`, and
+`bitcoin.conf`. Nothing about this choice is stored. Existing nodes that skip
+the wizard are unchanged.
+
+`bitcoind` stores only `{"schema": 1, "status": "created"|"approved"}` under
+`purity-cli-datadir` in the network `settings.json`. It stores no absolute
+path. `created` is written when the network directory was missing or empty.
+`approved` is written only after an explicit `y`. Manual `-daemon` and
+`-daemonwait` ask before fork. No TTY, EOF, Enter, and any answer other than
+`y` or `Y` stop the process. systemd's `INVOCATION_ID`, a process launchd
+itself started, and command-line `-service-mode=1` skip the prompt and must
+not write `approved`. launchd detection requires parent pid 1, session id 1,
+and an `XPC_SERVICE_NAME` other than `0`. `-daemon`, `nohup`, a missing
+terminal, and `ssh` do not qualify. A wrapper script that launchd starts in
+front of `bitcoind` still passes `-service-mode=1`.
+`bitcoin.conf` cannot enable service mode. `-nosettings` and a settings file
+outside the network directory do not reuse or store approval. GUI Reset keeps
+the CLI record but does not use it. A missing record on an existing node
+prompts once for a manual start and does not stop a recognized service.
+
 ## Node configuration defaults
 
 - `fallbackfee`: 0.00001 coin/kvB (1 sat/vB).
