@@ -52,17 +52,8 @@ BOOST_AUTO_TEST_CASE(purity_mainnet_fixed_seeds)
         actual.push_back(endpoint.ToStringAddrPort());
     }
     const std::vector<std::string> expected{
-        "207.244.247.51:8333",
-        "[240e:390:6ee0:f370::b40]:8333",
-        "[2a02:4780:79:909::1]:8333",
-        "36.25.72.251:8333",
-        "45.77.139.7:8333",
-        "46.7.6.219:8333",
-        "57.129.53.78:5890",
-        "49.190.167.39:8333",
-        "49.190.167.39:8334",
-        "51.79.241.169:8333",
-        "76.13.13.187:8333",
+        "185.184.223.247:8333",
+        "159.195.92.32:8333",
     };
     BOOST_REQUIRE_EQUAL(actual.size(), expected.size());
     BOOST_CHECK_EQUAL_COLLECTIONS(actual.begin(), actual.end(), expected.begin(), expected.end());

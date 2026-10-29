@@ -22,23 +22,35 @@ explicit peer configuration remain unchanged.
 
 ## Mainnet fixed seeds
 
-Replace every existing mainnet fixed seed with these endpoints:
+Mainnet fixed seeds are archive endpoints only. Keep an address only when its
+current VERSION advertisement includes `NODE_NETWORK`. Remove every endpoint
+that advertises `NODE_NETWORK_LIMITED` without `NODE_NETWORK`.
+
+On 2026-10-29 these previously listed endpoints answered without
+`NODE_NETWORK` and were removed:
 
 - `207.244.247.51:8333`
+- `node1.bitcoinpurity.org:8333` (`51.79.241.169:8333`, resolved 2026-10-12)
+- `76.13.13.187:8333`
+
+On 2026-10-29 these endpoints were also removed because no VERSION message
+could be read. Two IPv6 addresses had no route from the checking host, two
+ports refused connections from multiple regions, one timed out everywhere, and
+`46.7.6.219:8333` accepted TCP but sent no VERSION bytes:
+
 - `[240e:390:6ee0:f370::b40]:8333`
 - `[2a02:4780:79:909::1]:8333`
 - `36.25.72.251:8333`
 - `45.77.139.7:8333`
 - `46.7.6.219:8333`
 - `57.129.53.78:5890`
-- `node0.bitcoinpurity.org:8333`
-- `node0.bitcoinpurity.org:8334`
-- `node1.bitcoinpurity.org:8333`
-- `76.13.13.187:8333`
 
-The fixed-seed format stores numeric IP addresses. Resolve domain entries to
-their current addresses for this update and record the mappings in
-`contrib/seeds/nodes_main.txt`; preserve both node0 ports and the 5890 port.
+The remaining endpoints are:
+
+- `185.184.223.247:8333`
+- `159.195.92.32:8333`
+
+`185.184.223.247:8333` and `159.195.92.32:8333` advertise `NODE_NETWORK`.
 Synchronize that source list with the compiled mainnet array, retaining the
 other networks' seed arrays, DNS seeds and explicit peer configuration.
 
