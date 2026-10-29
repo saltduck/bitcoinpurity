@@ -12,6 +12,7 @@ class IntroTests : public QObject
     Q_OBJECT
 
 private Q_SLOTS:
+    void initTestCase();
     void unusedDirectories();
     void nonEmptyDirectory_data();
     void nonEmptyDirectory();

@@ -9,6 +9,7 @@
 #include <test/util/setup_common.h>
 
 #include <QAbstractButton>
+#include <QApplication>
 #include <QDir>
 #include <QFile>
 #include <QMessageBox>
@@ -73,6 +74,18 @@ void OpenStoragePage(Intro& intro)
     intro.setStatus(/*ST_OK=*/0, QString{}, 1ULL << 50);
 }
 } // namespace
+
+void IntroTests::initTestCase()
+{
+#ifdef Q_OS_MACOS
+    if (QApplication::platformName() == "minimal") {
+        // Modal message boxes crash inside Cocoa on the "minimal" platform
+        // (https://bugreports.qt.io/browse/QTBUG-49686).
+        QSKIP("Skipping IntroTests on mac build with 'minimal' platform set due to Qt bugs. To run IntroTests, invoke "
+              "with 'QT_QPA_PLATFORM=cocoa test_bitcoin-qt' on mac, or else use a linux or windows build.");
+    }
+#endif
+}
 
 void IntroTests::unusedDirectories()
 {
