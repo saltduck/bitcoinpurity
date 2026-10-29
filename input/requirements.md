@@ -426,13 +426,14 @@ precedence chain.
 
 ## Strict multisig public key validation
 
-- Implement [bip-strict-multisig-pubkeys.md](../doc/bips/bip-strict-multisig-pubkeys.md):
-  every public-key operand of an executed `OP_CHECKMULTISIG(VERIFY)` in legacy,
-  P2SH or P2WSH script must be a fully valid 33-byte compressed or 65-byte
-  uncompressed secp256k1 key, checked before signature matching.
-- Threshold, matching order, ECDSA verification, NULLDUMMY/NULLFAIL and stack
-  results are unchanged. Duplicate valid keys stay permitted. Non-executed
-  branches and Tapscript are out of scope.
+- Implement [bip-strict-multisig-pubkeys.md](../doc/bips/bip-strict-multisig-pubkeys.md)
+  version 0.2.0. Every executed `OP_CHECKMULTISIG(VERIFY)` in legacy, P2SH or
+  P2WSH script must satisfy `n >= 1` and `3 * n >= m`, and every public-key
+  operand must be a fully valid 33-byte compressed or 65-byte uncompressed
+  secp256k1 key. Both checks run before signature matching.
+- Matching order, ECDSA verification, NULLDUMMY/NULLFAIL and stack results for
+  a permitted threshold are unchanged. Duplicate valid keys stay permitted.
+  Non-executed branches and Tapscript are out of scope.
 - Enforce in blocks at or above `H_b` for inputs spending UTXOs created at or
   above `H_a` (`H_a < H_b`), per input, with no expiry. Same-block spends use
   that block's height.

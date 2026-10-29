@@ -246,8 +246,9 @@ amounts. See [architecture](../architecture/coinstatsindex.md),
 
 ## Strict multisig public key validation
 
-Executed `OP_CHECKMULTISIG(VERIFY)` operations must only consume fully valid
-secp256k1 public keys, including keys the matching loop never visits. The rule
+Executed `OP_CHECKMULTISIG(VERIFY)` operations must satisfy `3 * n >= m` with
+`n >= 1`, and must only consume fully valid secp256k1 public keys, including
+keys the matching loop never visits. The rule
 is the soft fork in
 [bip-strict-multisig-pubkeys.md](../../doc/bips/bip-strict-multisig-pubkeys.md),
 enforced per input from height `H_b` for UTXOs created at or above `H_a`.

@@ -84,6 +84,7 @@ typedef enum ScriptError_t
 
     /* Strict multisig public keys */
     SCRIPT_ERR_MULTISIG_PUBKEY,
+    SCRIPT_ERR_MULTISIG_THRESHOLD,
 
     SCRIPT_ERR_ERROR_COUNT
 } ScriptError;

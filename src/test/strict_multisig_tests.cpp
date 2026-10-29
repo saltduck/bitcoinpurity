@@ -54,20 +54,56 @@ ScriptError Verify(const CScript& script_pubkey, const CScript& script_sig, unsi
     return err;
 }
 
-CScript SignBare(const CScript& script_pubkey, const std::vector<CKey>& keys)
+std::vector<valtype> SignKeys(const CScript& script_code, const CScript& tx_script_pubkey, const std::vector<CKey>& keys, SigVersion sigversion)
 {
-    const CMutableTransaction credit{BuildCreditingTransaction(script_pubkey)};
+    const CMutableTransaction credit{BuildCreditingTransaction(tx_script_pubkey)};
     const CMutableTransaction spend{BuildSpendingTransaction(CScript{}, CScriptWitness{}, CTransaction{credit})};
-    const uint256 hash{SignatureHash(script_pubkey, spend, 0, SIGHASH_ALL, 0, SigVersion::BASE)};
-    CScript script_sig;
-    script_sig << OP_0;
+    std::vector<valtype> sigs;
     for (const auto& key : keys) {
+        const uint256 hash{SignatureHash(script_code, spend, 0, SIGHASH_ALL, credit.vout[0].nValue, sigversion)};
         valtype sig;
         BOOST_REQUIRE(key.Sign(hash, sig));
         sig.push_back(SIGHASH_ALL);
-        script_sig << sig;
+        sigs.push_back(std::move(sig));
     }
+    return sigs;
+}
+
+CScript SignBare(const CScript& script_pubkey, const std::vector<CKey>& keys)
+{
+    CScript script_sig;
+    script_sig << OP_0;
+    for (const auto& sig : SignKeys(script_pubkey, script_pubkey, keys, SigVersion::BASE)) script_sig << sig;
     return script_sig;
+}
+
+CScript P2SHSig(const CScript& redeem, const std::vector<CKey>& keys)
+{
+    const CScript program{GetScriptForDestination(ScriptHash(redeem))};
+    CScript script_sig;
+    script_sig << OP_0;
+    for (const auto& sig : SignKeys(redeem, program, keys, SigVersion::BASE)) script_sig << sig;
+    script_sig << valtype(redeem.begin(), redeem.end());
+    return script_sig;
+}
+
+// One key per executed multisig, in execution order. Each opcode consumes the topmost signature.
+CScript MultisigSigs(const CScript& script, const std::vector<CKey>& keys_in_execution_order)
+{
+    const std::vector<valtype> sigs{SignKeys(script, script, keys_in_execution_order, SigVersion::BASE)};
+    CScript script_sig;
+    for (size_t i = sigs.size(); i-- > 0;) script_sig << OP_0 << sigs[i];
+    return script_sig;
+}
+
+CScriptWitness P2WSHWitness(const CScript& witness_script, const std::vector<CKey>& keys)
+{
+    const CScript program{GetScriptForDestination(WitnessV0ScriptHash(witness_script))};
+    CScriptWitness witness;
+    witness.stack.push_back({});
+    for (const auto& sig : SignKeys(witness_script, program, keys, SigVersion::WITNESS_V0)) witness.stack.push_back(sig);
+    witness.stack.emplace_back(witness_script.begin(), witness_script.end());
+    return witness;
 }
 
 CKey NewKey(bool compressed = true)
@@ -98,16 +134,58 @@ BOOST_AUTO_TEST_CASE(valid_keys_keep_multisig_semantics)
     const CScript legacy{Multisig(1, {Bytes(uncompressed), Bytes(k1)})};
     BOOST_CHECK_EQUAL(Verify(legacy, SignBare(legacy, {uncompressed}), STRICT_FLAGS), SCRIPT_ERR_OK);
 
-    const CScript duplicate{Multisig(0, {Bytes(k1), Bytes(k1)})};
-    BOOST_CHECK_EQUAL(Verify(duplicate, CScript{} << OP_0, STRICT_FLAGS), SCRIPT_ERR_OK);
+    const CScript one{Multisig(1, {Bytes(k1)})};
+    BOOST_CHECK_EQUAL(Verify(one, SignBare(one, {k1}), STRICT_FLAGS), SCRIPT_ERR_OK);
+}
 
-    BOOST_CHECK_EQUAL(Verify(Multisig(0, {}), CScript{} << OP_0, STRICT_FLAGS), SCRIPT_ERR_OK);
+BOOST_AUTO_TEST_CASE(minimum_threshold)
+{
+    const auto keys_of{[](int count) {
+        std::vector<CKey> keys;
+        std::vector<valtype> encoded;
+        keys.reserve(count);
+        for (int i = 0; i < count; ++i) {
+            keys.push_back(NewKey());
+            encoded.push_back(Bytes(keys.back()));
+        }
+        return std::pair{std::move(keys), std::move(encoded)};
+    }};
+    const auto expect_ratio{[&](int required, int count, bool allowed) {
+        const auto [keys, encoded]{keys_of(count)};
+        std::vector<CKey> signers(keys.begin(), keys.begin() + required);
+        const CScript script{Multisig(required, encoded)};
+        const ScriptError err{Verify(script, required == 0 ? CScript{} << OP_0 : SignBare(script, signers), STRICT_FLAGS)};
+        BOOST_CHECK_EQUAL(err, allowed ? SCRIPT_ERR_OK : SCRIPT_ERR_MULTISIG_THRESHOLD);
+        if (!allowed) BOOST_CHECK_EQUAL(Verify(script, required == 0 ? CScript{} << OP_0 : SignBare(script, signers), LEGACY_FLAGS), SCRIPT_ERR_OK);
+    }};
 
-    std::vector<valtype> twenty;
-    for (int i = 0; i < MAX_PUBKEYS_PER_MULTISIG; ++i) twenty.push_back(Bytes(NewKey(i % 2 == 0)));
-    BOOST_CHECK_EQUAL(Verify(Multisig(0, twenty), CScript{} << OP_0, STRICT_FLAGS), SCRIPT_ERR_OK);
-    twenty.back() = valtype(33, 0xab);
-    CheckStrictOnly(Multisig(0, twenty), CScript{} << OP_0);
+    expect_ratio(1, 3, true);   // T22
+    expect_ratio(1, 4, false);  // T23
+    expect_ratio(2, 6, true);   // T24
+    expect_ratio(2, 7, false);  // T25
+    expect_ratio(5, 15, true);  // T04
+    expect_ratio(3, 15, false); // T21
+    expect_ratio(7, 20, true);  // T26
+    expect_ratio(0, 0, false);  // T27
+    expect_ratio(0, 3, false);  // T10
+
+    const CKey repeated{NewKey()};
+    const valtype repeated_bytes{Bytes(repeated)};
+    const CScript duplicated{Multisig(7, std::vector<valtype>(20, repeated_bytes))};
+    std::vector<CKey> seven(7, repeated);
+    BOOST_CHECK_EQUAL(Verify(duplicated, SignBare(duplicated, seven), STRICT_FLAGS), SCRIPT_ERR_OK); // T28
+
+    CScript computed;
+    computed << OP_2 << OP_1 << OP_SUB;
+    const auto [computed_keys, computed_bytes]{keys_of(4)};
+    for (const auto& encoded : computed_bytes) computed << encoded;
+    computed << OP_2 << OP_2 << OP_ADD << OP_CHECKMULTISIG;
+    BOOST_CHECK_EQUAL(Verify(computed, SignBare(computed, {computed_keys[0]}), LEGACY_FLAGS), SCRIPT_ERR_OK);
+    BOOST_CHECK_EQUAL(Verify(computed, SignBare(computed, {computed_keys[0]}), STRICT_FLAGS), SCRIPT_ERR_MULTISIG_THRESHOLD); // T29
+
+    const CKey ok{NewKey()};
+    const CScript second_low{Concat(Multisig(1, {Bytes(ok)}, OP_CHECKMULTISIGVERIFY), Multisig(1, {Bytes(ok), Bytes(ok), Bytes(ok), Bytes(ok)}))};
+    BOOST_CHECK_EQUAL(Verify(second_low, MultisigSigs(second_low, {ok, ok}), STRICT_FLAGS), SCRIPT_ERR_MULTISIG_THRESHOLD); // T30
 }
 
 BOOST_AUTO_TEST_CASE(unused_operands_must_be_valid_points)
@@ -139,45 +217,46 @@ BOOST_AUTO_TEST_CASE(unused_operands_must_be_valid_points)
 BOOST_AUTO_TEST_CASE(check_does_not_depend_on_result)
 {
     const valtype garbage(100, 0xab);
-    CheckStrictOnly(Multisig(0, {garbage}), CScript{} << OP_0);
-    CheckStrictOnly(Multisig(1, {garbage}) << OP_NOT, CScript{} << OP_0 << OP_0);
-    CheckStrictOnly(Multisig(0, {garbage}, OP_CHECKMULTISIGVERIFY) << OP_1, CScript{} << OP_0);
+    const CKey key{NewKey()};
+    const CScript inverted{Concat(Multisig(1, {Bytes(key), garbage}), CScript{} << OP_NOT)};
+    CheckStrictOnly(inverted, CScript{} << OP_0 << OP_0);
+    const CScript verify_bad{Concat(Multisig(1, {Bytes(key), garbage}, OP_CHECKMULTISIGVERIFY), CScript{} << OP_1)};
+    CheckStrictOnly(verify_bad, SignBare(verify_bad, {key}));
+    BOOST_CHECK_EQUAL(Verify(Multisig(0, {Bytes(key)}), CScript{} << OP_0, STRICT_FLAGS), SCRIPT_ERR_MULTISIG_THRESHOLD);
 }
 
 BOOST_AUTO_TEST_CASE(only_executed_opcodes_are_checked)
 {
     const valtype garbage(100, 0xab);
-    const valtype key{Bytes(NewKey())};
+    const CKey key{NewKey()};
 
-    CScript skipped{Concat(CScript{} << OP_0 << OP_IF, Multisig(0, {garbage}))};
+    CScript skipped{Concat(CScript{} << OP_0 << OP_IF, Multisig(1, {garbage, garbage, garbage, garbage}))};
     skipped << OP_ENDIF << OP_1;
     BOOST_CHECK_EQUAL(Verify(skipped, CScript{}, STRICT_FLAGS), SCRIPT_ERR_OK);
 
-    const CScript both_valid{Concat(Multisig(0, {key}, OP_CHECKMULTISIGVERIFY), Multisig(0, {key}))};
-    BOOST_CHECK_EQUAL(Verify(both_valid, CScript{} << OP_0 << OP_0, STRICT_FLAGS), SCRIPT_ERR_OK);
+    const CScript both_valid{Concat(Multisig(1, {Bytes(key)}, OP_CHECKMULTISIGVERIFY), Multisig(1, {Bytes(key)}))};
+    BOOST_CHECK_EQUAL(Verify(both_valid, MultisigSigs(both_valid, {key, key}), STRICT_FLAGS), SCRIPT_ERR_OK);
 
-    const CScript second_invalid{Concat(Multisig(0, {key}, OP_CHECKMULTISIGVERIFY), Multisig(0, {garbage}))};
-    CheckStrictOnly(second_invalid, CScript{} << OP_0 << OP_0);
+    const CScript second_invalid{Concat(Multisig(1, {Bytes(key)}, OP_CHECKMULTISIGVERIFY), Multisig(1, {Bytes(key), garbage}))};
+    CheckStrictOnly(second_invalid, MultisigSigs(second_invalid, {key, key}));
 }
 
 BOOST_AUTO_TEST_CASE(p2sh_and_p2wsh)
 {
     const valtype garbage(100, 0xab);
-    const CScript redeem{Multisig(0, {garbage})};
-    CheckStrictOnly(GetScriptForDestination(ScriptHash(redeem)), CScript{} << OP_0 << valtype(redeem.begin(), redeem.end()));
+    const CKey key{NewKey()};
+    const CScript redeem{Multisig(1, {Bytes(key), garbage})};
+    CheckStrictOnly(GetScriptForDestination(ScriptHash(redeem)), P2SHSig(redeem, {key}));
 
     constexpr unsigned int witness_flags{SCRIPT_VERIFY_P2SH | SCRIPT_VERIFY_WITNESS};
-    const auto witness_spend{[](const CScript& witness_script) {
-        CScriptWitness witness;
-        witness.stack = {{}, valtype(witness_script.begin(), witness_script.end())};
-        return std::pair{GetScriptForDestination(WitnessV0ScriptHash(witness_script)), witness};
-    }};
+    const CKey uncompressed{NewKey(/*compressed=*/false)};
+    const CScript uncompressed_script{Multisig(1, {Bytes(uncompressed)})};
+    const CScript uncompressed_program{GetScriptForDestination(WitnessV0ScriptHash(uncompressed_script))};
+    BOOST_CHECK_EQUAL(Verify(uncompressed_program, CScript{}, witness_flags | SCRIPT_VERIFY_STRICT_MULTISIG_PUBKEYS, P2WSHWitness(uncompressed_script, {uncompressed})), SCRIPT_ERR_OK);
 
-    const auto [uncompressed_spk, uncompressed_witness]{witness_spend(Multisig(0, {Bytes(NewKey(/*compressed=*/false))}))};
-    BOOST_CHECK_EQUAL(Verify(uncompressed_spk, CScript{}, witness_flags | SCRIPT_VERIFY_STRICT_MULTISIG_PUBKEYS, uncompressed_witness), SCRIPT_ERR_OK);
-
-    const auto [garbage_spk, garbage_witness]{witness_spend(Multisig(0, {garbage}))};
-    CheckStrictOnly(garbage_spk, CScript{}, garbage_witness, witness_flags);
+    const CScript garbage_script{Multisig(1, {Bytes(key), garbage})};
+    const CScript garbage_program{GetScriptForDestination(WitnessV0ScriptHash(garbage_script))};
+    CheckStrictOnly(garbage_program, CScript{}, P2WSHWitness(garbage_script, {key}), witness_flags);
 }
 
 BOOST_AUTO_TEST_CASE(regtest_heights_must_be_paired_and_ordered)
@@ -217,10 +296,13 @@ struct StrictMultisigChainSetup : public TestChain100Setup {
           }}} {}
 
     const CKey other_key{NewKey()};
+    const CKey extra_a{NewKey()};
+    const CKey extra_b{NewKey()};
 
     CScript CoinbaseScript() const { return CScript() << ToByteVector(coinbaseKey.GetPubKey()) << OP_CHECKSIG; }
     CScript Invalid() const { return Multisig(1, {ToByteVector(coinbaseKey.GetPubKey()), valtype(100, 0xab)}); }
     CScript Valid() const { return Multisig(1, {ToByteVector(coinbaseKey.GetPubKey()), Bytes(other_key)}); }
+    CScript LowRatio() const { return Multisig(1, {ToByteVector(coinbaseKey.GetPubKey()), Bytes(other_key), Bytes(extra_a), Bytes(extra_b)}); }
 
     CMutableTransaction Spend(const std::vector<std::pair<COutPoint, CScript>>& inputs, const std::vector<CScript>& outputs, bool multisig_inputs = true)
     {
@@ -259,14 +341,14 @@ BOOST_FIXTURE_TEST_CASE(strict_multisig_block_heights, StrictMultisigChainSetup)
 {
     const CScript payout{CoinbaseScript()};
 
-    const auto before_utxo_height{FundFromCoinbase(0, {Invalid(), Invalid(), Valid()})};
+    const auto before_utxo_height{FundFromCoinbase(0, {Invalid(), Invalid(), Valid(), LowRatio()})};
     BOOST_REQUIRE_EQUAL(Connect({before_utxo_height}), UTXO_HEIGHT - 1);
-    const auto at_utxo_height{FundFromCoinbase(1, {Invalid(), Invalid(), Invalid(), Valid(), Valid()})};
+    const auto at_utxo_height{FundFromCoinbase(1, {Invalid(), Invalid(), Invalid(), Valid(), Valid(), LowRatio(), LowRatio()})};
     BOOST_REQUIRE_EQUAL(Connect({at_utxo_height}), UTXO_HEIGHT);
     BOOST_REQUIRE_EQUAL(Connect({}), UTXO_HEIGHT + 1);
 
-    // The old rules still apply below the enforcement height.
-    BOOST_CHECK_EQUAL(Connect({Spend({Output(at_utxo_height, 0)}, {payout})}), ENFORCEMENT_HEIGHT - 1);
+    // The old rules still apply below the enforcement height, for both invalid keys and a 1-of-4 threshold.
+    BOOST_CHECK_EQUAL(Connect({Spend({Output(at_utxo_height, 0)}, {payout}), Spend({Output(at_utxo_height, 5)}, {payout})}), ENFORCEMENT_HEIGHT - 1);
 
     BOOST_CHECK_EQUAL(Connect({Spend({Output(at_utxo_height, 1)}, {payout})}), ENFORCEMENT_HEIGHT - 1);
     BOOST_CHECK_EQUAL(Connect({Spend({Output(before_utxo_height, 0)}, {payout})}), ENFORCEMENT_HEIGHT);
@@ -276,6 +358,10 @@ BOOST_FIXTURE_TEST_CASE(strict_multisig_block_heights, StrictMultisigChainSetup)
     BOOST_CHECK_EQUAL(Connect({Spend({Output(before_utxo_height, 2), Output(at_utxo_height, 2)}, {payout})}), ENFORCEMENT_HEIGHT + 1);
 
     BOOST_CHECK_EQUAL(Connect({Spend({Output(at_utxo_height, 4)}, {payout})}), ENFORCEMENT_HEIGHT + 2);
+
+    // A 1-of-4 with valid keys is grandfathered only when created below H_a.
+    BOOST_CHECK_EQUAL(Connect({Spend({Output(before_utxo_height, 3)}, {payout})}), ENFORCEMENT_HEIGHT + 3);
+    BOOST_CHECK_EQUAL(Connect({Spend({Output(at_utxo_height, 6)}, {payout})}), ENFORCEMENT_HEIGHT + 3);
 
     // An output created and spent in the same block uses that block's height.
     const auto parent{FundFromCoinbase(2, {Invalid()})};

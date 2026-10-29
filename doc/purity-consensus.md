@@ -152,13 +152,16 @@ incomplete even though the code parameter has been selected. See
 ### Strict multisig public keys (soft fork, heights pending)
 
 Specified in [bips/bip-strict-multisig-pubkeys.md](bips/bip-strict-multisig-pubkeys.md).
-`SCRIPT_VERIFY_STRICT_MULTISIG_PUBKEYS` requires every public-key operand
-consumed by an executed `OP_CHECKMULTISIG` or `OP_CHECKMULTISIGVERIFY` to be a
-33-byte `0x02`/`0x03` or 65-byte `0x04` encoding of a valid secp256k1 point
+`SCRIPT_VERIFY_STRICT_MULTISIG_PUBKEYS` applies two checks to every executed
+`OP_CHECKMULTISIG` or `OP_CHECKMULTISIGVERIFY`, after the existing stack and
+count checks and before signature matching. The threshold must satisfy
+`n >= 1` and `3 * n >= m` (`SCRIPT_ERR_MULTISIG_THRESHOLD`); `m <= 20` and
+`n <= m` remain the pre-existing limits. Every public-key operand must then be
+a 33-byte `0x02`/`0x03` or 65-byte `0x04` encoding of a valid secp256k1 point
 (`CPubKey::IsFullyValid()` after the prefix/length check, so hybrid `0x06`/`0x07`
-keys fail). The check runs after the existing stack and count checks and before
-signature matching. It fails with `SCRIPT_ERR_MULTISIG_PUBKEY` regardless of the
-multisig result. Signature semantics are unchanged.
+keys fail with `SCRIPT_ERR_MULTISIG_PUBKEY`). Either failure rejects the script
+regardless of the multisig result. Signature semantics for a permitted `n` are
+unchanged, and duplicate keys remain allowed.
 
 Consensus parameters `nStrictMultisigUtxoHeight` (`H_a`) and
 `nStrictMultisigEnforcementHeight` (`H_b`) must satisfy `H_a < H_b`.

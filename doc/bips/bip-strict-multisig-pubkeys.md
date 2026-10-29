@@ -258,7 +258,7 @@ Before release, the deploying implementation MUST publish concrete mainnet value
 
 Implementation points:
 
-- `SCRIPT_VERIFY_STRICT_MULTISIG_PUBKEYS` and `SCRIPT_ERR_MULTISIG_PUBKEY` in `src/script/interpreter.h` and `src/script/script_error.h`; the full-operand check in the shared `OP_CHECKMULTISIG(VERIFY)` case of `src/script/interpreter.cpp`.
+- `SCRIPT_VERIFY_STRICT_MULTISIG_PUBKEYS`, `SCRIPT_ERR_MULTISIG_THRESHOLD`, and `SCRIPT_ERR_MULTISIG_PUBKEY` in `src/script/interpreter.h` and `src/script/script_error.h`. The shared `OP_CHECKMULTISIG(VERIFY)` case in `src/script/interpreter.cpp` checks `n >= 1` and `3 * n >= m`, then validates every public-key operand.
 - `Consensus::Params::nStrictMultisigUtxoHeight` (`H_a`) and `nStrictMultisigEnforcementHeight` (`H_b`) in `src/consensus/params.h`.
 - Block flag at `H_b` in `GetBlockScriptFlags` and per-input relaxation for coins below `H_a` in `Chainstate::ConnectBlock` (`src/validation.cpp`).
 - Relay-policy enforcement through `STANDARD_SCRIPT_VERIFY_FLAGS` (`src/policy/policy.h`).
