@@ -53,7 +53,8 @@ void EditAddressAndSubmit(
     dialog->findChild<QLineEdit*>("labelEdit")->setText(label);
     dialog->findChild<QValidatedLineEdit*>("addressEdit")->setText(address);
 
-    ConfirmMessage(&warning_text, 5ms);
+    // A timer left pending without a dialog would later fire with a dangling pointer.
+    if (!expected_msg.isEmpty()) ConfirmMessage(&warning_text, 5ms);
     dialog->accept();
     QCOMPARE(warning_text, expected_msg);
 }

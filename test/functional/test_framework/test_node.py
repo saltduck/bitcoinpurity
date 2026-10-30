@@ -138,6 +138,10 @@ class TestNode():
                 "-corepolicy",
                 "-softwareexpiry=0",
                 "-walletimplicitsegwit",
+                # The test harness is non-interactive. Current bitcoind asks for
+                # confirmation before using an unknown non-empty data directory;
+                # release binaries under test do not know this option.
+                "-service-mode=1",
             ]
 
         if self.version_is_at_least(190000):

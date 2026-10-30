@@ -81,6 +81,7 @@ private Q_SLOTS:
 
 private:
     bool validateCurrentPage() override;
+    bool confirmNonEmptyDataDirectory();
 
     const int64_t m_blockchain_size_gb;
     const int64_t m_chain_state_size_gb;

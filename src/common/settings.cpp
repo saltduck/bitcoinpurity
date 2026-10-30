@@ -273,6 +273,29 @@ bool OnlyHasDefaultSectionSetting(const Settings& settings, const std::string& s
     return has_default_section_setting && !has_other_setting;
 }
 
+SettingsValue MakePurityCliDatadirMarker(std::string_view status)
+{
+    SettingsValue marker(SettingsValue::VOBJ);
+    marker.pushKV("schema", 1);
+    marker.pushKV("status", std::string{status});
+    return marker;
+}
+
+std::optional<std::string> ParsePurityCliDatadirStatus(const SettingsValue& value)
+{
+    if (!value.isObject() || value.getKeys().size() != 2 || !value.exists("schema") || !value.exists("status")) {
+        return std::nullopt;
+    }
+    const SettingsValue& schema = value.find_value("schema");
+    // Reject bools and numeric strings. Only a JSON number equal to 1 is schema 1.
+    if (!schema.isNum() || schema.getValStr() != "1") return std::nullopt;
+    const SettingsValue& status = value.find_value("status");
+    if (!status.isStr()) return std::nullopt;
+    const std::string status_str{status.get_str()};
+    if (status_str != "created" && status_str != "approved") return std::nullopt;
+    return status_str;
+}
+
 SettingsSpan::SettingsSpan(const std::vector<SettingsValue>& vec) noexcept : SettingsSpan(vec.data(), vec.size()) {}
 const SettingsValue* SettingsSpan::begin() const { return data + negated(); }
 const SettingsValue* SettingsSpan::end() const { return data + size; }
