@@ -996,6 +996,12 @@ public:
 
         block.hashMerkleRoot = BlockMerkleRoot(block);
 
+        // The copy inherits validation flags from the template. The replaced
+        // coinbase and recomputed merkle root must be checked again.
+        block.m_checked_witness_commitment = false;
+        block.m_checked_merkle_root = false;
+        block.fChecked = false;
+
         auto block_ptr = std::make_shared<const CBlock>(block);
         return chainman().ProcessNewBlock(block_ptr, /*force_processing=*/true, /*min_pow_checked=*/true, /*new_block=*/nullptr);
     }
