@@ -72,6 +72,12 @@ void RegenerateCommitments(CBlock& block, ChainstateManager& chainman)
     chainman.GenerateCoinbaseCommitment(block, prev_block);
 
     block.hashMerkleRoot = BlockMerkleRoot(block);
+
+    // The coinbase commitment and merkle root no longer match checks cached
+    // on a previously validated block.
+    block.m_checked_witness_commitment = false;
+    block.m_checked_merkle_root = false;
+    block.fChecked = false;
 }
 
 BlockCreateOptions BlockCreateOptions::Clamped() const

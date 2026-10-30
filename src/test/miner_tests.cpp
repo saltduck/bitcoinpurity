@@ -970,4 +970,45 @@ BOOST_AUTO_TEST_CASE(submit_solution_stale_merkle_cache)
     }
 }
 
+BOOST_AUTO_TEST_CASE(regenerate_commitments_clears_cached_checks)
+{
+    const Consensus::Params& params{Assert(m_node.chainman)->GetConsensus()};
+    std::unique_ptr<BlockTemplate> block_template{FreshTemplate(m_node)};
+    CBlock block{block_template->getBlock()};
+    BOOST_REQUIRE(block.m_checked_witness_commitment);
+
+    block.hashMerkleRoot = BlockMerkleRoot(block);
+    SolveHeader(block, params);
+    BlockValidationState checked;
+    BOOST_REQUIRE(CheckBlock(block, checked, params));
+    BOOST_REQUIRE(block.m_checked_witness_commitment);
+    BOOST_REQUIRE(block.m_checked_merkle_root);
+    BOOST_REQUIRE(block.fChecked);
+
+    CMutableTransaction extra;
+    extra.vin.resize(1);
+    extra.vin[0].prevout.hash = Txid::FromUint256(uint256::ONE);
+    extra.vin[0].prevout.n = 1;
+    extra.vout.emplace_back(1, CScript() << OP_TRUE);
+    block.vtx.push_back(MakeTransactionRef(std::move(extra)));
+    // The appended transaction makes the cached commitment and merkle result stale.
+    BOOST_REQUIRE(block.m_checked_witness_commitment);
+    BOOST_REQUIRE(block.m_checked_merkle_root);
+    BOOST_REQUIRE(block.fChecked);
+
+    node::RegenerateCommitments(block, *Assert(m_node.chainman));
+    BOOST_CHECK(!block.m_checked_witness_commitment);
+    BOOST_CHECK(!block.m_checked_merkle_root);
+    BOOST_CHECK(!block.fChecked);
+
+    // Validate a copy so this call cannot repopulate the flags on `block`.
+    CBlock regenerated{block};
+    BOOST_CHECK(!IsBlockMutated(regenerated, /*check_witness_root=*/true));
+
+    CMutableTransaction corrupted{*block.vtx[0]};
+    corrupted.vin[0].scriptWitness.stack.assign(1, std::vector<unsigned char>(32, 0x11));
+    block.vtx[0] = MakeTransactionRef(std::move(corrupted));
+    BOOST_CHECK(IsBlockMutated(block, /*check_witness_root=*/true));
+}
+
 BOOST_AUTO_TEST_SUITE_END()
