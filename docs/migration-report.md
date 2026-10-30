@@ -355,6 +355,25 @@ Rebuild and restart for the compiled replacement to take effect. No database
 migration or reindex is required; existing peers.dat addresses remain, so this
 change does not restrict all connections to the new fixed seeds.
 
+## Mainnet fixed seed prune filter (2026-10-29)
+
+Keep a mainnet fixed seed only when a live VERSION message includes
+`NODE_NETWORK`. Remove `207.244.247.51:8333`, `51.79.241.169:8333` and
+`76.13.13.187:8333`: each answered with `NODE_NETWORK_LIMITED` and without
+`NODE_NETWORK`. Leave the other endpoints in place when they do not complete a handshake;
+that absence is not treated as proof they are pruned. Replace node0's
+2026-10-12 address `49.190.167.39` with `49.190.165.128` on ports 8333 and
+8334. Both ports answered on 2026-10-29 with `NODE_NETWORK`. Add
+`185.184.223.247:8333` and `159.195.92.32:8333`; both answered the same day
+with `NODE_NETWORK`. On 2026-10-30 add
+`[2a0a:4cc0:120:506:68c5:f1ff:fea6:1e03]:8333` and
+`[2403:71c0:2000:1d46::a]:8333`. Also remove `[240e:390:6ee0:f370::b40]:8333`,
+`[2a02:4780:79:909::1]:8333`, `36.25.72.251:8333`, `45.77.139.7:8333`,
+`46.7.6.219:8333` and `57.129.53.78:5890`: none returned a VERSION message.
+Regenerate only `chainparams_seed_main`.
+Other networks' seed arrays stay byte-for-byte unchanged. Rebuild and restart
+for the shorter list to be used; existing peers.dat entries are not deleted.
+
 ## UTXO statistics race and refactoring (TASK-020 / TASK-021)
 
 Baseline: master 789f3781a79174bbb4a9fa75efa21c1e0a58f30b, clean detached
