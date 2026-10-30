@@ -35,6 +35,7 @@ class DatadirConfirmTest(BitcoinTestFramework):
         self.test_conf_datadir_and_ignored_service_mode()
         self.test_move_keeps_approval()
         self.test_nosettings_and_corrupt_file()
+        self.test_help_and_version_skip_confirmation()
 
     def _prepare(self, name):
         base = self.root / name
@@ -280,6 +281,20 @@ class DatadirConfirmTest(BitcoinTestFramework):
         result = self._run(self._cmd(base, blocker))
         assert "does not contain valid JSON" in result.stderr
         assert "not been confirmed" not in result.stderr
+
+    def test_help_and_version_skip_confirmation(self):
+        self.log.info("-help and -version do not confirm a non-empty data directory")
+        base, _net, _blocker = self._prepare("help")
+        help_result = self._run([self.binary, f"-datadir={base}", "-regtest", "-help"])
+        assert help_result.returncode == 0, help_result.stderr
+        assert "Usage:" in help_result.stdout
+        assert "[y/N]:" not in help_result.stderr
+        assert "not been confirmed" not in help_result.stderr
+        version_result = self._run([self.binary, f"-datadir={base}", "-regtest", "-version"])
+        assert version_result.returncode == 0, version_result.stderr
+        assert "version" in version_result.stdout.lower()
+        assert "[y/N]:" not in version_result.stderr
+        assert "not been confirmed" not in version_result.stderr
 
 
 if __name__ == "__main__":

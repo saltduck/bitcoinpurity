@@ -130,7 +130,10 @@ static bool ParseArgs(NodeContext& node, int argc, char* argv[])
 
     // Confirm a non-empty data directory before InitConfig creates directories
     // or writes settings, and before AppInit forks for -daemon/-daemonwait.
-    if (auto error = common::InitConfig(args, nullptr, [](ArgsManager& config_args) {
+    // -help and -version only print information. They must not prompt, including
+    // when stdin is a terminal and the selected directory is already non-empty.
+    const bool info_only{HelpRequested(args) || args.GetBoolArg("-version", false)};
+    if (auto error = common::InitConfig(args, nullptr, info_only ? common::DataDirPreflightFn{} : [](ArgsManager& config_args) {
             return node::ConfirmDataDirFirstUse(config_args);
         })) {
         return InitError(error->message, error->details);
