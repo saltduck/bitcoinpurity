@@ -97,6 +97,10 @@ public:
     virtual std::unique_ptr<BlockTemplate> createNewBlock(const node::BlockCreateOptions& options = {}) = 0;
     virtual std::unique_ptr<BlockTemplate> createNewBlock2(const node::BlockCreateOptions& assemble_options) = 0;
 
+    //! In-process mempool lookup. Results preserve input order, with nullptr for missing entries.
+    std::vector<CTransactionRef> getTransactionsByTxID(const std::vector<Txid>& txids);
+    std::vector<CTransactionRef> getTransactionsByWitnessID(const std::vector<Wtxid>& wtxids);
+
     //! Get internal node context. Useful for RPC and testing,
     //! but not accessible across processes.
     virtual node::NodeContext* context() { return nullptr; }

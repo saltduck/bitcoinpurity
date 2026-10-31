@@ -141,6 +141,37 @@ BOOST_FIXTURE_TEST_CASE(block_submission_results, TestChain100Setup)
     BOOST_CHECK(mining->getTip()->hash == block.GetHash());
 }
 
+BOOST_AUTO_TEST_CASE(batch_mempool_transaction_lookup)
+{
+    auto& pool = MakeMempool();
+    auto mining = MakeMining();
+    CMutableTransaction tx;
+    tx.vin.resize(1);
+    tx.vin[0].prevout = COutPoint{Txid::FromUint256(uint256{1}), 0};
+    tx.vin[0].scriptWitness.stack = {{1, 2, 3}};
+    tx.vout.emplace_back(1000, CScript() << OP_TRUE);
+    auto shared = MakeTransactionRef(tx);
+    TestMemPoolEntryHelper entry;
+    {
+        LOCK(pool.cs);
+        AddToMempool(pool, entry.FromTx(tx));
+    }
+    const auto missing = Txid::FromUint256(uint256{2});
+    const auto by_txid = mining->getTransactionsByTxID({shared->GetHash(), missing, shared->GetHash()});
+    BOOST_REQUIRE_EQUAL(by_txid.size(), 3);
+    BOOST_REQUIRE(by_txid[0]);
+    BOOST_CHECK(by_txid[0]->GetWitnessHash() == shared->GetWitnessHash());
+    BOOST_CHECK(!by_txid[1]);
+    BOOST_CHECK(by_txid[0] == by_txid[2]);
+    const auto by_wtxid = mining->getTransactionsByWitnessID({shared->GetWitnessHash(), Wtxid::FromUint256(shared->GetHash().ToUint256())});
+    BOOST_REQUIRE_EQUAL(by_wtxid.size(), 2);
+    BOOST_REQUIRE(by_wtxid[0]);
+    BOOST_CHECK(by_wtxid[0]->vin[0].scriptWitness.stack == tx.vin[0].scriptWitness.stack);
+    BOOST_CHECK(!by_wtxid[1]);
+    BOOST_CHECK(mining->getTransactionsByTxID({}).empty());
+    BOOST_CHECK(mining->getTransactionsByWitnessID({}).empty());
+}
+
 BOOST_AUTO_TEST_CASE(default_block_limits)
 {
     ArgsManager args;

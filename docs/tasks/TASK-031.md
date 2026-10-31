@@ -26,3 +26,12 @@ first failed to compile against the original API, then passed after implementati
 The complete miner_tests suite passed on macOS arm64; no other platform or IPC
 build has been verified yet. This is a partial adaptation, not the full Core IPC
 backport or a completed SV2 gateway.
+
+## Batch mempool transaction lookup (#34020)
+
+Added in-process Mining lookup methods for txid and witness ID, under one
+mempool snapshot lock, retaining request order, duplicate entries and null
+missing entries. Tests cover distinct txid/wtxid, full witness retention,
+missing IDs and empty batches. The new API first failed to compile, then
+all six miner_tests passed on macOS arm64. These methods are not exported over
+Cap'n Proto; existing IPC schemas remain unchanged.

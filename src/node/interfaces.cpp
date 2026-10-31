@@ -1106,4 +1106,24 @@ node::CoinbaseTx BlockTemplate::getCoinbase() const
             CScript{tx->vin[0].scriptSig.begin(), prefix_end}, witness,
             tx->vout[0].nValue, {tx->vout.begin() + 1, tx->vout.end()}, tx->nLockTime};
 }
+
+std::vector<CTransactionRef> Mining::getTransactionsByTxID(const std::vector<Txid>& txids)
+{
+    auto& pool = *CHECK_NONFATAL(CHECK_NONFATAL(context())->mempool);
+    LOCK(pool.cs);
+    std::vector<CTransactionRef> result;
+    result.reserve(txids.size());
+    for (const auto& txid : txids) result.push_back(pool.info(GenTxid::Txid(txid)).tx);
+    return result;
+}
+
+std::vector<CTransactionRef> Mining::getTransactionsByWitnessID(const std::vector<Wtxid>& wtxids)
+{
+    auto& pool = *CHECK_NONFATAL(CHECK_NONFATAL(context())->mempool);
+    LOCK(pool.cs);
+    std::vector<CTransactionRef> result;
+    result.reserve(wtxids.size());
+    for (const auto& wtxid : wtxids) result.push_back(pool.info(GenTxid::Wtxid(wtxid)).tx);
+    return result;
+}
 } // namespace interfaces
