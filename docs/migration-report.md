@@ -461,4 +461,6 @@ No consensus/database migration, reindex or rescan. Rebuild with pinned Rust and
 restart; BUILD_SV2=OFF retains a Rust-free build. Configure a Purity-compatible
 pool supporting Full-Template Job Declaration. Real pool interoperability and
 deployment remain separate from local acceptance. See [architecture](architecture/embedded-sv2.md)
-and [contract](api/sv2.md). Runtime and platform acceptance are pending.
+and [contract](api/sv2.md). Requirements and selected in-process mining interface
+adaptations are implemented. The Rust gateway, C ABI template bridge, SV2 build
+option, configuration, RPC, Qt and end-to-end/platform acceptance remain pending.

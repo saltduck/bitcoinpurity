@@ -14,8 +14,8 @@
 #include <uint256.h>                // for uint256
 #include <util/time.h>              // for MillisecondsDouble
 
-#include <memory>   // for unique_ptr, shared_ptr
 #include <atomic>
+#include <memory>   // for unique_ptr, shared_ptr
 #include <optional> // for optional
 #include <string>
 #include <vector>   // for vector

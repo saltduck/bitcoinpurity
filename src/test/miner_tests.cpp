@@ -28,8 +28,8 @@
 
 #include <test/util/setup_common.h>
 
-#include <memory>
 #include <future>
+#include <memory>
 #include <vector>
 
 #include <boost/test/unit_test.hpp>

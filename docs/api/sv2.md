@@ -1,5 +1,8 @@
 # Embedded SV2 configuration and status contract
 
+Implementation status: this is the target contract. The SV2 runtime, build
+option, configuration options, RPC and Qt integration are not implemented yet.
+
 Runtime is opt-in with sv2=1; datum=1 and sv2=1 together are an error.
 Mainnet and regtest only. BUILD_SV2 defaults to ON; OFF excludes Rust dependencies.
 V1 defaults: 127.0.0.1:23334, 32 clients, 4 per IP. Configure optional local

@@ -50,3 +50,17 @@ initial-tip and subsequent-tip waits wake and return no result; other handles
 remain operational. New regression first failed to compile for missing interrupt,
 then all seven miner_tests passed. Mainnet IBD/header cooldown, strict resource
 reservation and the C ABI template bridge remain pending.
+
+## Validation checkpoint
+
+Local macOS arm64, AppleClang 21, Release, WERROR=OFF, wallet and GUI disabled:
+
+- Built test_bitcoin, bitcoind and bitcoin-cli with DATUM OFF and ON.
+- All seven miner_tests passed with DATUM OFF and ON.
+- mining_basic.py, mining_getblocktemplate_longpoll.py and feature_datum.py passed.
+- Documentation links and git diff --check passed.
+
+Existing mismatched bilingual_str declaration and duplicate-link-library warnings
+remain. Linux, Windows, Qt, IPC, sanitizers and fuzzing were not validated.
+No SV2 runtime or end-to-end mining has been implemented or tested; TASK-031
+remains partial and TASK-032 through TASK-035 remain pending.
