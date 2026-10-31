@@ -451,3 +451,22 @@ precedence chain.
   change consensus, validation, ASERT, RDTS, parking, wallets, P2P or import #34521.
 - Add deterministic cursor-snapshot regressions and concurrent functional scans;
   run hash, index/history/reorg/pruning and AssumeUTXO compatibility tests.
+
+## Strict multisig public key validation
+
+- Implement [bip-strict-multisig-pubkeys.md](../doc/bips/bip-strict-multisig-pubkeys.md)
+  version 0.2.0. Every executed `OP_CHECKMULTISIG(VERIFY)` in legacy, P2SH or
+  P2WSH script must satisfy `n >= 1` and `3 * n >= m`, and every public-key
+  operand must be a fully valid 33-byte compressed or 65-byte uncompressed
+  secp256k1 key. Both checks run before signature matching.
+- Matching order, ECDSA verification, NULLDUMMY/NULLFAIL and stack results for
+  a permitted threshold are unchanged. Duplicate valid keys stay permitted.
+  Non-executed branches and Tapscript are out of scope.
+- Enforce in blocks at or above `H_b` for inputs spending UTXOs created at or
+  above `H_a` (`H_a < H_b`), per input, with no expiry. Same-block spends use
+  that block's height.
+- Mainnet, testnet and signet heights stay unset (never enforced) until values
+  are published. Regtest sets both with
+  `-testactivationheight=strictmultisigutxo@H_a` and `strictmultisig@H_b`.
+- Relay policy enforces the rule for all inputs immediately; consensus
+  invalidity begins only at `H_b`.

@@ -167,11 +167,22 @@ void ReadRegTestArgs(const ArgsManager& args, CChainParams::RegTestOptions& opti
             options.purity_activation_height = height;
         } else if (deployment_name == "rdtsgrandfatherfix") {
             options.reduced_data_grandfather_fix_height = height;
+        } else if (deployment_name == "strictmultisigutxo") {
+            options.strict_multisig_utxo_height = height;
+        } else if (deployment_name == "strictmultisig") {
+            options.strict_multisig_enforcement_height = height;
         } else if (const auto buried_deployment = GetBuriedDeployment(deployment_name)) {
             options.activation_heights[*buried_deployment] = height;
         } else {
             throw std::runtime_error(strprintf("Invalid name (%s) for -testactivationheight=name@height.", arg));
         }
+    }
+
+    if (options.strict_multisig_utxo_height.has_value() != options.strict_multisig_enforcement_height.has_value()) {
+        throw std::runtime_error("-testactivationheight requires both strictmultisigutxo and strictmultisig heights.");
+    }
+    if (options.strict_multisig_utxo_height && *options.strict_multisig_utxo_height >= *options.strict_multisig_enforcement_height) {
+        throw std::runtime_error("-testactivationheight=strictmultisigutxo height must be less than the strictmultisig height.");
     }
 
     for (const std::string& strDeployment : args.GetArgs("-vbparams")) {

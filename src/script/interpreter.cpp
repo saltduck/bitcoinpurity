@@ -1141,6 +1141,20 @@ bool EvalScript(std::vector<std::vector<unsigned char> >& stack, const CScript& 
                     if ((int)stack.size() < i)
                         return set_error(serror, SCRIPT_ERR_INVALID_STACK_OPERATION);
 
+                    // m <= 20 and n <= m are already enforced above. Hybrid encodings pass
+                    // IsFullyValid(), so the prefix check must come first.
+                    if (flags & SCRIPT_VERIFY_STRICT_MULTISIG_PUBKEYS) {
+                        if (nSigsCount < 1 || 3 * nSigsCount < nKeysCount) {
+                            return set_error(serror, SCRIPT_ERR_MULTISIG_THRESHOLD);
+                        }
+                        for (int k = 0; k < nKeysCount; k++) {
+                            const valtype& vchPubKey = stacktop(-ikey - k);
+                            if (!IsCompressedOrUncompressedPubKey(vchPubKey) || !CPubKey{vchPubKey}.IsFullyValid()) {
+                                return set_error(serror, SCRIPT_ERR_MULTISIG_PUBKEY);
+                            }
+                        }
+                    }
+
                     // Subset of script starting at the most recent codeseparator
                     CScript scriptCode(pbegincodehash, pend);
 
