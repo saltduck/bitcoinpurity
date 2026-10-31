@@ -1,5 +1,18 @@
 # Embedded DATUM Migration Report
 
+## Core October 2026 security backports (TASK-029)
+
+All three vulnerable code patterns are present in the baseline. Adapt Core
+#36665/#36667/#36669 without unrelated upstream refactors: RECV/SEND names,
+seconds-based peer clock, CBlockFileInfo in chain.h and BlockInfo in
+interfaces/chain.h differ from upstream. Preserve disk VARINTs, wire/RPC
+formats, consensus and buffer thresholds. Rebuild/restart the node and any
+internal C++ BlockInfo consumers. Healthy databases need no migration,
+reindex or rescan; previously corrupted undo data is not repaired. No
+deployment or dependency source modification is included. See the
+[architecture](architecture/core-security-backports.md),
+[contract](api/core-security-backports.md) and [task](tasks/TASK-029.md).
+
 ## Node configuration default updates
 
 TASK-027 updates wallet fallback, relay, incremental replacement, mining fee,

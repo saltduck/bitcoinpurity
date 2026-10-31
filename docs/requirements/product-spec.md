@@ -1,5 +1,17 @@
 # Bitcoin Purity Product Specification
 
+## October 2026 security backports
+
+Apply Core #36665 (receive-only select exception monitoring), #36667
+(disconnect after more than 20 minutes of continuous send-buffer pause), and
+#36669 (64-bit block/undo offsets and file sizes, including Windows file I/O).
+Continuing sends/receives and additional queued messages do not extend an
+existing pause. Draining the buffer ends it; a new pause gets a new timer.
+Keep consensus, wire/RPC formats, buffer configuration and VARINT disk encoding.
+See [TASK-029](../tasks/TASK-029.md), the
+[architecture](../architecture/core-security-backports.md) and
+[compatibility contract](../api/core-security-backports.md).
+
 ## First-use data directory confirmation
 
 `bitcoin-qt` asks before its startup wizard uses an existing non-empty data

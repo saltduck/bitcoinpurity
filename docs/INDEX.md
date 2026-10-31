@@ -5,6 +5,8 @@
 - [Embedded DATUM RPC and configuration contract](api/datum.md)
 - [Migration report](migration-report.md)
 - [Task index](tasks/README.md)
+- [Core October 2026 security backport architecture](architecture/core-security-backports.md)
+- [Core October 2026 security compatibility contract](api/core-security-backports.md)
 - [Purity Signet deployment guide](purity-signet-deployment.md)
 - [Wallet transaction-removal architecture](architecture/wallet-transaction-removal.md)
 - [Wallet transaction-removal RPC contract](api/wallet-transaction-removal.md)

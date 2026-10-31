@@ -17,6 +17,7 @@
 #include <span.h>
 #include <streams.h>
 #include <test/util/random.h>
+#include <test/util/net.h>
 #include <test/util/setup_common.h>
 #include <test/util/validation.h>
 #include <util/strencodings.h>
@@ -36,6 +37,59 @@ using namespace util::hex_literals;
 using util::ToString;
 
 BOOST_FIXTURE_TEST_SUITE(net_tests, RegTestingSetup)
+
+BOOST_AUTO_TEST_CASE(paused_send_timeout)
+{
+    for (const bool push_message : {true, false}) {
+        ConnmanTestMsg connman{0, 0, *m_node.addrman, *m_node.netgroupman, Params()};
+        CConnman::Options options{};
+        options.nSendBufferMaxSize = 1024;
+        connman.Init(options);
+        CNode peer{0, nullptr, CAddress{}, 0, 0, CAddress{}, "",
+                   ConnectionType::INBOUND, false, 0};
+        peer.fSuccessfullyConnected = true;
+        const auto start{peer.m_connected + 61s};
+        SetMockTime(start);
+
+        const auto queue_message = [&] {
+            auto msg{NetMsg::Make(NetMsgType::BLOCK, std::vector<uint8_t>(2048))};
+            if (push_message) {
+                connman.PushMessage(&peer, std::move(msg));
+            } else {
+                LOCK(peer.cs_vSend);
+                peer.m_send_memusage += msg.GetMemoryUsage();
+                peer.vSendMsg.push_back(std::move(msg));
+                connman.SocketSendData(peer);
+            }
+            BOOST_REQUIRE(peer.fPauseSend);
+        };
+        const auto check_timeout = [&](std::chrono::seconds now, bool expected) {
+            SetMockTime(now);
+            // Continuing traffic must not hide a persistently full send buffer.
+            peer.m_last_send = now;
+            peer.m_last_recv = now;
+            BOOST_CHECK_EQUAL(connman.InactivityCheck(peer, now), expected);
+        };
+
+        queue_message();
+        check_timeout(start + 600s, false);
+        queue_message();
+        check_timeout(start + TIMEOUT_INTERVAL, false);
+        check_timeout(start + TIMEOUT_INTERVAL + 1s, true);
+
+        connman.FlushSendBuffer(peer);
+        {
+            LOCK(peer.cs_vSend);
+            connman.SocketSendData(peer);
+        }
+        BOOST_REQUIRE(!peer.fPauseSend);
+        check_timeout(start + 1500s, false);
+        queue_message();
+        check_timeout(start + 1500s + TIMEOUT_INTERVAL, false);
+        check_timeout(start + 1500s + TIMEOUT_INTERVAL + 1s, true);
+    }
+    SetMockTime(0s);
+}
 
 BOOST_AUTO_TEST_CASE(purity_service_names_and_address_roundtrip)
 {

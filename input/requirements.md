@@ -1,5 +1,18 @@
 # Embedded DATUM Solo Mining
 
+## Bitcoin Core October 2026 security backports
+
+Backport Bitcoin Core #36665, #36667 and #36669, adapting to this branch's
+socket event names, seconds-based peer clock and existing BlockInfo location.
+Only monitor select exceptional conditions for sockets requesting receive.
+Disconnect peers whose send buffer remains paused for more than 20 minutes;
+record each new pause without refreshing its timer while already paused.
+Widen flat-file offsets, block/undo sizes and dependent interfaces to uint64_t,
+including file positioning and truncation on Windows. Preserve VARINT disk
+encoding, P2P/RPC formats, consensus and configured buffer thresholds.
+Add regression tests before implementation. Rebuild/restart is required; no
+automatic repair of previously damaged undo files or deployment is included.
+
 ## First-use data directory confirmation
 
 Warn before Bitcoin Purity uses an existing, non-empty data directory for the

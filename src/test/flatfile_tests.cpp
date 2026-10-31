@@ -3,14 +3,106 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <clientversion.h>
+#include <chain.h>
 #include <common/args.h>
 #include <flatfile.h>
+#include <interfaces/chain.h>
+#include <kernel/chain.h>
 #include <streams.h>
 #include <test/util/setup_common.h>
 
 #include <boost/test/unit_test.hpp>
 
 BOOST_FIXTURE_TEST_SUITE(flatfile_tests, BasicTestingSetup)
+
+BOOST_AUTO_TEST_CASE(flatfile_large_positions)
+{
+    uint64_t large{(uint64_t{1} << 32) + 123};
+    FlatFilePos pos(7, large);
+    BOOST_CHECK_EQUAL(pos.nPos, large);
+    DataStream stream;
+    stream << pos;
+    FlatFilePos decoded;
+    stream >> decoded;
+    BOOST_CHECK(decoded == pos);
+    BOOST_CHECK_EQUAL(decoded.nPos, large);
+
+    CBlockFileInfo info;
+    info.nSize = large;
+    info.nUndoSize = large + 456;
+    stream << info;
+    CBlockFileInfo decoded_info;
+    stream >> decoded_info;
+    BOOST_CHECK_EQUAL(decoded_info.nSize, large);
+    BOOST_CHECK_EQUAL(decoded_info.nUndoSize, large + 456);
+
+    const uint256 hash{};
+    CBlockIndex index;
+    {
+        LOCK(cs_main);
+        index.phashBlock = &hash;
+        index.nStatus = BLOCK_HAVE_DATA | BLOCK_HAVE_UNDO;
+        index.nFile = 7;
+        index.nDataPos = large;
+        index.nUndoPos = large + 456;
+        stream << CDiskBlockIndex{&index};
+    }
+    CDiskBlockIndex decoded_index;
+    stream >> decoded_index;
+    {
+        LOCK(cs_main);
+        BOOST_CHECK_EQUAL(decoded_index.GetBlockPos().nPos, large);
+        BOOST_CHECK_EQUAL(decoded_index.GetUndoPos().nPos, large + 456);
+    }
+    BOOST_CHECK_EQUAL(kernel::MakeBlockInfo(&index).data_pos, large);
+
+    // Existing positions must keep their original VARINT encoding.
+    for (const uint32_t offset : {0U, 127U, 128U, 0xffffffffU}) {
+        DataStream legacy;
+        int file{7};
+        legacy << VARINT_MODE(file, VarIntMode::NONNEGATIVE_SIGNED) << VARINT(offset);
+        DataStream current;
+        current << FlatFilePos{file, offset};
+        BOOST_CHECK(legacy.str() == current.str());
+    }
+}
+
+BOOST_AUTO_TEST_CASE(flatfile_large_file)
+{
+    FlatFileSeq seq{m_args.GetDataDirBase(), "large", 100};
+    const auto path{seq.FileName({0, 0})};
+    // Sparse writes exercise the 2 GiB and 4 GiB boundaries without filling disk.
+    for (const uint64_t offset : {(uint64_t{1} << 31) + 123, (uint64_t{1} << 32) + 123}) {
+        {
+            AutoFile file{seq.Open(FlatFilePos(0, offset))};
+            BOOST_REQUIRE(!file.IsNull());
+            BOOST_CHECK_EQUAL(file.tell(), offset);
+            file << uint32_t{0x12345678};
+        }
+        BOOST_CHECK_EQUAL(fs::file_size(path), offset + sizeof(uint32_t));
+        {
+            AutoFile file{seq.Open(FlatFilePos(0, offset), true)};
+            uint32_t value;
+            file >> value;
+            BOOST_CHECK_EQUAL(value, 0x12345678U);
+            file.seek(-4, SEEK_END);
+            BOOST_CHECK_EQUAL(file.tell(), offset);
+        }
+        BOOST_REQUIRE(seq.Flush(FlatFilePos(0, offset + 2), true));
+        BOOST_CHECK_EQUAL(fs::file_size(path), offset + 2);
+        {
+            AutoFile file{seq.Open({0, 0})};
+            BOOST_REQUIRE(file.Truncate(offset + 1));
+        }
+        BOOST_CHECK_EQUAL(fs::file_size(path), offset + 1);
+        const uint64_t allocation_start{((offset + 99) / 100) * 100};
+        BOOST_REQUIRE(seq.Flush(FlatFilePos(0, allocation_start), true));
+        bool out_of_space{false};
+        BOOST_CHECK_EQUAL(seq.Allocate(FlatFilePos(0, allocation_start), 1, out_of_space), 100U);
+        BOOST_CHECK(!out_of_space);
+        BOOST_CHECK_EQUAL(fs::file_size(path), allocation_start + 100);
+    }
+}
 
 BOOST_AUTO_TEST_CASE(flatfile_filename)
 {
