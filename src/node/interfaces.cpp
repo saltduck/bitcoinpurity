@@ -1126,4 +1126,15 @@ std::vector<CTransactionRef> Mining::getTransactionsByWitnessID(const std::vecto
     for (const auto& wtxid : wtxids) result.push_back(pool.info(GenTxid::Wtxid(wtxid)).tx);
     return result;
 }
+
+bool Mining::submitBlock(const CBlock& block_in, std::string& reason, std::string& debug)
+{
+    CBlock block{block_in};
+    // In-process callers may supply blocks copied from previously validated templates.
+    block.fChecked = false;
+    block.m_checked_merkle_root = false;
+    block.m_checked_witness_commitment = false;
+    return node::SubmitBlock(*CHECK_NONFATAL(CHECK_NONFATAL(context())->chainman),
+                             std::make_shared<const CBlock>(std::move(block)), reason, debug);
+}
 } // namespace interfaces

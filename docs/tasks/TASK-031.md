@@ -35,3 +35,10 @@ missing entries. Tests cover distinct txid/wtxid, full witness retention,
 missing IDs and empty batches. The new API first failed to compile, then
 all six miner_tests passed on macOS arm64. These methods are not exported over
 Cap'n Proto; existing IPC schemas remain unchanged.
+
+## In-process full-block submission
+
+Mining::submitBlock now exposes the detailed submission helper to the future
+gateway without changing the old template submission signature or IPC schema.
+It clears cached validation on a private block copy, so even an in-process
+caller cannot reuse stale checks to omit coinbase witness validation.

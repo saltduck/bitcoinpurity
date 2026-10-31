@@ -16,6 +16,7 @@
 
 #include <memory>   // for unique_ptr, shared_ptr
 #include <optional> // for optional
+#include <string>
 #include <vector>   // for vector
 
 namespace node {
@@ -100,6 +101,10 @@ public:
     //! In-process mempool lookup. Results preserve input order, with nullptr for missing entries.
     std::vector<CTransactionRef> getTransactionsByTxID(const std::vector<Txid>& txids);
     std::vector<CTransactionRef> getTransactionsByWitnessID(const std::vector<Wtxid>& wtxids);
+
+    //! In-process submission of a complete block, including coinbase witness.
+    //! Returns true only for a new accepted block, with reason/debug initialized on every call.
+    bool submitBlock(const CBlock& block, std::string& reason, std::string& debug);
 
     //! Get internal node context. Useful for RPC and testing,
     //! but not accessible across processes.
