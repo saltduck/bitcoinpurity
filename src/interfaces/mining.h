@@ -52,9 +52,27 @@ public:
     virtual std::vector<uint256> getCoinbaseMerklePath() const = 0;
 
     /**
-     * Construct and broadcast the block.
+     * Construct a block from a copy of this template and submit it for processing.
      *
-     * @returns if the block was processed, independent of block validity
+     * The copy's coinbase is replaced with @p coinbase. @p version, @p timestamp,
+     * and @p nonce update the corresponding header fields, and the merkle root is
+     * recalculated from the copy. Cached validation results on that copy are
+     * discarded. The stored template is left unchanged, so another solution can
+     * be submitted from it.
+     *
+     * @param[in] version   block header version
+     * @param[in] timestamp block header time, as a unix timestamp
+     * @param[in] nonce     block header nonce
+     * @param[in] coinbase  complete coinbase transaction, including its witness
+     *
+     * @note Unlike the submitblock RPC, this method does not add a missing
+     *       coinbase witness. The caller must supply the witness reserved value
+     *       that the coinbase commitment commits to.
+     *
+     * @returns whether the block was processed. That does not necessarily mean
+     *          the block is valid or that it became the active chain tip.
+     *          Returns true when the block is already known, which can happen
+     *          if several nodes construct and broadcast the same solution.
      */
     virtual bool submitSolution(uint32_t version, uint32_t timestamp, uint32_t nonce, CTransactionRef coinbase) = 0;
 };

@@ -234,7 +234,10 @@ int64_t GetMinimumTime(const CBlockIndex* pindexPrev, const int64_t difficulty_a
 
 int64_t UpdateTime(CBlockHeader* pblock, const Consensus::Params& consensusParams, const CBlockIndex* pindexPrev);
 
-/** Update an old GenerateCoinbaseCommitment from CreateNewBlock after the block txs have changed */
+/**
+ * Replace the coinbase witness commitment and merkle root after the block
+ * transactions have changed. Cached validation flags are cleared.
+ */
 void RegenerateCommitments(CBlock& block, ChainstateManager& chainman);
 
 /** Apply -blockmintxfee and -blockmaxweight options from ArgsManager to BlockAssembler options. */
