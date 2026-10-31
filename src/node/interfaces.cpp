@@ -1044,17 +1044,17 @@ public:
             // always returns valid tip information when possible and only
             // returns null when shutting down, not when timing out.
             notifications().m_tip_block_cv.wait(lock, [&]() EXCLUSIVE_LOCKS_REQUIRED(notifications().m_tip_block_mutex) {
-                return notifications().TipBlock() || chainman().m_interrupt;
+                return notifications().TipBlock() || chainman().m_interrupt || m_interrupted;
             });
-            if (chainman().m_interrupt) return {};
+            if (chainman().m_interrupt || m_interrupted) return {};
             // At this point TipBlock is set, so continue to wait until it is
             // different then `current_tip` provided by caller.
             notifications().m_tip_block_cv.wait_until(lock, deadline, [&]() EXCLUSIVE_LOCKS_REQUIRED(notifications().m_tip_block_mutex) {
-                return Assume(notifications().TipBlock()) != current_tip || chainman().m_interrupt;
+                return Assume(notifications().TipBlock()) != current_tip || chainman().m_interrupt || m_interrupted;
             });
         }
 
-        if (chainman().m_interrupt) return {};
+        if (chainman().m_interrupt || m_interrupted) return {};
 
         // Must release m_tip_block_mutex before getTip() locks cs_main, to
         // avoid deadlocks.
@@ -1136,5 +1136,13 @@ bool Mining::submitBlock(const CBlock& block_in, std::string& reason, std::strin
     block.m_checked_witness_commitment = false;
     return node::SubmitBlock(*CHECK_NONFATAL(CHECK_NONFATAL(context())->chainman),
                              std::make_shared<const CBlock>(std::move(block)), reason, debug);
+}
+
+void Mining::interrupt()
+{
+    auto& notifications = *CHECK_NONFATAL(CHECK_NONFATAL(context())->notifications);
+    LOCK(notifications.m_tip_block_mutex);
+    m_interrupted = true;
+    notifications.m_tip_block_cv.notify_all();
 }
 } // namespace interfaces

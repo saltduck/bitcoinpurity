@@ -15,6 +15,7 @@
 #include <util/time.h>              // for MillisecondsDouble
 
 #include <memory>   // for unique_ptr, shared_ptr
+#include <atomic>
 #include <optional> // for optional
 #include <string>
 #include <vector>   // for vector
@@ -106,9 +107,15 @@ public:
     //! Returns true only for a new accepted block, with reason/debug initialized on every call.
     bool submitBlock(const CBlock& block, std::string& reason, std::string& debug);
 
+    //! Permanently interrupt this in-process client's waits without stopping other clients.
+    void interrupt();
+
     //! Get internal node context. Useful for RPC and testing,
     //! but not accessible across processes.
     virtual node::NodeContext* context() { return nullptr; }
+
+protected:
+    std::atomic<bool> m_interrupted{false};
 };
 
 //! Return implementation of Mining interface.

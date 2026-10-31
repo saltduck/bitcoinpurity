@@ -29,6 +29,7 @@
 #include <test/util/setup_common.h>
 
 #include <memory>
+#include <future>
 #include <vector>
 
 #include <boost/test/unit_test.hpp>
@@ -170,6 +171,22 @@ BOOST_AUTO_TEST_CASE(batch_mempool_transaction_lookup)
     BOOST_CHECK(!by_wtxid[1]);
     BOOST_CHECK(mining->getTransactionsByTxID({}).empty());
     BOOST_CHECK(mining->getTransactionsByWitnessID({}).empty());
+}
+
+BOOST_FIXTURE_TEST_CASE(interrupt_mining_wait, TestChain100Setup)
+{
+    auto mining = interfaces::MakeMining(m_node);
+    auto independent = interfaces::MakeMining(m_node);
+    const auto tip = mining->getTip();
+    BOOST_REQUIRE(tip);
+    auto waiter = std::async(std::launch::async, [&] {
+        return mining->waitTipChanged(tip->hash, std::chrono::seconds{5});
+    });
+    mining->interrupt();
+    BOOST_CHECK(waiter.wait_for(std::chrono::seconds{1}) == std::future_status::ready);
+    BOOST_CHECK(!waiter.get());
+    BOOST_CHECK(!mining->createNewBlock());
+    BOOST_CHECK(independent->createNewBlock());
 }
 
 BOOST_AUTO_TEST_CASE(default_block_limits)

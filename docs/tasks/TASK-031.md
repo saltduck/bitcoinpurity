@@ -42,3 +42,11 @@ Mining::submitBlock now exposes the detailed submission helper to the future
 gateway without changing the old template submission signature or IPC schema.
 It clears cached validation on a private block copy, so even an in-process
 caller cannot reuse stale checks to omit coinbase witness validation.
+
+## Per-client interruption (#34184, partial)
+
+Added permanent interruption of a dedicated in-process Mining handle. Both
+initial-tip and subsequent-tip waits wake and return no result; other handles
+remain operational. New regression first failed to compile for missing interrupt,
+then all seven miner_tests passed. Mainnet IBD/header cooldown, strict resource
+reservation and the C ABI template bridge remain pending.
