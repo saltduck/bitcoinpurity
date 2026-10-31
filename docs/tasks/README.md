@@ -70,3 +70,12 @@
 - [Signet complete source audit and Linux fuzz](../purity-signet-review.md)
 
 - [Late-H implementation and final validation](../purity-signet-late-h-review.md)
+
+## Embedded Stratum V2
+
+- [TASK-030: Requirements, provenance and contracts](TASK-030.md)
+- [TASK-031: Mining template and validation bridge](TASK-031.md)
+- [TASK-032: Rust protocol gateway and lifecycle](TASK-032.md)
+- [TASK-033: Independent pool and V1 end-to-end acceptance](TASK-033.md)
+- [TASK-034: Configuration, RPC and Qt integration](TASK-034.md)
+- [TASK-035: Platform builds, fuzzing and release verification](TASK-035.md)

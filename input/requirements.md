@@ -1,5 +1,43 @@
 # Embedded DATUM Solo Mining
 
+## Embedded Stratum V2 pooled mining
+
+Provide an in-process gateway from existing Stratum V1 miners to a Purity-chain
+SV2 pool using locally selected transactions and Full-Template Job Declaration.
+Support mainnet and regtest, daemon and Qt on Linux, macOS and Windows. Preserve
+DATUM Solo and make the two runtimes mutually exclusive. Default BUILD_SV2 to ON
+and runtime sv2 to false. BUILD_SV2=OFF must require no Rust dependencies.
+
+Use Bitcoin Core v32.1 mining semantics and assess PRs #33819, #34568, #34184,
+#34644, #34672, #34020 and #33745. Preserve Purity consensus, Knots transaction
+selection and existing IPC field numbers. Use unmodified SRI protocol libraries
+pinned to d1d30f3e755b0a5108633e1be7012034a8caaecd; implement lifecycle and policy
+in this repository using a Rust static library and C ABI.
+
+Authenticate Mining and JDS connections using configured authority public keys.
+Declare local templates, supply missing witness-encoded transactions, and wait
+for pool acknowledgement before publishing work. Allocate unique extranonces;
+separate local-valid, upstream-accepted, rejected and pending share counters.
+Submit network-target solutions locally through normal validation and to the
+pool. Preserve ASERT, RDTS, mandatory version bits and complete coinbase witness.
+
+On remote failure disconnect miners, invalidate outstanding work and retry the
+same pool with bounded backoff. Never fall back to Solo or pool-selected work.
+Interrupt and join gateway work before node dependencies stop. Default the V1
+listener to 127.0.0.1:23334 and limits to 32 total / 4 per IP. Provide optional
+local authentication, one Mining/JDS endpoint pair and upstream identity.
+Passwords must not enter settings.json; status must not expose miner identities
+or credentials. Add getsv2info and Qt mode, configuration and backend status.
+Configuration changes require restart.
+
+Use TDD and reviewable commits under TASK-030 through TASK-035. Acceptance
+requires an independent local test pool/JDS, actual external V1 proof of work,
+upstream share acknowledgement and block propagation to a second regtest node.
+Cover faults, reorgs, shutdown, protocol/FFI fuzzing and three-platform ON/OFF
+builds. Real pool interoperability and production deployment are separate gates.
+No native downstream SV2, backup pool or Signet signer integration is included.
+
+
 ## Bitcoin Core October 2026 security backports
 
 Backport Bitcoin Core #36665, #36667 and #36669, adapting to this branch's

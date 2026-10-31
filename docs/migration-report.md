@@ -453,3 +453,12 @@ wallet custody. No node rebuild, reindex or consensus migration is required.
 Existing two-entry files keep fixed-pair behavior. Local regression evidence
 and remaining checks are recorded in TASK-PS-011; no deployment is part of this
 change.
+
+## Embedded SV2 (TASK-030 through TASK-035)
+
+Add an opt-in pooled backend, preserving DATUM Solo and IPC field numbers.
+No consensus/database migration, reindex or rescan. Rebuild with pinned Rust and
+restart; BUILD_SV2=OFF retains a Rust-free build. Configure a Purity-compatible
+pool supporting Full-Template Job Declaration. Real pool interoperability and
+deployment remain separate from local acceptance. See [architecture](architecture/embedded-sv2.md)
+and [contract](api/sv2.md). Runtime and platform acceptance are pending.
