@@ -46,6 +46,8 @@
 
 - [TASK-028: Set default automatic parking depth to 3](TASK-028.md)
 
+- [TASK-029: Core #36665, #36667 and #36669 security backports](TASK-029.md)
+
 ## Purity Signet
 
 - [TASK-PS-000: Baseline and requirement amendments](TASK-PS-000.md)
