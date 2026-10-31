@@ -14,6 +14,7 @@
 
 #include <memory>
 #include <optional>
+#include <string>
 #include <stdint.h>
 
 #include <boost/multi_index/identity.hpp>
@@ -33,6 +34,10 @@ namespace Consensus { struct Params; };
 namespace node { struct NodeContext; };
 
 namespace node {
+
+//! Submit a complete block, returning true only for a newly accepted block.
+//! Unlike submitblock RPC, the caller must supply the complete coinbase witness.
+bool SubmitBlock(ChainstateManager& chainman, const std::shared_ptr<const CBlock>& block, std::string& reason, std::string& debug);
 
 struct CBlockTemplate
 {

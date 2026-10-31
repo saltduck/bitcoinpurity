@@ -1088,4 +1088,22 @@ namespace interfaces {
 std::unique_ptr<Node> MakeNode(node::NodeContext& context) { return std::make_unique<node::NodeImpl>(context); }
 std::unique_ptr<Chain> MakeChain(node::NodeContext& context) { return std::make_unique<node::ChainImpl>(context); }
 std::unique_ptr<Mining> MakeMining(node::NodeContext& context) { return std::make_unique<node::MinerImpl>(context); }
+
+node::CoinbaseTx BlockTemplate::getCoinbase() const
+{
+    const auto tx = getCoinbaseTx();
+    CHECK_NONFATAL(tx && tx->vin.size() == 1 && !tx->vout.empty());
+    auto prefix_end = tx->vin[0].scriptSig.begin();
+    opcodetype opcode;
+    CHECK_NONFATAL(tx->vin[0].scriptSig.GetOp(prefix_end, opcode));
+    std::optional<uint256> witness;
+    const auto& stack = tx->vin[0].scriptWitness.stack;
+    if (!stack.empty()) {
+        CHECK_NONFATAL(stack.size() == 1 && stack[0].size() == 32);
+        witness = uint256{stack[0]};
+    }
+    return {static_cast<uint32_t>(tx->version), tx->vin[0].nSequence,
+            CScript{tx->vin[0].scriptSig.begin(), prefix_end}, witness,
+            tx->vout[0].nValue, {tx->vout.begin() + 1, tx->vout.end()}, tx->nLockTime};
+}
 } // namespace interfaces

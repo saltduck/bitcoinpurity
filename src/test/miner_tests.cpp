@@ -95,6 +95,52 @@ BOOST_FIXTURE_TEST_CASE(solution_rechecks_coinbase_witness, TestChain100Setup)
     BOOST_CHECK(mining->getTip()->hash == original_tip->hash);
 }
 
+BOOST_FIXTURE_TEST_CASE(structured_coinbase_fields, TestChain100Setup)
+{
+    auto mining = interfaces::MakeMining(m_node);
+    auto block_template = mining->createNewBlock();
+    BOOST_REQUIRE(block_template);
+    const auto raw = block_template->getCoinbaseTx();
+    const auto coinbase = block_template->getCoinbase();
+    BOOST_CHECK_EQUAL(coinbase.version, raw->version);
+    BOOST_CHECK_EQUAL(coinbase.sequence, raw->vin[0].nSequence);
+    BOOST_CHECK(coinbase.script_sig_prefix == (CScript() << 101));
+    BOOST_CHECK_EQUAL(coinbase.block_reward_remaining, raw->vout[0].nValue);
+    BOOST_CHECK(coinbase.required_outputs == std::vector<CTxOut>(raw->vout.begin() + 1, raw->vout.end()));
+    BOOST_REQUIRE(coinbase.witness);
+    BOOST_CHECK(*coinbase.witness == uint256{raw->vin[0].scriptWitness.stack[0]});
+    BOOST_CHECK_EQUAL(coinbase.lock_time, raw->nLockTime);
+}
+
+BOOST_FIXTURE_TEST_CASE(block_submission_results, TestChain100Setup)
+{
+    auto mining = interfaces::MakeMining(m_node);
+    auto block_template = mining->createNewBlock();
+    CBlock block = block_template->getBlock();
+    block.hashMerkleRoot = BlockMerkleRoot(block);
+    block.fChecked = block.m_checked_merkle_root = block.m_checked_witness_commitment = false;
+    while (!CheckProofOfWork(block.GetHash(), block.nBits, Params().GetConsensus())) ++block.nNonce;
+    std::string reason{"old reason"}, debug{"old debug"};
+    BOOST_CHECK(node::SubmitBlock(*m_node.chainman, std::make_shared<const CBlock>(block), reason, debug));
+    BOOST_CHECK(reason.empty());
+    BOOST_CHECK(debug.empty());
+    BOOST_CHECK(!node::SubmitBlock(*m_node.chainman, std::make_shared<const CBlock>(block), reason, debug));
+    BOOST_CHECK_EQUAL(reason, "duplicate");
+    BOOST_CHECK(debug.empty());
+
+    auto invalid_template = mining->createNewBlock();
+    CBlock invalid = invalid_template->getBlock();
+    CMutableTransaction coinbase{*invalid.vtx[0]};
+    coinbase.vin[0].scriptWitness.SetNull();
+    invalid.vtx[0] = MakeTransactionRef(coinbase);
+    invalid.hashMerkleRoot = BlockMerkleRoot(invalid);
+    invalid.fChecked = invalid.m_checked_merkle_root = invalid.m_checked_witness_commitment = false;
+    while (!CheckProofOfWork(invalid.GetHash(), invalid.nBits, Params().GetConsensus())) ++invalid.nNonce;
+    BOOST_CHECK(!node::SubmitBlock(*m_node.chainman, std::make_shared<const CBlock>(invalid), reason, debug));
+    BOOST_CHECK_EQUAL(reason, "bad-witness-nonce-size");
+    BOOST_CHECK(mining->getTip()->hash == block.GetHash());
+}
+
 BOOST_AUTO_TEST_CASE(default_block_limits)
 {
     ArgsManager args;

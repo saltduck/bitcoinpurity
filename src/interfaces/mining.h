@@ -41,6 +41,8 @@ public:
     virtual const std::vector<double>& getTxCoinAgePriorities() const = 0;
 
     virtual CTransactionRef getCoinbaseTx() const = 0;
+    //! Structured coinbase fields for in-process clients; existing IPC methods retain their numbering.
+    node::CoinbaseTx getCoinbase() const;
     virtual const std::vector<unsigned char>& getCoinbaseCommitment() const = 0;
     virtual int getWitnessCommitmentIndex() const = 0;
 
