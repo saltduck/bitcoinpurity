@@ -995,6 +995,11 @@ public:
 
         block.hashMerkleRoot = BlockMerkleRoot(block);
 
+        // The template's cached validation does not apply to the replacement coinbase.
+        block.m_checked_witness_commitment = false;
+        block.m_checked_merkle_root = false;
+        block.fChecked = false;
+
         auto block_ptr = std::make_shared<const CBlock>(block);
         return chainman().ProcessNewBlock(block_ptr, /*force_processing=*/true, /*min_pow_checked=*/true, /*new_block=*/nullptr);
     }

@@ -3,6 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <addresstype.h>
+#include <chainparams.h>
 #include <coins.h>
 #include <common/system.h>
 #include <consensus/consensus.h>
@@ -11,6 +12,7 @@
 #include <interfaces/mining.h>
 #include <node/miner.h>
 #include <policy/policy.h>
+#include <pow.h>
 #include <test/util/random.h>
 #include <test/util/transaction_utils.h>
 #include <test/util/txmempool.h>
@@ -67,6 +69,31 @@ struct MinerTestingSetup : public TestingSetup {
 } // namespace miner_tests
 
 BOOST_FIXTURE_TEST_SUITE(miner_tests, MinerTestingSetup)
+
+BOOST_FIXTURE_TEST_CASE(solution_rechecks_coinbase_witness, TestChain100Setup)
+{
+    auto mining = interfaces::MakeMining(m_node);
+    auto block_template = mining->createNewBlock();
+    BOOST_REQUIRE(block_template);
+    const auto original_tip = mining->getTip();
+    BOOST_REQUIRE(original_tip);
+
+    // Template validation caches must not survive a caller-supplied coinbase.
+    const CBlock& cached = block_template->getBlock();
+    cached.fChecked = true;
+    cached.m_checked_merkle_root = true;
+    cached.m_checked_witness_commitment = true;
+    CMutableTransaction coinbase{*block_template->getCoinbaseTx()};
+    BOOST_REQUIRE(!coinbase.vin[0].scriptWitness.IsNull());
+    coinbase.vin[0].scriptWitness.SetNull();
+    CBlock candidate{cached};
+    candidate.vtx[0] = MakeTransactionRef(coinbase);
+    candidate.hashMerkleRoot = BlockMerkleRoot(candidate);
+    while (!CheckProofOfWork(candidate.GetHash(), candidate.nBits, Params().GetConsensus())) ++candidate.nNonce;
+
+    BOOST_CHECK(!block_template->submitSolution(candidate.nVersion, candidate.nTime, candidate.nNonce, candidate.vtx[0]));
+    BOOST_CHECK(mining->getTip()->hash == original_tip->hash);
+}
 
 BOOST_AUTO_TEST_CASE(default_block_limits)
 {

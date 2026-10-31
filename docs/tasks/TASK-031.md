@@ -7,3 +7,11 @@ See [requirements](../../input/requirements.md), [architecture](../architecture/
 ## Status
 
 Pending implementation and validation.
+
+## Witness validation cache backport (#33745)
+
+The regression test first failed on the original implementation: a replacement
+coinbase without witness was accepted and advanced the tip. Clearing all three
+block validation caches after reconstruction makes the regression pass on
+macOS arm64 (Release, wallet/GUI/DATUM disabled). This subtask does not complete
+the template bridge or any gateway runtime acceptance.

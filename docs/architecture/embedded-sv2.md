@@ -15,7 +15,7 @@ back to Solo, violating this feature's required failure behavior.
 
 | PR | Application |
 | --- | --- |
-| #33819 | Structured coinbase information; retain raw getters. |
+| #33819 | Structured coinbase information; retain raw getters and existing IPC field numbers. |
 | #34568 | Preserve existing IPC field numbers instead of copying the compatibility break; audit blocking-call execution context. |
 | #34184 | Interruptible initial sync/catch-up gating for SV2, preserving internal caller timing. |
 | #34644 | Normal block submission with rejection details. |
