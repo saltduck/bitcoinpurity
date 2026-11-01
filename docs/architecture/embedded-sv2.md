@@ -41,3 +41,17 @@ but close miners while reconnecting with bounded backoff. No Solo, backup pool
 or pool-template fallback. DATUM and SV2 are mutually exclusive. Start after
 chainstate readiness; cancel listeners/waits and join workers before destroying
 node dependencies. Mainnet and regtest only.
+
+
+## Runtime bounds and integration
+
+The provider retains at most 32 templates; Rust keeps 16 job mappings and 1024
+pending shares. Miners have bounded writers, 16 KiB lines, authorization
+deadlines and rate limits. Connection/handshake/write/job-ack timeouts and retry
+backoff capped at 30 seconds bound waits. Lost pending shares become abandoned.
+
+One owned thread hosts a current-thread Tokio runtime. C++ keeps its provider
+alive until Rust cancellation and join finish. No usable work exists without
+an upstream-acknowledged job. RPC and Qt read the same aggregate snapshot;
+settings require restart. Rust 1.96.0, SRI and lockfiles are pinned; dependency
+sources are unmodified.

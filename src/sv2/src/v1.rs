@@ -168,7 +168,7 @@ async fn client(
                             response["result"]=json!(allowed);
                             if !allowed {
                                 out.send(response).await.map_err(|_|protocol_error())?;
-                                return Err(protocol_error());
+                                continue;
                             }
                             if !authorized.swap(true,Ordering::Relaxed) {shared.update(|s|s.authorized_clients+=1);}
                         }

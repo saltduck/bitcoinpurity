@@ -9,7 +9,7 @@ use stratum_core::{
     noise_sv2::{
         Initiator, Responder, ELLSWIFT_ENCODING_SIZE, INITIATOR_EXPECTED_HANDSHAKE_MESSAGE_SIZE,
     },
-    parsers_sv2::{AnyMessage, AnyMessageOwned},
+    parsers_sv2::{AnyMessage, AnyMessageOwned, IsSv2Message},
 };
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -114,9 +114,7 @@ impl Connection {
                 Decrypted::Frame(mut frame, state) => {
                     self.decrypt = Some(state);
                     let header = frame.header();
-                    if header.ext_type() & 0x7fff != 0 {
-                        return Err(protocol_error());
-                    }
+                    validate_payload(header, frame.payload())?;
                     return Ok(Frame {
                         kind: header.msg_type(),
                         payload: frame.payload().to_vec(),
@@ -124,5 +122,52 @@ impl Connection {
                 }
             }
         }
+    }
+}
+
+fn validate_payload(
+    header: stratum_core::framing_sv2::header::Header,
+    payload: &mut [u8],
+) -> Result<()> {
+    if header.ext_type_without_channel_msg() != 0 || header.payload_length() != payload.len() {
+        return Err(protocol_error());
+    }
+    let message = AnyMessage::try_from((header, payload)).map_err(|_| protocol_error())?;
+    if header.channel_msg() != message.channel_bit() {
+        return Err(protocol_error());
+    }
+    Ok(())
+}
+pub fn validate_plain_frame(bytes: &mut [u8]) -> Result<()> {
+    if bytes.len() < 6 {
+        return Err(protocol_error());
+    }
+    let (header, payload) = bytes.split_at_mut(6);
+    let header = stratum_core::framing_sv2::header::Header::from_bytes(header)
+        .map_err(|_| protocol_error())?;
+    validate_payload(header, payload)
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn malformed_frames_are_bounded_and_do_not_panic() {
+        let mut seed = 0x81274abdu64;
+        for n in 0..20000usize {
+            let size = n % 256;
+            let mut bytes = vec![0u8; 6 + size];
+            bytes[2] = (n % 256) as u8;
+            bytes[3] = size as u8;
+            for byte in &mut bytes[6..] {
+                seed ^= seed << 13;
+                seed ^= seed >> 7;
+                seed ^= seed << 17;
+                *byte = seed as u8;
+            }
+            let _ = validate_plain_frame(&mut bytes);
+        }
+        assert!(validate_plain_frame(&mut [0; 5]).is_err());
+        let mut wrong_channel = vec![0, 128, 1, 6, 0, 0, 2, 0, 0, 0, 0, 0];
+        assert!(validate_plain_frame(&mut wrong_channel).is_err());
     }
 }

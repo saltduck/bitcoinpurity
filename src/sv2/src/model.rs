@@ -233,6 +233,7 @@ pub struct Status {
     pub previous_block_hash: String,
     pub nbits: u32,
     pub network_difficulty: f64,
+    pub share_difficulty: f64,
     pub transactions: u64,
     pub template_size: u64,
     pub template_weight: u64,
@@ -240,4 +241,7 @@ pub struct Status {
     pub block_candidates: u64,
     pub blocks_accepted: u64,
     pub blocks_rejected: u64,
+    pub last_block_time: u64,
+    pub last_block_hash: String,
+    pub last_block_result: String,
 }

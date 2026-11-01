@@ -7,7 +7,7 @@ use crate::{
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::{
-    collections::{BTreeMap, VecDeque},
+    collections::{BTreeMap, BTreeSet, VecDeque},
     net::SocketAddr,
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -456,7 +456,11 @@ async fn session(
                         let missing=decode!(frame,ProvideMissingTransactions);
                         if missing.request_id != req {return Err(protocol_error());}
                         let job=proposed.as_ref().ok_or_else(protocol_error)?;
-                        let txs=missing.unknown_tx_position_list.into_inner().into_iter().map(|i| {
+                        let positions=missing.unknown_tx_position_list.into_inner();
+                        if positions.len()>job.template.transactions.len() {return Err(protocol_error());}
+                        let mut seen=BTreeSet::new();
+                        let txs=positions.into_iter().map(|i| {
+                            if !seen.insert(i) {return Err(protocol_error());}
                             let tx=job.template.transactions.get(i as usize).ok_or_else(protocol_error)?;
                             model::bytes(tx)?.try_into().map_err(|_|protocol_error())
                         }).collect::<Result<Vec<binary_sv2::B016MOwned>>>()?;
@@ -491,6 +495,7 @@ async fn session(
                         let job=Arc::new(job);
                         shared.update(|s|{s.running=true;s.status="running".into();s.error.clear();s.current_height=job.template.height;
                             s.job_id=job.id();s.job_created=now();s.nbits=job.template.nbits;
+                            s.share_difficulty=Target::from_le_bytes(job.target).difficulty_float();
                             s.network_difficulty=Target::from_compact(stratum_core::bitcoin::CompactTarget::from_consensus(job.template.nbits)).difficulty_float();
                             s.previous_block_hash=stratum_core::bitcoin::BlockHash::from_byte_array(model::hash(&job.template.previous_block_hash).unwrap()).to_string();
                             s.transactions=job.template.transactions.len() as u64;s.template_size=job.template.size;s.template_weight=job.template.weight;s.coinbase_value=job.template.reward;});
@@ -551,7 +556,21 @@ async fn session(
                 shared.update(|s| s.local_valid_shares+=1);
                 if matches!(validation,ShareValidationResult::BlockFound(_)) {
                     let response=request_node(node,job.node_request("submit",&share.extranonce,share.version,share.ntime,share.nonce)?)?;
-                    shared.update(|s|{s.block_candidates+=1;if response["ok"]==true {s.blocks_accepted+=1;}else{s.blocks_rejected+=1;}});
+                    shared.update(|s|{
+                        s.block_candidates+=1;
+                        s.last_block_hash=hash.to_string();s.last_block_time=now();
+                        s.last_block_result=if response["ok"]==true {
+                            s.blocks_accepted+=1;"accepted"
+                        }else{
+                            s.blocks_rejected+=1;
+                            match response["error"].as_str() {
+                                Some("duplicate")=>"duplicate",
+                                Some("duplicate-invalid")=>"duplicate-invalid",
+                                Some("inconclusive")=>"inconclusive",
+                                _=>"rejected",
+                            }
+                        }.into();
+                    });
                     let mut full=job.extranonce_prefix.clone();full.extend_from_slice(&share.extranonce);
                     jds.send_owned(Any::JobDeclaration(Jd::PushSolution(PushSolutionOwned {
                         extranonce:full.try_into().map_err(|_|protocol_error())?,
