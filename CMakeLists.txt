@@ -45,6 +45,8 @@ set(UPSTREAM_CORE_CONSENSUS_MINOR 4)
 # This option must be known before project() so vcpkg can resolve the optional
 # manifest feature before the first language is enabled.
 option(BUILD_DATUM "Build embedded DATUM/Stratum mining support." ON)
+option(BUILD_SV2 "Build embedded Stratum V2 pooled mining support." ON)
+set(ENABLE_SV2 ${BUILD_SV2})
 if(BUILD_DATUM)
   list(APPEND VCPKG_MANIFEST_FEATURES datum)
   list(REMOVE_DUPLICATES VCPKG_MANIFEST_FEATURES)

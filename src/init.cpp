@@ -47,6 +47,9 @@
 #ifdef ENABLE_DATUM
 #include <mining/datum_bridge.h>
 #endif
+#ifdef ENABLE_SV2
+#include <mining/sv2_bridge.h>
+#endif
 #include <mapport.h>
 #include <net.h>
 #include <net_permissions.h>
@@ -288,6 +291,9 @@ void Interrupt(NodeContext& node)
 #ifdef ENABLE_DATUM
     mining::InterruptDatum();
 #endif
+#ifdef ENABLE_SV2
+    mining::InterruptSv2();
+#endif
     // Wake any threads that may be waiting for the tip to change.
     if (node.notifications) WITH_LOCK(node.notifications->m_tip_block_mutex, node.notifications->m_tip_block_cv.notify_all());
     InterruptHTTPServer();
@@ -320,6 +326,9 @@ void Shutdown(NodeContext& node)
 
 #ifdef ENABLE_DATUM
     mining::StopDatum(&node);
+#endif
+#ifdef ENABLE_SV2
+    mining::StopSv2();
 #endif
     StopHTTPRPC();
     StopREST();
@@ -807,6 +816,9 @@ void SetupServerArgs(ArgsManager& argsman, bool can_listen_ipc)
     argsman.AddArg("-blockversion=<n>", "Override block version to test forking scenarios", ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::BLOCK_CREATION);
 #ifdef ENABLE_DATUM
     mining::SetupDatumArgs(argsman);
+#endif
+#ifdef ENABLE_SV2
+    mining::SetupSv2Args(argsman);
 #endif
 
     argsman.AddArg("-rest", strprintf("Accept public REST requests (default: %u)", DEFAULT_REST_ENABLE), ArgsManager::ALLOW_ANY, OptionsCategory::RPC);
@@ -1734,6 +1746,13 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
 
     // Check port numbers
     if (!CheckHostPortOptions(args)) return false;
+#ifdef ENABLE_SV2
+    {
+        bilingual_str sv2_error;
+        if (!mining::ValidateSv2Options(args, sv2_error)) return InitError(sv2_error);
+    }
+#endif
+
 #ifdef ENABLE_DATUM
     {
         bilingual_str datum_error;
@@ -2538,6 +2557,13 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
     {
         bilingual_str datum_error;
         if (!mining::StartDatum(node, datum_error)) return InitError(datum_error);
+    }
+#endif
+
+#ifdef ENABLE_SV2
+    {
+        bilingual_str sv2_error;
+        if (!mining::StartSv2(node, sv2_error)) return InitError(sv2_error);
     }
 #endif
 

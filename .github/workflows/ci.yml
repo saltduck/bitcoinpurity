@@ -34,7 +34,7 @@ jobs:
           sudo apt-get install -y build-essential cmake python3 libevent-dev zlib1g-dev libboost-dev libcurl4-openssl-dev libjansson-dev libsodium-dev
       - name: Build with DATUM enabled
         run: |
-          cmake -S . -B build-datum-on -DBUILD_DATUM=ON -DBUILD_TESTS=OFF -DBUILD_GUI=OFF -DENABLE_WALLET=OFF -DWITH_ZMQ=OFF -DWITH_USDT=OFF
+          cmake -S . -B build-datum-on -DBUILD_DATUM=ON -DBUILD_SV2=OFF -DBUILD_TESTS=OFF -DBUILD_GUI=OFF -DENABLE_WALLET=OFF -DWITH_ZMQ=OFF -DWITH_USDT=OFF
           cmake --build build-datum-on --target bitcoind bitcoin-cli -j "$(nproc)"
       - name: Run embedded DATUM functional test
         run: |
@@ -42,7 +42,7 @@ jobs:
       - name: Build with DATUM disabled and no DATUM dependencies
         run: |
           sudo apt-get remove -y libcurl4-openssl-dev libjansson-dev libsodium-dev
-          cmake -S . -B build-datum-off -DBUILD_DATUM=OFF -DBUILD_TESTS=OFF -DBUILD_GUI=OFF -DENABLE_WALLET=OFF -DWITH_ZMQ=OFF -DWITH_USDT=OFF
+          cmake -S . -B build-datum-off -DBUILD_DATUM=OFF -DBUILD_SV2=OFF -DBUILD_TESTS=OFF -DBUILD_GUI=OFF -DENABLE_WALLET=OFF -DWITH_ZMQ=OFF -DWITH_USDT=OFF
           cmake --build build-datum-off --target bitcoind -j "$(nproc)"
 
   runners:
@@ -112,7 +112,7 @@ jobs:
         run: |
           # Run tests on commits after the last merge commit and before the PR head commit
           # Use clang++, because it is a bit faster and uses less memory than g++
-          git rebase --exec "echo Running test-one-commit on \$( git log -1 ) && CC=clang CXX=clang++ cmake -B build -DWERROR=ON -DWITH_ZMQ=ON -DBUILD_GUI=ON -DBUILD_BENCH=ON -DBUILD_FUZZ_BINARY=ON -DWITH_BDB=ON -DWARN_INCOMPATIBLE_BDB=OFF -DWITH_MINIUPNPC=ON -DWITH_USDT=ON -DCMAKE_CXX_FLAGS='-Wno-error=unused-member-function' -D RDTS_CONSENT=RUNTIME_CHECK && cmake --build build -j $(nproc) && ctest --output-on-failure --stop-on-failure --test-dir build -j $(nproc) && ./build/test/functional/test_runner.py -j $(( $(nproc) * 2 )) --combinedlogslen=99999999" ${{ env.TEST_BASE }}
+          git rebase --exec "echo Running test-one-commit on \$( git log -1 ) && CC=clang CXX=clang++ cmake -B build -DWERROR=ON -DBUILD_SV2=OFF -DWITH_ZMQ=ON -DBUILD_GUI=ON -DBUILD_BENCH=ON -DBUILD_FUZZ_BINARY=ON -DWITH_BDB=ON -DWARN_INCOMPATIBLE_BDB=OFF -DWITH_MINIUPNPC=ON -DWITH_USDT=ON -DCMAKE_CXX_FLAGS='-Wno-error=unused-member-function' -D RDTS_CONSENT=RUNTIME_CHECK && cmake --build build -j $(nproc) && ctest --output-on-failure --stop-on-failure --test-dir build -j $(nproc) && ./build/test/functional/test_runner.py -j $(( $(nproc) * 2 )) --combinedlogslen=99999999" ${{ env.TEST_BASE }}
 
   macos-native-arm64:
     name: ${{ matrix.job-name }}
@@ -263,7 +263,7 @@ jobs:
 
       - name: Generate build system
         run: |
-          cmake -B build --preset vs2022-static -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT\scripts\buildsystems\vcpkg.cmake" -D RDTS_CONSENT=RUNTIME_CHECK ${{ matrix.generate-options }}
+          cmake -B build --preset vs2022-static -DBUILD_SV2=OFF -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT\scripts\buildsystems\vcpkg.cmake" -D RDTS_CONSENT=RUNTIME_CHECK ${{ matrix.generate-options }}
 
       - name: Save vcpkg binary cache
         uses: actions/cache/save@v5
