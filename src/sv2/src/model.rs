@@ -142,11 +142,27 @@ impl Job {
                 .map_err(|_| protocol_error())?,
         })
     }
-    pub fn activate(&mut self, upstream_id: u32) -> Result<()> {
+    pub fn activate(&mut self, upstream_id: u32, clean_jobs: bool) -> Result<()> {
         self.upstream_id = upstream_id;
-        let job = NewExtendedMiningJobOwned {
+        let job = self.mining_job()?;
+        let prev = SetNewPrevHashOwned {
             channel_id: self.channel_id,
             job_id: upstream_id,
+            prev_hash: uint256(&self.template.previous_block_hash)?,
+            ntime_start: self.template.ntime,
+            nbits: self.template.nbits,
+        };
+        let notify =
+            build_sv1_notify_from_sv2(prev, job, clean_jobs).map_err(|_| protocol_error())?;
+        let message: stratum_core::sv1_api::json_rpc::Message = notify.into();
+        self.notify = serde_json::to_value(message).map_err(|_| protocol_error())?;
+        self.notify["params"][0] = json!(self.id());
+        Ok(())
+    }
+    pub fn mining_job(&self) -> Result<NewExtendedMiningJobOwned> {
+        Ok(NewExtendedMiningJobOwned {
+            channel_id: self.channel_id,
+            job_id: self.upstream_id,
             ntime_start: Sv2OptionOwned::new(Some(self.template.ntime)),
             version: self.template.version,
             version_rolling_allowed: true,
@@ -168,19 +184,7 @@ impl Job {
                 .clone()
                 .try_into()
                 .map_err(|_| protocol_error())?,
-        };
-        let prev = SetNewPrevHashOwned {
-            channel_id: self.channel_id,
-            job_id: upstream_id,
-            prev_hash: uint256(&self.template.previous_block_hash)?,
-            ntime_start: self.template.ntime,
-            nbits: self.template.nbits,
-        };
-        let notify = build_sv1_notify_from_sv2(prev, job, true).map_err(|_| protocol_error())?;
-        let message: stratum_core::sv1_api::json_rpc::Message = notify.into();
-        self.notify = serde_json::to_value(message).map_err(|_| protocol_error())?;
-        self.notify["params"][0] = json!(self.id());
-        Ok(())
+        })
     }
     pub fn complete_coinbase(&self, extranonce: &[u8]) -> Result<Transaction> {
         if extranonce.len() != self.rollable_size {

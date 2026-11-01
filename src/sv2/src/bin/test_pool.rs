@@ -404,14 +404,30 @@ async fn main() {
                 {
                     return Err(protocol_error());
                 }
+                if mode(&path) == "missing-features" {
+                    connection
+                        .send_owned(Any::Common(Common::SetupConnectionError(
+                            SetupConnectionErrorOwned {
+                                flags: setup.flags,
+                                error_code: b"unsupported-feature-flags"
+                                    .to_vec()
+                                    .try_into()
+                                    .map_err(|_| protocol_error())?,
+                            },
+                        )))
+                        .await?;
+                    return Err(protocol_error());
+                }
                 connection
                     .send_owned(Any::Common(Common::SetupConnectionSuccess(
                         SetupConnectionSuccess {
                             used_version: if mode(&path) == "bad-version" { 1 } else { 2 },
-                            flags: if mode(&path) == "missing-features" {
-                                0
+                            flags: if !is_jds && mode(&path) == "fixed-version" {
+                                1
+                            } else if !is_jds && mode(&path) == "extended-required" {
+                                2
                             } else {
-                                setup.flags
+                                0
                             },
                         },
                     )))

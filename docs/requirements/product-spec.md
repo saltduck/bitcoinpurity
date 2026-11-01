@@ -410,3 +410,7 @@ ON/OFF builds and extracted release binaries/application bundles. Manual release
 runs create artifacts only. Change project integration and packaging sources
 only; dependency sources remain unchanged. Account-level CI restrictions are
 external blockers, not successful acceptance.
+
+Pre-release review follow-up: [TASK-037](../tasks/TASK-037.md) tracks F1–F4 correctness fixes.
+PR #44 remains draft. Existing local fixture results do not establish independent
+CKPool interoperability or native Windows acceptance.

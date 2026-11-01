@@ -68,3 +68,7 @@ add explicit proxy support for Purity-specific virtual methods.
 Native platform jobs exercise both build switches. Release packaging must also
 validate the extracted daemon/GUI and macOS application bundle, not just compile
 the source tree. Manual release runs do not publish tags or GitHub Releases.
+
+Pre-release review follow-up: [TASK-037](../tasks/TASK-037.md) tracks F1–F4 correctness fixes.
+PR #44 remains draft. Existing local fixture results do not establish independent
+CKPool interoperability or native Windows acceptance.

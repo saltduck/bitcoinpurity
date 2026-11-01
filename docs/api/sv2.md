@@ -85,3 +85,14 @@ Cap'n Proto ordinals; it does not move the gateway to a subprocess.
 
 TASK-035 release acceptance exercises the same RPC contract from packaged
 executables; packaging changes introduce no RPC or protocol migration.
+
+Pre-release review follow-up: [TASK-037](../tasks/TASK-037.md) tracks F1–F4 correctness fixes.
+PR #44 remains draft. Existing local fixture results do not establish independent
+CKPool interoperability or native Windows acceptance.
+
+Share counting clarification: well-formed submissions rejected for unknown work,
+queue capacity, pending capacity or validation failure increment rejected_shares
+once. Upstream explicit rejection also increments it once. Unacknowledged
+attempted upstream submissions become abandoned on session loss; accepted counts
+require ACK. Malformed JSON, invalid field encoding and unauthenticated requests
+are protocol errors, excluded from these share counters.

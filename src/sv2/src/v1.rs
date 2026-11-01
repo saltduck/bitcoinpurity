@@ -185,18 +185,20 @@ async fn client(
                         "mining.submit"=> {
                             if !subscribed || !authorized.load(Ordering::Relaxed) {return Err(protocol_error());}
                             let job_id=params[1].as_str().ok_or_else(protocol_error)?;
-                            let Some(job)=known.iter().rev().find(|j|j.id()==job_id) else {
-                                response["result"]=json!(false);response["error"]=json!([21,"Unknown work",null]);
-                                out.send(response).await.map_err(|_|protocol_error())?;continue;
-                            };
                             let extra=hex::decode(params[2].as_str().ok_or_else(protocol_error)?).map_err(|_|protocol_error())?;
-                            if extra.len()!=job.rollable_size-4 {return Err(protocol_error());}
                             let parse_hex=|v:&Value|->Result<u32> {
                                 let s=v.as_str().ok_or_else(protocol_error)?;
                                 if s.len()!=8 {return Err(protocol_error());}
                                 u32::from_str_radix(s,16).map_err(|_|protocol_error())
                             };
                             let ntime=parse_hex(&params[3])?;let nonce=parse_hex(&params[4])?;
+                            if !params[5].is_null() { parse_hex(&params[5])?; }
+                            let Some(job)=known.iter().rev().find(|j|j.id()==job_id) else {
+                                shared.update(|s|s.rejected_shares+=1);
+                                response["result"]=json!(false);response["error"]=json!([21,"Unknown work",null]);
+                                out.send(response).await.map_err(|_|protocol_error())?;continue;
+                            };
+                            if extra.len()!=job.rollable_size-4 {return Err(protocol_error());}
                             let version=if params[5].is_null() {job.template.version}else{
                                 let bits=parse_hex(&params[5])?;
                                 if mask==0 || bits & !mask!=0 {return Err(protocol_error());}
@@ -204,7 +206,7 @@ async fn client(
                             };
                             let mut extranonce=serial.to_le_bytes().to_vec();extranonce.extend(extra);
                             let share=Share{id,reply:out.clone(),job:job_id.to_string(),extranonce,version,ntime,nonce};
-                            if let Err(error)=shares.try_send(share) {error.into_inner().answer(false);}
+                            if let Err(error)=shares.try_send(share) {shared.reject(error.into_inner());}
                             continue;
                         }
                         _=>{response["result"]=Value::Null;response["error"]=json!([20,"Unsupported method",null]);}

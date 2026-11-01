@@ -127,13 +127,32 @@ class Sv2Test(BitcoinTestFramework):
             assert_equal(configured["version-rolling"], True)
             assert_equal(configured["version-rolling.mask"], "1fffe000")
             share, nonce = self.solve(subscribed, job, False)
+            self.log.info("Same-parent template refresh preserves delayed J1 shares and block solutions")
+            old_parent = node.getbestblockhash()
+            old_job = node.getsv2info()["job_id"]
+            wallet.rescan_utxos()
+            wallet.send_self_transfer(from_node=node)
+            self.wait_until(lambda: node.getsv2info()["job_id"] != old_job)
+            assert_equal(node.getbestblockhash(), old_parent)
+            while True:
+                updated = client.receive()
+                if updated.get("method") == "mining.notify" and updated["params"][0] != job[0]:
+                    assert_equal(updated["params"][8], False)
+                    break
             client.send(3, "mining.submit", share)
             result = client.receive_id(3)[0]["result"]
             if not result:
                 raise AssertionError(f"Valid external share rejected: {node.getsv2info()}")
             self.wait_until(lambda: node.getsv2info()["accepted_shares"] == 1)
+            rejected_before = node.getsv2info()["rejected_shares"]
             client.send(4, "mining.submit", share)
             assert_equal(client.receive_id(4)[0]["result"], False)
+            assert_equal(node.getsv2info()["rejected_shares"], rejected_before + 1)
+            unknown = list(share)
+            unknown[1] = "unknown-job"
+            client.send(41, "mining.submit", unknown)
+            assert_equal(client.receive_id(41)[0]["result"], False)
+            assert_equal(node.getsv2info()["rejected_shares"], rejected_before + 2)
             assert_equal(node.getsv2info()["accepted_shares"], 1)
             height = node.getblockcount()
             rolled_job = list(job)
@@ -190,12 +209,14 @@ class Sv2Test(BitcoinTestFramework):
             client.send(6, "mining.submit", share)
             self.wait_until(lambda: node.getsv2info()["pending_shares"] == 1)
             assert_equal(node.getsv2info()["accepted_shares"], before)
+            abandoned_before = node.getsv2info()["abandoned_shares"]
             self.pool.terminate()
             self.pool.wait(timeout=5)
             self.wait_until(lambda: not node.getsv2info()["running"])
             self.wait_until(lambda: node.getsv2info()["clients"] == 0)
             assert_equal(node.getsv2info()["accepted_shares"], before)
             assert_equal(node.getsv2info()["pending_shares"], 0)
+            assert_equal(node.getsv2info()["abandoned_shares"], abandoned_before + 1)
             assert_equal(node.getblockcount(), expected_height)
             client.close()
             self.mode("")
@@ -230,7 +251,7 @@ class Sv2Test(BitcoinTestFramework):
             invalid_client.close()
             assert_equal(node.getsv2info()["local_valid_shares"], 0)
             assert_equal(node.getsv2info()["accepted_shares"], 0)
-            for fault in ("duplicate-missing", "bad-version", "missing-features", "silent-job"):
+            for fault in ("duplicate-missing", "bad-version", "fixed-version", "missing-features", "silent-job"):
                 self.mode(fault)
                 self.restart_node(0, extra_args=args)
                 self.wait_until(lambda: node.getsv2info()["status"] == "retrying", timeout=40)

@@ -504,3 +504,7 @@ startup/PoW also passes. Release CI now verifies actual archives, adds macOS app
 ZIPs and selects those as the canonical macOS update artifact, preserving CLI
 tar downloads. Manifest schema is unchanged. Hosted CI, native MSVC/Qt, and
 Windows release-archive runtime checks remain blocked by the Actions restriction.
+
+Pre-release review follow-up: [TASK-037](tasks/TASK-037.md) tracks F1–F4 correctness fixes.
+PR #44 remains draft. Existing local fixture results do not establish independent
+CKPool interoperability or native Windows acceptance.

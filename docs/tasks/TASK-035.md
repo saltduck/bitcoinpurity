@@ -145,3 +145,12 @@ acceptance can run.
   and Cocoa GUI PoW pass. Linux extracted archive GUI PoW also passes.
 - No existing test cases or dependency sources were changed. Native Windows
   and hosted CI acceptance remain outstanding under the account restriction.
+
+## Pre-release review gate (2026-11-01)
+
+The F1–F4 review at e7cd08c6c8 supersedes any interpretation that local fixture
+passes establish release readiness. Follow [TASK-037](TASK-037.md) for corrective
+work and current evidence. PR #44 remains draft. Unmodified CKPool requires a
+Core-compatible IPC validation interface, whose schema conflicts with the
+existing Purity interface; direct socket interoperability is not established.
+Native Windows and production-pool acceptance remain outstanding.

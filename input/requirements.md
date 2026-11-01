@@ -521,3 +521,13 @@ precedence chain.
   change consensus, validation, ASERT, RDTS, parking, wallets, P2P or import #34521.
 - Add deterministic cursor-snapshot regressions and concurrent functional scans;
   run hash, index/history/reorg/pruning and AssumeUTXO compatibility tests.
+
+### Embedded SV2 pre-release correctness review (2026-11-01)
+
+- Keep PR #44 draft; no merge or production deployment until F1–F4 and the
+  independent CKPool/native Windows acceptance gates are satisfied.
+- Interpret SetupConnection success flags per protocol, preserve valid jobs on
+  same-parent refreshes, attempt local/Mining/JDS solution paths independently,
+  and count every parsed local share rejection exactly once.
+- Do not modify dependency sources or weaken existing test assertions. Record
+  fixture tests, independent implementation tests and production results separately.

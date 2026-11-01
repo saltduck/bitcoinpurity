@@ -121,6 +121,10 @@ pub(crate) struct Shared {
     status: Mutex<Status>,
 }
 impl Shared {
+    pub(crate) fn reject(&self, share: Share) {
+        self.update(|s| s.rejected_shares += 1);
+        share.answer(false);
+    }
     pub(crate) fn update(&self, f: impl FnOnce(&mut Status)) {
         f(&mut self.status.lock().unwrap_or_else(|p| p.into_inner()));
     }
@@ -273,12 +277,14 @@ async fn run(
         shared.update(|s| {
             s.running = false;
             s.status = "retrying".into();
-            s.error = "upstream-unavailable-or-protocol-failure".into();
+            if s.error.is_empty() {
+                s.error = "upstream-unavailable-or-protocol-failure".into();
+            }
             s.abandoned_shares += s.pending_shares;
             s.pending_shares = 0;
         });
         while let Ok(share) = receiver.try_recv() {
-            share.answer(false);
+            shared.reject(share);
         }
         tokio::select! { _=stopped(&shared)=>break, _=sleep(Duration::from_secs(delay))=>{} }
         delay = (delay * 2).min(30);
@@ -293,6 +299,14 @@ macro_rules! decode {
             .map_err(|_| protocol_error())?
             .into_owned()
     };
+}
+fn validate_setup_success(protocol: Protocol, success: SetupConnectionSuccess) -> Result<()> {
+    // Success flags describe server requirements, not echoed client capabilities.
+    if success.used_version != 2 || (protocol == Protocol::MiningProtocol && success.flags & 1 != 0)
+    {
+        return Err(protocol_error());
+    }
+    Ok(())
 }
 async fn setup(
     connection: &mut Connection,
@@ -333,10 +347,42 @@ async fn setup(
         return Err(protocol_error());
     }
     let success = decode!(frame, SetupConnectionSuccess);
-    if success.used_version != 2 || success.flags & flags != flags {
-        return Err(protocol_error());
+    validate_setup_success(protocol, success)
+}
+fn install_confirmed_job(
+    channel: &mut ExtendedChannel,
+    job: &mut Job,
+    previous: Option<&Job>,
+    id: u32,
+) -> Result<()> {
+    let clean = previous.is_none_or(|old| {
+        old.template.previous_block_hash != job.template.previous_block_hash
+            || old.template.nbits != job.template.nbits
+    });
+    job.activate(id, clean)?;
+    if clean {
+        channel
+            .on_chain_tip_update(ChainTip::new(
+                model::uint256(&job.template.previous_block_hash)?,
+                job.template.nbits,
+                job.template.ntime,
+            ))
+            .map_err(|_| protocol_error())?;
     }
+    // The custom ACK was checked above; install this job with its own
+    // timestamp without invalidating other jobs on the same parent.
+    channel
+        .on_new_extended_mining_job(job.mining_job()?)
+        .map_err(|_| protocol_error())?;
     Ok(())
+}
+async fn send_share_paths(
+    mining: impl std::future::Future<Output = Result<()>>,
+    jds: impl std::future::Future<Output = Result<()>>,
+) -> (Result<()>, Result<()>) {
+    let mining_result = mining.await;
+    let jds_result = jds.await;
+    (mining_result, jds_result)
 }
 fn request_node(node: &dyn Node, request: Value) -> Result<Value> {
     node.request(request).map_err(|_| protocol_error())
@@ -499,13 +545,11 @@ async fn session(
                     0x23 if phase==4 => {
                         let success=decode!(frame,SetCustomMiningJobSuccess);
                         let message=custom.take().ok_or_else(protocol_error)?;
-                        if success.request_id!=req || success.channel_id!=open.channel_id {return Err(protocol_error());}
+                        if success.request_id!=req || success.channel_id!=open.channel_id || message.request_id!=success.request_id || message.channel_id!=success.channel_id {return Err(protocol_error());}
                         if history.iter().any(|j|j.upstream_id==success.job_id) {return Err(protocol_error());}
                         let mut job=proposed.take().ok_or_else(protocol_error)?;
                         job.target=target;
-                        channel.on_chain_tip_update(ChainTip::new(model::uint256(&job.template.previous_block_hash)?,job.template.nbits,job.template.ntime)).map_err(|_|protocol_error())?;
-                        channel.on_set_custom_mining_job_success(message,success.clone()).map_err(|_|protocol_error())?;
-                        job.activate(success.job_id)?;
+                        install_confirmed_job(&mut channel, &mut job, history.back().map(Arc::as_ref), success.job_id)?;
                         let job=Arc::new(job);
                         shared.update(|s|{s.running=true;s.status="running".into();s.error.clear();s.current_height=job.template.height;
                             s.job_id=job.id();s.job_created=now();s.nbits=job.template.nbits;
@@ -546,9 +590,9 @@ async fn session(
                 }
             }
             Some(share)=shares.recv()=> {
-                let Some(job)=history.iter().find(|j|j.id()==share.job) else {share.answer(false);continue};
+                let Some(job)=history.iter().find(|j|j.id()==share.job) else {shared.reject(share);continue};
                 if pending.len()>=1024 || (share.version & !0x1fffe000)!=(job.template.version & !0x1fffe000) {
-                    share.answer(false);continue;
+                    shared.reject(share);continue;
                 }
                 sequence=sequence.checked_add(1).ok_or_else(protocol_error)?;
                 let message=SubmitSharesExtendedOwned {channel_id:open.channel_id,sequence_number:sequence,job_id:job.upstream_id,
@@ -568,8 +612,10 @@ async fn session(
                 };
                 let hash=match validation {ShareValidationResult::Valid(h)|ShareValidationResult::BlockFound(h)=>h};
                 shared.update(|s| s.local_valid_shares+=1);
+                let mut solution = None;
                 if matches!(validation,ShareValidationResult::BlockFound(_)) {
-                    let response=request_node(node,job.node_request("submit",&share.extranonce,share.version,share.ntime,share.nonce)?)?;
+                    let response=request_node(node,job.node_request("submit",&share.extranonce,share.version,share.ntime,share.nonce)?)
+                        .unwrap_or_else(|_| json!({"ok":false,"error":"local-submit-unavailable"}));
                     shared.update(|s|{
                         s.block_candidates+=1;
                         s.last_block_hash=hash.to_string();s.last_block_time=now();
@@ -586,15 +632,234 @@ async fn session(
                         }.into();
                     });
                     let mut full=job.extranonce_prefix.clone();full.extend_from_slice(&share.extranonce);
-                    jds.send_owned(Any::JobDeclaration(Jd::PushSolution(PushSolutionOwned {
+                    solution = Some(Any::JobDeclaration(Jd::PushSolution(PushSolutionOwned {
                         extranonce:full.try_into().map_err(|_|protocol_error())?,
                         prev_hash:model::uint256(&job.template.previous_block_hash)?,nonce:share.nonce,ntime:share.ntime,nbits:job.template.nbits,version:share.version,
-                    }))).await?;
+                    })));
                 }
-                pool.send_owned(Any::Mining(Mining::SubmitSharesExtended(message))).await?;
                 pending.insert(sequence,Pending {share,started:Instant::now(),difficulty:Target::from_le_bytes(job.target).difficulty_float(),achieved:Target::from_le_bytes(hash.to_byte_array()).difficulty_float()});
                 shared.update(|s|s.pending_shares=pending.len() as u64);
+                let (mining_result, jds_result) = send_share_paths(
+                    pool.send_owned(Any::Mining(Mining::SubmitSharesExtended(message))),
+                    async { if let Some(solution) = solution { jds.send_owned(solution).await } else { Ok(()) } },
+                ).await;
+                shared.update(|s| {
+                    s.error = match (mining_result.is_err(), jds_result.is_err()) {
+                        (true, true) => "mining-and-jds-submit-failed",
+                        (true, false) => "mining-submit-failed",
+                        (false, true) => "jds-push-solution-failed",
+                        (false, false) => "",
+                    }.into();
+                });
+                mining_result?;
+                jds_result?;
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod review_tests {
+    use super::*;
+    #[test]
+    fn setup_success_flags_are_server_requirements() {
+        for flags in [0, 2] {
+            assert!(validate_setup_success(
+                Protocol::MiningProtocol,
+                SetupConnectionSuccess {
+                    used_version: 2,
+                    flags
+                }
+            )
+            .is_ok());
+        }
+        assert!(validate_setup_success(
+            Protocol::MiningProtocol,
+            SetupConnectionSuccess {
+                used_version: 2,
+                flags: 1
+            }
+        )
+        .is_err());
+        assert!(validate_setup_success(
+            Protocol::JobDeclarationProtocol,
+            SetupConnectionSuccess {
+                used_version: 2,
+                flags: 0
+            }
+        )
+        .is_ok());
+        assert!(validate_setup_success(
+            Protocol::MiningProtocol,
+            SetupConnectionSuccess {
+                used_version: 1,
+                flags: 0
+            }
+        )
+        .is_err());
+    }
+    #[test]
+    fn same_parent_refresh_keeps_old_share_and_job_time() {
+        use stratum_core::bitcoin::{
+            absolute, consensus::serialize, transaction, Amount, ScriptBuf, Transaction, TxIn,
+            TxOut, Witness,
+        };
+        let tx = Transaction {
+            version: transaction::Version::TWO,
+            lock_time: absolute::LockTime::ZERO,
+            input: vec![TxIn {
+                script_sig: ScriptBuf::from_bytes(vec![0x51]),
+                witness: Witness::from(vec![vec![0; 32]]),
+                ..Default::default()
+            }],
+            output: vec![TxOut {
+                value: Amount::from_sat(50_0000_0000),
+                script_pubkey: ScriptBuf::from_bytes(vec![0x51]),
+            }],
+        };
+        let template = Template {
+            size: 200,
+            weight: 800,
+            reward: 50_0000_0000,
+            id: 1,
+            height: 1,
+            version: 0x20000000,
+            ntime: 100,
+            nbits: 0x207fffff,
+            previous_block_hash: "00".repeat(32),
+            coinbase: hex::encode(serialize(&tx)),
+            coinbase_prefix: "51".into(),
+            transactions: vec![],
+            wtxids: vec![],
+            merkle_path: vec![],
+        };
+        let outputs = serialize(&vec![TxOut {
+            value: Amount::ZERO,
+            script_pubkey: ScriptBuf::from_bytes(vec![0x51]),
+        }]);
+        let mut first =
+            Job::prepare(template.clone(), &outputs, vec![], 8, 1, 1, [255; 32]).unwrap();
+        let mut channel = ExtendedChannel::new(
+            1,
+            "test".into(),
+            ExtranoncePrefix::from_wire(vec![]).unwrap(),
+            Target::from_le_bytes([255; 32]),
+            1e12,
+            true,
+            8,
+            Some(16),
+        )
+        .unwrap();
+        install_confirmed_job(&mut channel, &mut first, None, 1).unwrap();
+        let mut next_template = template;
+        next_template.id = 2;
+        next_template.ntime = 200;
+        channel.set_target(Target::from_le_bytes([1; 32])).unwrap();
+        let mut second = Job::prepare(next_template, &outputs, vec![], 8, 1, 1, [1; 32]).unwrap();
+        install_confirmed_job(&mut channel, &mut second, Some(&first), 2).unwrap();
+        assert_eq!(first.notify["params"][8], true);
+        assert_eq!(second.notify["params"][8], false);
+        let mut found_block = false;
+        for nonce in 0..100 {
+            let share = SubmitSharesExtendedOwned {
+                channel_id: 1,
+                sequence_number: nonce,
+                job_id: 1,
+                nonce,
+                ntime: 100,
+                version: 0x20000000,
+                extranonce: vec![0; 8].try_into().unwrap(),
+            };
+            let result = channel
+                .validate_share(share)
+                .expect("old job must retain its time and easy target");
+            if matches!(result, ShareValidationResult::BlockFound(_)) {
+                found_block = true;
+                break;
+            }
+        }
+        assert!(found_block);
+        second.template.previous_block_hash = "11".repeat(32);
+        install_confirmed_job(&mut channel, &mut second, Some(&first), 3).unwrap();
+        assert_eq!(second.notify["params"][8], true);
+        let share = SubmitSharesExtendedOwned {
+            channel_id: 1,
+            sequence_number: 101,
+            job_id: 1,
+            nonce: 101,
+            ntime: 100,
+            version: 0x20000000,
+            extranonce: vec![0; 8].try_into().unwrap(),
+        };
+        assert!(matches!(
+            channel.validate_share(share),
+            Err(ShareValidationError::Stale(_))
+        ));
+    }
+
+    #[tokio::test]
+    async fn solution_paths_are_both_attempted_on_either_write_failure() {
+        use std::sync::atomic::AtomicUsize;
+        for failed in 0..2 {
+            let attempts = AtomicUsize::new(0);
+            let mining = async {
+                attempts.fetch_or(1, Ordering::SeqCst);
+                if failed == 0 {
+                    Err(protocol_error())
+                } else {
+                    Ok(())
+                }
+            };
+            let jds = async {
+                attempts.fetch_or(2, Ordering::SeqCst);
+                if failed == 1 {
+                    Err(protocol_error())
+                } else {
+                    Ok(())
+                }
+            };
+            let (mining_result, jds_result) = send_share_paths(mining, jds).await;
+            assert_eq!(mining_result.is_err(), failed == 0);
+            assert_eq!(jds_result.is_err(), failed == 1);
+            assert_eq!(attempts.load(Ordering::SeqCst), 3);
+            let timed_out = async {
+                timeout(Duration::from_millis(1), std::future::pending::<()>())
+                    .await
+                    .map_err(|_| protocol_error())
+            };
+            let other_attempted = AtomicBool::new(false);
+            let other = async {
+                other_attempted.store(true, Ordering::SeqCst);
+                Ok(())
+            };
+            let (timed_out_result, other_result) = send_share_paths(timed_out, other).await;
+            assert!(timed_out_result.is_err());
+            assert!(other_result.is_ok());
+            assert!(other_attempted.load(Ordering::SeqCst));
+        }
+    }
+    #[test]
+    fn local_rejection_counts_and_answers_once() {
+        let shared = Shared {
+            stop: AtomicBool::new(false),
+            status: Mutex::new(Status::default()),
+        };
+        let (reply, mut responses) = mpsc::channel(1);
+        shared.reject(Share {
+            id: json!(1),
+            reply,
+            job: "unknown".into(),
+            extranonce: vec![],
+            version: 0,
+            ntime: 0,
+            nonce: 0,
+        });
+        assert_eq!(responses.try_recv().unwrap()["result"], false);
+        assert!(responses.try_recv().is_err());
+        shared.update(|s| {
+            assert_eq!(s.rejected_shares, 1);
+            assert_eq!(s.abandoned_shares, 0);
+            assert_eq!(s.accepted_shares, 0);
+        });
     }
 }
