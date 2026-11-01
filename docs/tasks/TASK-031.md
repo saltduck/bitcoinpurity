@@ -6,7 +6,7 @@ See [requirements](../../input/requirements.md), [architecture](../architecture/
 
 ## Status
 
-Template provider and C ABI callbacks implemented and locally validated; full gateway integration is tracked in TASK-032 onward.
+Implemented and integrated with the full gateway. Eight mining unit cases and C++ ASan/UBSan checks pass; see final validation below.
 
 ## Witness validation cache backport (#33745)
 
@@ -51,7 +51,7 @@ remain operational. New regression first failed to compile for missing interrupt
 then all seven miner_tests passed. Mainnet IBD/header cooldown, strict resource
 reservation and the C ABI template bridge remain pending.
 
-## Validation checkpoint
+## Initial validation checkpoint
 
 Local macOS arm64, AppleClang 21, Release, WERROR=OFF, wallet and GUI disabled:
 
@@ -62,8 +62,8 @@ Local macOS arm64, AppleClang 21, Release, WERROR=OFF, wallet and GUI disabled:
 
 Existing mismatched bilingual_str declaration and duplicate-link-library warnings
 remain. Linux, Windows, Qt, IPC, sanitizers and fuzzing were not validated.
-No SV2 runtime or end-to-end mining has been implemented or tested; TASK-031
-remains partial and TASK-032 through TASK-035 remain pending.
+At that initial checkpoint there was no runtime; subsequent work and acceptance
+are recorded below and in TASK-032 through TASK-035.
 
 ## Template provider and C ABI implementation
 
@@ -82,3 +82,16 @@ data, excessive sigops, complete witness validation, stable IDs and interruption
 The new bridge test first failed to build against the missing provider.
 The provider has not yet been exercised by the full Rust gateway or on other
 platforms; those acceptance gates remain open.
+
+
+## Final integration checkpoint
+
+Real external V1 shares and complete blocks pass through this provider and the
+Rust gateway, are reconstructed independently by the test pool and propagate
+to a second node. macOS and Linux mining suites pass. macOS C++ ASan/UBSan
+pass all eight cases; LeakSanitizer is unsupported on that host. Header catch-up
+cooldown resets when headers first get ahead, even if the tip has not changed.
+
+Cap'n Proto schemas and field numbers are unchanged. Root CMake currently forces
+WITH_MULTIPROCESS=OFF; an enabled IPC binary build is not claimed. New mining
+methods remain in-process.

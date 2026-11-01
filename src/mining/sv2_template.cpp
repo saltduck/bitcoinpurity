@@ -47,6 +47,7 @@ struct Sv2TemplateProvider::Impl {
     std::atomic<bool> interrupted{false};
     std::mutex mutex;
     uint64_t next_id{0};
+    bool headers_ahead{false};
     std::map<uint64_t, CBlock> templates;
     UniValue last;
     uint256 tip;
@@ -99,6 +100,8 @@ UniValue Sv2TemplateProvider::Request(const UniValue& request)
                     LOCK(cs_main);
                     if (p.node.chainman->m_best_header) ahead = p.node.chainman->m_best_header->nHeight - tip->height;
                 }
+                if (ahead > 0 && !p.headers_ahead) p.tip_seen = now;
+                p.headers_ahead = ahead > 0;
                 if (ahead > 0 && now - p.tip_seen < std::chrono::seconds{std::clamp(ahead, 3, 20)}) return Failure("catching-up");
             }
             const auto update = p.node.mempool->GetTransactionsUpdated();
