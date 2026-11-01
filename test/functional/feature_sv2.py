@@ -52,7 +52,7 @@ class Sv2Test(BitcoinTestFramework):
     def events(self):
         if not self.pool_events.exists():
             return []
-        return [json.loads(line) for line in self.pool_events.read_text().splitlines()]
+        return [json.loads(line) for line in self.pool_events.read_text().splitlines(keepends=True) if line.endswith("\n")]
 
     def miner(self):
         client = StratumClient(self.miner_port)
@@ -112,8 +112,20 @@ class Sv2Test(BitcoinTestFramework):
             self.connect_nodes(0, 1)
             self.wait_until(lambda: node.getsv2info()["running"], timeout=40)
             self.wait_until(lambda: any(e["event"] == "declared" and e["transactions"] > 0 for e in self.events()))
+            assert 0 < node.getsv2info()["share_difficulty"] < 1
             self.log.info("Mine actual non-block and block proofs through V1")
             client, subscribed, job = self.miner()
+            other, other_subscribed, _ = self.miner()
+            assert subscribed[1] != other_subscribed[1]
+            other.close()
+            bad = StratumClient(self.miner_port)
+            bad.send(90, "mining.authorize", ["miner.worker", "incorrect-test-password"])
+            assert_equal(bad.receive_id(90)[0]["result"], False)
+            bad.close()
+            client.send(10, "mining.configure", [["version-rolling"], {"version-rolling.mask": "ffffffff", "version-rolling.min-bit-count": 16}])
+            configured = client.receive_id(10)[0]["result"]
+            assert_equal(configured["version-rolling"], True)
+            assert_equal(configured["version-rolling.mask"], "1fffe000")
             share, nonce = self.solve(subscribed, job, False)
             client.send(3, "mining.submit", share)
             result = client.receive_id(3)[0]["result"]
@@ -124,19 +136,51 @@ class Sv2Test(BitcoinTestFramework):
             assert_equal(client.receive_id(4)[0]["result"], False)
             assert_equal(node.getsv2info()["accepted_shares"], 1)
             height = node.getblockcount()
-            solution, _ = self.solve(subscribed, job, True, nonce + 1)
+            rolled_job = list(job)
+            rolled_version = int(job[5], 16) ^ 0x2000
+            rolled_job[5] = f"{rolled_version:08x}"
+            solution, _ = self.solve(subscribed, rolled_job, True, nonce + 1)
+            solution.append(f"{rolled_version & 0x1fffe000:08x}")
             client.send(5, "mining.submit", solution)
             self.wait_until(lambda: node.getblockcount() == height + 1)
             self.wait_until(lambda: node.getsv2info()["blocks_accepted"] == 1)
+            result = node.getsv2info()
+            assert_equal(result["last_block_result"], "accepted")
+            assert_equal(result["last_block_hash"], node.getbestblockhash())
+            assert result["last_block_time"] > 0
             self.sync_blocks()
             assert_equal(peer.getbestblockhash(), node.getbestblockhash())
             self.wait_until(lambda: any(e["event"] == "block" for e in self.events()))
             block = from_hex(CBlock(), next(e["hex"] for e in self.events() if e["event"] == "block"))
             block.calc_sha256()
             assert_equal(block.hash, node.getbestblockhash())
+            assert_equal(block.nVersion, rolled_version)
             assert peer.submitblock(block.serialize().hex()) in (None, "duplicate")
             client.close()
             self.wait_until(lambda: node.getsv2info()["accepted_shares"] >= 2)
+
+            self.log.info("A competing regtest branch replaces stale local mining work")
+            self.disconnect_nodes(0, 1)
+            self.generate(node, 1, sync_fun=self.no_op)
+            self.wait_until(lambda: node.getsv2info()["running"] and
+                            node.getsv2info()["previous_block_hash"] == node.getbestblockhash())
+            old_client, old_subscribed, old_job = self.miner()
+            stale_share, _ = self.solve(old_subscribed, old_job, False)
+            self.generate(peer, 2, sync_fun=self.no_op)
+            replacement = peer.getbestblockhash()
+            self.connect_nodes(0, 1)
+            self.sync_blocks()
+            assert_equal(node.getbestblockhash(), replacement)
+            self.wait_until(lambda: node.getsv2info()["running"] and
+                            node.getsv2info()["previous_block_hash"] == replacement)
+            old_client.close()
+            fresh, _, _ = self.miner()
+            accepted_before = node.getsv2info()["accepted_shares"]
+            fresh.send(7, "mining.submit", stale_share)
+            assert_equal(fresh.receive_id(7)[0]["result"], False)
+            assert_equal(node.getsv2info()["accepted_shares"], accepted_before)
+            fresh.close()
+            expected_height = node.getblockcount()
 
             self.log.info("Unacknowledged work remains pending; outage closes miners without Solo fallback")
             self.mode("delay-ack")
@@ -152,7 +196,7 @@ class Sv2Test(BitcoinTestFramework):
             self.wait_until(lambda: node.getsv2info()["clients"] == 0)
             assert_equal(node.getsv2info()["accepted_shares"], before)
             assert_equal(node.getsv2info()["pending_shares"], 0)
-            assert_equal(node.getblockcount(), height + 1)
+            assert_equal(node.getblockcount(), expected_height)
             client.close()
             self.mode("")
             self.pool.stdout.close()
@@ -170,13 +214,40 @@ class Sv2Test(BitcoinTestFramework):
             info = node.getsv2info()
             for secret in ("test-only-password", "test-pool-account", "miner.worker"):
                 assert secret not in json.dumps(info, default=str)
+            self.log.info("Invalid PoW stays local; incompatible negotiation and JDS timeout never issue work")
+            wallet.rescan_utxos()
+            wallet.send_self_transfer(from_node=node)
+            assert len(node.getrawmempool()) >= 2
+            self.mode("strict-target")
+            self.restart_node(0, extra_args=args)
+            self.wait_until(lambda: node.getsv2info()["running"], timeout=40)
+            self.wait_until(lambda: node.getsv2info()["transactions"] >= 2)
+            assert_equal(node.getsv2info()["share_difficulty"], 1)
+            invalid_client, invalid_subscribed, invalid_job = self.miner()
+            invalid, _ = self.solve(invalid_subscribed, invalid_job, False)
+            invalid_client.send(91, "mining.submit", invalid)
+            assert_equal(invalid_client.receive_id(91)[0]["result"], False)
+            invalid_client.close()
+            assert_equal(node.getsv2info()["local_valid_shares"], 0)
+            assert_equal(node.getsv2info()["accepted_shares"], 0)
+            for fault in ("duplicate-missing", "bad-version", "missing-features", "silent-job"):
+                self.mode(fault)
+                self.restart_node(0, extra_args=args)
+                self.wait_until(lambda: node.getsv2info()["status"] == "retrying", timeout=40)
+                if fault == "duplicate-missing":
+                    self.wait_until(lambda: any(e["event"] == "duplicate-missing-request" and e["transactions"] >= 2 for e in self.events()))
+                    assert not any(e["event"] == "unexpected-duplicate-response" for e in self.events())
+                assert_equal(node.getsv2info()["running"], False)
+                assert_equal(node.getsv2info()["authorized_clients"], 0)
+                assert_equal(node.getblockcount(), expected_height)
+            self.mode("")
             self.log.info("Wrong authority cannot produce work and node shutdown is bounded")
             wrong = [a for a in args if not a.startswith("-sv2poolkey=")]
             wrong += ["-sv2poolkey=79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"]
             self.restart_node(0, extra_args=wrong)
             self.wait_until(lambda: node.getsv2info()["status"] == "retrying", timeout=20)
             assert_equal(node.getsv2info()["running"], False)
-            assert_equal(node.getblockcount(), height + 1)
+            assert_equal(node.getblockcount(), expected_height)
             start = time.monotonic()
             self.stop_node(0)
             assert time.monotonic() - start < 5

@@ -124,7 +124,15 @@ async fn job_server(
                 if mode(&path) == "silent-job" {
                     continue;
                 }
-                let indices: Vec<u16> = (0..request.wtxid_list.len()).map(|n| n as u16).collect();
+                let indices: Vec<u16> = if mode(&path) == "duplicate-missing" {
+                    event(
+                        &cfg,
+                        json!({"event":"duplicate-missing-request","transactions":request.wtxid_list.len()}),
+                    );
+                    vec![0, 0]
+                } else {
+                    (0..request.wtxid_list.len()).map(|n| n as u16).collect()
+                };
                 connection
                     .send_owned(Any::JobDeclaration(Jd::ProvideMissingTransactions(
                         ProvideMissingTransactionsOwned {
@@ -139,6 +147,10 @@ async fn job_server(
             }
             0x56 => {
                 let response = decode!(frame, ProvideMissingTransactionsSuccess);
+                if mode(&path) == "duplicate-missing" {
+                    event(&cfg, json!({"event":"unexpected-duplicate-response"}));
+                    return Err(protocol_error());
+                }
                 let request = requested.take().ok_or_else(protocol_error)?;
                 if request.request_id != response.request_id {
                     return Err(protocol_error());
@@ -220,15 +232,20 @@ async fn mining_server(
         Some(16),
     )
     .map_err(|_| protocol_error())?;
+    let share_target = if mode(&path) == "strict-target" {
+        Target::MAX
+    } else {
+        Target::from_le_bytes([255; 32])
+    };
     channel
-        .set_target(Target::from_le_bytes([255; 32]))
+        .set_target(share_target)
         .map_err(|_| protocol_error())?;
     connection
         .send_owned(Any::Mining(Mining::OpenExtendedMiningChannelSuccess(
             OpenExtendedMiningChannelSuccessOwned {
                 request_id: open.request_id,
                 channel_id: 1,
-                target: [255; 32].into(),
+                target: share_target.to_le_bytes().into(),
                 extranonce_size: rollable as u16,
                 extranonce_prefix: channel
                     .get_extranonce_prefix()
@@ -385,8 +402,12 @@ async fn main() {
                 connection
                     .send_owned(Any::Common(Common::SetupConnectionSuccess(
                         SetupConnectionSuccess {
-                            used_version: 2,
-                            flags: setup.flags,
+                            used_version: if mode(&path) == "bad-version" { 1 } else { 2 },
+                            flags: if mode(&path) == "missing-features" {
+                                0
+                            } else {
+                                setup.flags
+                            },
                         },
                     )))
                     .await?;
