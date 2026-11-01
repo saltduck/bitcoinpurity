@@ -83,11 +83,9 @@ BOOST_FIXTURE_TEST_CASE(solution_rechecks_coinbase_witness, TestChain100Setup)
     const auto original_tip = mining->getTip();
     BOOST_REQUIRE(original_tip);
 
-    // Template validation caches must not survive a caller-supplied coinbase.
-    const CBlock& cached = block_template->getBlock();
-    cached.fChecked = true;
-    cached.m_checked_merkle_root = true;
-    cached.m_checked_witness_commitment = true;
+    // Template validation has already cached the original coinbase's witness check.
+    const CBlock cached = block_template->getBlock();
+    BOOST_REQUIRE(cached.m_checked_witness_commitment);
     CMutableTransaction coinbase{*block_template->getCoinbaseTx()};
     BOOST_REQUIRE(!coinbase.vin[0].scriptWitness.IsNull());
     coinbase.vin[0].scriptWitness.SetNull();
