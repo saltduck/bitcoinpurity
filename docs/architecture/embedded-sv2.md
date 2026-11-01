@@ -15,8 +15,8 @@ back to Solo, violating this feature's required failure behavior.
 
 | PR | Application |
 | --- | --- |
-| #33819 | Structured coinbase information; retain raw getters and existing IPC field numbers. |
-| #34568 | Preserve existing IPC field numbers instead of copying the compatibility break; audit blocking-call execution context. |
+| #33819 | Structured coinbase information; raw getters remain in-process only, with Core v32.1 IPC fields. |
+| #34568 | Adopt Core v32.1 IPC method ordinals and context layout under TASK-038; audit blocking-call execution context. |
 | #34184 | Interruptible initial sync/catch-up gating for SV2, preserving internal caller timing. |
 | #34644 | Normal block submission with rejection details. |
 | #34672 | Shared submission handling; distinguish accepted, duplicate, invalid and inconclusive. |
@@ -58,9 +58,10 @@ sources are unmodified.
 
 ## Optional IPC restoration
 
-TASK-036 restores the separate multi-process build with existing dependencies.
-SV2 retains its same-process C ABI bridge. Preserve existing IPC ordinals and
-add explicit proxy support for Purity-specific virtual methods.
+TASK-036 restored the separate multi-process build. TASK-038 upgrades its
+libmultiprocess dependency to the unmodified Core v32.1 snapshot and replaces the
+inherited wire layout with Core v32.1. SV2 retains its same-process C ABI bridge;
+Purity-specific convenience methods are not additional IPC methods.
 
 
 ## Release acceptance
@@ -72,3 +73,9 @@ the source tree. Manual release runs do not publish tags or GitHub Releases.
 Pre-release review follow-up: [TASK-037](../tasks/TASK-037.md) tracks F1–F4 correctness fixes.
 PR #44 remains draft. Existing local fixture results do not establish independent
 CKPool interoperability or native Windows acceptance.
+
+The 2026-11-02 decision supersedes preservation of the inherited IPC wire layout:
+Core v32.1 is the single target contract (TASK-038). Existing IPC clients must
+regenerate bindings and update calls; no parallel legacy socket is planned.
+Purity consensus and in-process SV2 behavior remain project-owned. CKPool's
+v31-era binding must be updated externally; its current layout is not the target.

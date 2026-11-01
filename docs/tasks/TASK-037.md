@@ -63,3 +63,8 @@ Decision requested: authorize a separate Core-compatible IPC socket/adapter
 owned by this project, preserving existing Purity IPC and unmodified dependencies,
 or defer independent CKPool acceptance while finishing bounded F1–F4 regressions.
 Do not silently replace the existing schema or repurpose occupied ordinals.
+
+Decision (2026-11-02): migrate the existing IPC endpoint to Core v32.1 under
+TASK-038. The separate adapter/socket proposal above is superseded. CKPool must
+update its own v31-era bindings; no compatibility with its unique snapshot is
+required. Independent pool and outstanding F3/F4 acceptance gates remain open.

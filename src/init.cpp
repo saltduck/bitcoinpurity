@@ -334,6 +334,9 @@ void Shutdown(NodeContext& node)
     StopREST();
     StopRPC();
     StopHTTPServer();
+    if (node.init) {
+        if (auto* ipc = node.init->ipc()) ipc->disconnectIncoming();
+    }
     for (const auto& client : node.chain_clients) {
         client->flush();
     }
@@ -1723,17 +1726,6 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
         (void)UserProtocolRulesConsent();
     }
 
-    if (interfaces::Ipc* ipc = node.init->ipc()) {
-        for (std::string address : gArgs.GetArgs("-ipcbind")) {
-            try {
-                ipc->listenAddress(address);
-            } catch (const std::exception& e) {
-                return InitError(Untranslated(strprintf("Unable to bind to IPC address '%s'. %s", address, e.what())));
-            }
-            LogPrintf("Listening for IPC requests on address %s\n", address);
-        }
-    }
-
     /* Register RPC commands regardless of -server setting so they will be
      * available in the GUI RPC console even if external calls are disabled.
      */
@@ -2317,6 +2309,18 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
 
     if (ShutdownRequested(node)) {
         return true;
+    }
+
+    // Expose mining capabilities only after chainstate and its first tip exist.
+    if (interfaces::Ipc* ipc = node.init->ipc()) {
+        for (std::string address : gArgs.GetArgs("-ipcbind")) {
+            try {
+                ipc->listenAddress(address);
+            } catch (const std::exception& e) {
+                return InitError(Untranslated(strprintf("Unable to bind to IPC address '%s'. %s", address, e.what())));
+            }
+            LogPrintf("Listening for IPC requests on address %s\n", address);
+        }
     }
 
     // ********************************************************* Step 12: start node

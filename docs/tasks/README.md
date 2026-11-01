@@ -82,3 +82,5 @@
 - [TASK-036: Restore optional IPC builds](TASK-036.md) — Linux/macOS daemon and GUI IPC runtime verified.
 
 - [TASK-037: SV2 pre-release correctness and independent interoperability](TASK-037.md)
+
+- [TASK-038: Align the IPC wire contract with Bitcoin Core v32.1](TASK-038.md)

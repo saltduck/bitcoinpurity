@@ -508,3 +508,31 @@ Windows release-archive runtime checks remain blocked by the Actions restriction
 Pre-release review follow-up: [TASK-037](tasks/TASK-037.md) tracks F1–F4 correctness fixes.
 PR #44 remains draft. Existing local fixture results do not establish independent
 CKPool interoperability or native Windows acceptance.
+
+The 2026-11-02 decision supersedes preservation of the inherited IPC wire layout:
+Core v32.1 is the single target contract (TASK-038). Existing IPC clients must
+regenerate bindings and update calls; no parallel legacy socket is planned.
+Purity consensus and in-process SV2 behavior remain project-owned. CKPool's
+v31-era binding must be updated externally; its current layout is not the target.
+
+## Core v32.1 IPC replacement (TASK-038, 2026-11-02)
+
+This intentionally supersedes the historical TASK-036 ordinal-preservation
+results above. Init.makeMining moves from @2 to @3, and old @2 explicitly fails.
+Mining.createNewBlock @4 gains context/cooldown; @5 becomes checkBlock rather
+than createNewBlock2. Core submitBlock, interrupt and both transaction lookups
+are exposed. BlockTemplate exports structured coinbase and Core wait methods;
+submitSolution @10 returns rejection details, while old @7 explicitly fails.
+There is no alternate legacy socket and no additional Purity wire methods.
+
+Bindings must be regenerated. In-process raw coinbase, coin-age metadata and
+legacy template convenience calls remain project-owned and do not define wire
+compatibility. RPC getblocktemplate keeps its external result and fee indexing
+is adapted because Core IPC fee/sigop lists exclude coinbase. Block consensus,
+ASERT, RDTS, witness commitments and transaction selection remain Purity rules.
+
+The old libmultiprocess v5 worker failed to transport a deprecated-method
+exception safely. Use the unmodified snapshot shipped in the fixed Core v32.1
+archive instead. Only this project's integration and dependency recipes change;
+no dependency source is patched. The schema contract check binds all five
+schemas to the reference version independently of C++ binding annotations.

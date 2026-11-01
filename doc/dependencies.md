@@ -48,7 +48,7 @@ if headers are missing.
 | Python (scripts, tests) | [link](https://www.python.org) | N/A | [3.10](https://github.com/bitcoin/bitcoin/pull/30527) | No |
 | [systemtap](../depends/packages/systemtap.mk) ([tracing](tracing.md)) | [link](https://sourceware.org/systemtap/) | [4.8](https://github.com/bitcoin/bitcoin/pull/26945)| N/A | No |
 | [capnproto](../depends/packages/capnp.mk) ([multiprocess](multiprocess.md)) | [link](https://capnproto.org/) | [1.2.0](https://github.com/bitcoin/bitcoin/pull/32760)| [0.7.0](https://github.com/bitcoin-core/libmultiprocess/pull/88) | No |
-| [libmultiprocess](../depends/packages/libmultiprocess.mk) ([multiprocess](multiprocess.md)) | [link](https://github.com/bitcoin-core/libmultiprocess) | [5.0](https://github.com/bitcoin/bitcoin/pull/31945)| [v5.0-pre1](https://github.com/bitcoin/bitcoin/pull/31740)* | No |
+| [libmultiprocess](../depends/packages/libmultiprocess.mk) ([multiprocess](multiprocess.md)) | [link](https://github.com/bitcoin-core/libmultiprocess) | [Core v32.1 snapshot](https://github.com/bitcoin/bitcoin/tree/v32.1/src/ipc/libmultiprocess) | Same pinned snapshot | No |
 | [curl](../depends/packages/curl.mk) (embedded DATUM) | [link](https://curl.se/download.html) | 8.11.1 | N/A | No |
 | [jansson](../depends/packages/jansson.mk) (embedded DATUM) | [link](https://github.com/akheron/jansson/releases) | 2.14.1 | N/A | No |
 | [libsodium](../depends/packages/libsodium.mk) (embedded DATUM) | [link](https://download.libsodium.org/libsodium/releases/) | 1.0.20 | N/A | No |

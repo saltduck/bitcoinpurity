@@ -364,7 +364,7 @@ and runtime sv2 to false. BUILD_SV2=OFF must require no Rust dependencies.
 
 Use Bitcoin Core v32.1 mining semantics and assess PRs #33819, #34568, #34184,
 #34644, #34672, #34020 and #33745. Preserve Purity consensus, Knots transaction
-selection and existing IPC field numbers. Use unmodified SRI protocol libraries
+selection. Use the Core v32.1 IPC wire contract (TASK-038). Use unmodified SRI protocol libraries
 pinned to d1d30f3e755b0a5108633e1be7012034a8caaecd; implement lifecycle and policy
 in this repository using a Rust static library and C ABI. Pin Rust 1.96.0 and
 commit Cargo.lock for reproducible dependency resolution.
@@ -396,8 +396,8 @@ No native downstream SV2, backup pool or Signet signer integration is included.
 ## Restore optional IPC builds
 
 Restore WITH_MULTIPROCESS as a default-OFF option. Reproduce enabled compiler
-failures and fix only this project's integration. Keep libmultiprocess v5.0 and
-Cap'n Proto 1.2.0 source trees unmodified. Preserve IPC field numbers, Purity
+failures and fix only this project's integration. Use the unmodified libmultiprocess snapshot from Core v32.1 and
+Cap'n Proto 1.2.0. Align IPC with Core v32.1 while preserving Purity
 consensus, single-process binaries and embedded SV2 behavior. Reference Core
 v32.1 where useful. Validate enabled daemon/Qt, actual IPC/mining calls, disabled
 build and SV2 compatibility. Track concrete failures and evidence in TASK-036.
@@ -414,3 +414,9 @@ external blockers, not successful acceptance.
 Pre-release review follow-up: [TASK-037](../tasks/TASK-037.md) tracks F1–F4 correctness fixes.
 PR #44 remains draft. Existing local fixture results do not establish independent
 CKPool interoperability or native Windows acceptance.
+
+The 2026-11-02 decision supersedes preservation of the inherited IPC wire layout:
+Core v32.1 is the single target contract (TASK-038). Existing IPC clients must
+regenerate bindings and update calls; no parallel legacy socket is planned.
+Purity consensus and in-process SV2 behavior remain project-owned. CKPool's
+v31-era binding must be updated externally; its current layout is not the target.

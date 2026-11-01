@@ -17,6 +17,8 @@
 #include <policy/policy.h>
 
 #include <cstddef>
+#include <util/time.h>
+#include <limits>
 #include <policy/policy.h>
 #include <script/script.h>
 #include <primitives/transaction.h>
@@ -46,6 +48,16 @@ struct CoinbaseTx {
     CAmount block_reward_remaining;
     std::vector<CTxOut> required_outputs;
     uint32_t lock_time;
+};
+
+struct BlockWaitOptions {
+    MillisecondsDouble timeout{MillisecondsDouble::max()};
+    CAmount fee_threshold{MAX_MONEY};
+};
+
+struct BlockCheckOptions {
+    bool check_merkle_root{true};
+    bool check_pow{true};
 };
 
 struct BlockCreateOptions {

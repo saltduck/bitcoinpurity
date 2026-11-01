@@ -51,12 +51,14 @@ jobs:
         run: cargo test --locked --manifest-path src/sv2/Cargo.toml --features test-pool
       - name: Mining and Qt regression
         run: |
+          python3 test/util/check_ipc_schema.py
           build/bin/test_bitcoin --run_test=ipc_tests,miner_tests --log_level=test_suite
           build/bin/test_bitcoin-qt
       - name: Full local chain and DATUM regression
         run: |
           export BITCOIND="$PWD/build/bin/bitcoin-node"
           python3 test/functional/feature_ipc_gui.py --configfile="$PWD/build/test/config.ini" --cachedir="$RUNNER_TEMP/sv2-cache" --portseed=728
+          python3 test/functional/feature_ipc_lifecycle.py --configfile="$PWD/build/test/config.ini" --cachedir="$RUNNER_TEMP/sv2-cache" --portseed=732
           python3 test/functional/rpc_misc.py --configfile="$PWD/build/test/config.ini" --cachedir="$RUNNER_TEMP/sv2-cache" --portseed=729
           python3 test/functional/feature_sv2.py --configfile="$PWD/build/test/config.ini" --cachedir="$RUNNER_TEMP/sv2-cache" --portseed=730
           python3 test/functional/feature_datum.py --configfile="$PWD/build/test/config.ini" --cachedir="$RUNNER_TEMP/datum-cache" --portseed=731

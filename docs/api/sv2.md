@@ -16,7 +16,7 @@ running, retrying and stopped. Report template state, client counts, local-valid
 upstream-accepted, rejected and pending shares, local block submission results
 and sanitized errors. Exclude worker names, miner addresses, credentials and
 upstream identity. Qt consumes the same runtime snapshot. Accepted means upstream
-acknowledgement. Existing RPC and Cap'n Proto field numbers retain their contracts.
+acknowledgement. The gateway RPC retains its contract. Mining IPC migrates to Core v32.1 under TASK-038; older IPC clients must update.
 
 ## Daemon options
 
@@ -79,8 +79,8 @@ The test-only fixture is not installed or included in release packages.
 Production pools must implement this pinned Full-Template protocol dialect;
 local success does not establish interoperability with every SV2 pool.
 
-Optional IPC restoration (TASK-036) preserves this gateway API and existing
-Cap'n Proto ordinals; it does not move the gateway to a subprocess.
+IPC restoration (TASK-036) preserves this gateway API. TASK-038 subsequently
+replaces the inherited IPC wire layout with Core v32.1; the gateway stays in process.
 
 
 TASK-035 release acceptance exercises the same RPC contract from packaged
@@ -96,3 +96,9 @@ once. Upstream explicit rejection also increments it once. Unacknowledged
 attempted upstream submissions become abandoned on session loss; accepted counts
 require ACK. Malformed JSON, invalid field encoding and unauthenticated requests
 are protocol errors, excluded from these share counters.
+
+The 2026-11-02 decision supersedes preservation of the inherited IPC wire layout:
+Core v32.1 is the single target contract (TASK-038). Existing IPC clients must
+regenerate bindings and update calls; no parallel legacy socket is planned.
+Purity consensus and in-process SV2 behavior remain project-owned. CKPool's
+v31-era binding must be updated externally; its current layout is not the target.

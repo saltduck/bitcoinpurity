@@ -42,6 +42,7 @@ bool SubmitBlock(ChainstateManager& chainman, const std::shared_ptr<const CBlock
 struct CBlockTemplate
 {
     CBlock block;
+    BlockCreateOptions create_options;
     std::vector<CAmount> vTxFees;
     std::vector<int64_t> vTxSigOpsCost;
     std::vector<double> vTxPriorities;

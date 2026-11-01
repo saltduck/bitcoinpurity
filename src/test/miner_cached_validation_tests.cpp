@@ -60,7 +60,7 @@ void SolveHeader(CBlockHeader& header, const Consensus::Params& params)
     }
 }
 
-//! Reproduce the block submitSolution() will assemble, including its proof of work.
+//! Reproduce the block submitSolutionLegacy() will assemble, including its proof of work.
 CBlock SolvedSubmission(BlockTemplate& block_template, const CTransactionRef& coinbase, const Consensus::Params& params)
 {
     CBlock block{block_template.getBlock()};
@@ -78,7 +78,7 @@ std::unique_ptr<BlockTemplate> FreshTemplate(node::NodeContext& node)
 {
     auto mining{interfaces::MakeMining(node)};
     BOOST_REQUIRE(mining);
-    std::unique_ptr<BlockTemplate> block_template{mining->createNewBlock()};
+    std::unique_ptr<BlockTemplate> block_template{mining->createNewBlockLegacy()};
     BOOST_REQUIRE(block_template);
     const CBlock& block{block_template->getBlock()};
     // CreateNewBlock() runs TestBlockValidity(), which must have cached the
@@ -131,7 +131,7 @@ BOOST_AUTO_TEST_CASE(submit_solution_missing_witness_then_valid)
 {
     const Consensus::Params& params{Assert(m_node.chainman)->GetConsensus()};
     std::unique_ptr<BlockTemplate> block_template{FreshTemplate(m_node)};
-    const CTransactionRef original{block_template->getCoinbaseTx()};
+    const CTransactionRef original{block_template->getCoinbaseTransaction()};
     const uint256 original_witness{original->GetWitnessHash()};
     const TipSnapshot tip_before{ActiveTip(m_node)};
 
@@ -140,24 +140,24 @@ BOOST_AUTO_TEST_CASE(submit_solution_missing_witness_then_valid)
     const CBlock invalid{SolvedSubmission(*block_template, missing_witness, params)};
     // Processing can fail for more than one reason. The chain tip is the
     // consensus result: a missing witness must not become the active tip.
-    BOOST_CHECK(!block_template->submitSolution(invalid.nVersion, invalid.nTime, invalid.nNonce, missing_witness));
+    BOOST_CHECK(!block_template->submitSolutionLegacy(invalid.nVersion, invalid.nTime, invalid.nNonce, missing_witness));
     RequireTipUnchanged(m_node, tip_before);
-    BOOST_CHECK(block_template->getCoinbaseTx()->GetWitnessHash() == original_witness);
+    BOOST_CHECK(block_template->getCoinbaseTransaction()->GetWitnessHash() == original_witness);
     BOOST_CHECK(block_template->getBlock().m_checked_witness_commitment);
 
     const CBlock valid{SolvedSubmission(*block_template, original, params)};
-    BOOST_CHECK(block_template->submitSolution(valid.nVersion, valid.nTime, valid.nNonce, original));
+    BOOST_CHECK(block_template->submitSolutionLegacy(valid.nVersion, valid.nTime, valid.nNonce, original));
     const TipSnapshot tip_after{ActiveTip(m_node)};
     BOOST_CHECK_EQUAL(tip_after.height, tip_before.height + 1);
     BOOST_CHECK(tip_after.hash == valid.GetHash());
     RequireIndependentBlockValid(m_node, valid.GetHash(), original);
-    BOOST_CHECK(block_template->getCoinbaseTx()->GetWitnessHash() == original_witness);
+    BOOST_CHECK(block_template->getCoinbaseTransaction()->GetWitnessHash() == original_witness);
 
     // A later, unrelated template can still be solved and activated.
     std::unique_ptr<BlockTemplate> next_template{FreshTemplate(m_node)};
-    const CTransactionRef next_coinbase{next_template->getCoinbaseTx()};
+    const CTransactionRef next_coinbase{next_template->getCoinbaseTransaction()};
     const CBlock next_block{SolvedSubmission(*next_template, next_coinbase, params)};
-    BOOST_CHECK(next_template->submitSolution(next_block.nVersion, next_block.nTime, next_block.nNonce, next_coinbase));
+    BOOST_CHECK(next_template->submitSolutionLegacy(next_block.nVersion, next_block.nTime, next_block.nNonce, next_coinbase));
     const TipSnapshot next_tip{ActiveTip(m_node)};
     BOOST_CHECK_EQUAL(next_tip.height, tip_after.height + 1);
     BOOST_CHECK(next_tip.hash == next_block.GetHash());
@@ -168,7 +168,7 @@ BOOST_AUTO_TEST_CASE(submit_solution_wrong_witness_reserved_value)
 {
     const Consensus::Params& params{Assert(m_node.chainman)->GetConsensus()};
     std::unique_ptr<BlockTemplate> block_template{FreshTemplate(m_node)};
-    const CTransactionRef original{block_template->getCoinbaseTx()};
+    const CTransactionRef original{block_template->getCoinbaseTransaction()};
     // Keep the commitment output. Only the reserved value disagrees with it.
     // The transaction id, and therefore the merkle root, stays the same.
     const CTransactionRef wrong_witness{WithReservedValue(original, 0xff)};
@@ -178,7 +178,7 @@ BOOST_AUTO_TEST_CASE(submit_solution_wrong_witness_reserved_value)
     const TipSnapshot tip_before{ActiveTip(m_node)};
     const CBlock invalid{SolvedSubmission(*block_template, wrong_witness, params)};
     BOOST_CHECK(invalid.hashMerkleRoot == BlockMerkleRoot(invalid));
-    BOOST_CHECK(!block_template->submitSolution(invalid.nVersion, invalid.nTime, invalid.nNonce, wrong_witness));
+    BOOST_CHECK(!block_template->submitSolutionLegacy(invalid.nVersion, invalid.nTime, invalid.nNonce, wrong_witness));
     RequireTipUnchanged(m_node, tip_before);
     {
         LOCK(::cs_main);
@@ -229,7 +229,7 @@ BOOST_AUTO_TEST_CASE(submit_solution_stale_merkle_cache)
     bool mutated{false};
     BOOST_CHECK(BlockMerkleRoot(invalid, &mutated) == invalid.hashMerkleRoot);
     BOOST_CHECK(mutated);
-    BOOST_CHECK(!block_template->submitSolution(invalid.nVersion, invalid.nTime, invalid.nNonce, coinbase));
+    BOOST_CHECK(!block_template->submitSolutionLegacy(invalid.nVersion, invalid.nTime, invalid.nNonce, coinbase));
     RequireTipUnchanged(m_node, tip_before);
     {
         LOCK(::cs_main);

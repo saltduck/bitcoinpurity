@@ -51,10 +51,16 @@ build/bin/test_bitcoin --run_test=ipc_tests,miner_tests
 Include the Qt prefix in CMAKE_PREFIX_PATH when needed. The helper reads existing
 versions/checksums from depends/packages and verifies downloaded archives.
 
-Existing mining method/parameter ordinals and raw coinbase serialization are
-preserved. The schema adds createNewBlock2 at Mining @5, transaction priorities
-at BlockTemplate @10 and remaining assembler option fields. This is an additive
-extension to Purity's existing protocol, not Core v32.1 mining wire compatibility.
-Legacy createNewBlock @4 retains its synchronous dispatch and original parameter
-layout; the new full-options method has a leading worker-thread Context.
+The IPC wire contract follows Bitcoin Core v32.1, pinned to commit
+`f0de87f040621468b956f01f526a43a010310501`. The dependency helper builds the
+unmodified libmultiprocess snapshot from that Core archive and Cap'n Proto 1.2.0.
+It does not patch dependency sources. Older Purity/Knots IPC bindings are
+incompatible and must be regenerated; there is no parallel legacy endpoint.
 The embedded SV2 gateway remains in-process in these executables.
+
+See [Core v32.1 IPC migration](ipc-core32-migration.md) for method changes and
+client migration requirements. Run the schema contract check with:
+
+~~~sh
+python3 test/util/check_ipc_schema.py
+~~~

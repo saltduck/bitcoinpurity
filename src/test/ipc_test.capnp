@@ -19,7 +19,14 @@ interface FooInterface $Proxy.wrap("FooImplementation") {
     passUniValue @2 (arg :Text) -> (result :Text);
     passTransaction @3 (arg :Data) -> (result :Data);
     passVectorChar @4 (arg :Data) -> (result :Data);
-    passBlockState @5 (arg :Mining.BlockValidationState) -> (result :Mining.BlockValidationState);
+    passBlockState @5 (arg :BlockValidationState) -> (result :BlockValidationState);
     passScript @6 (arg :Data) -> (result :Data);
     passBlockOptions @7 (arg :Mining.BlockCreateOptions) -> (result :Mining.BlockCreateOptions);
+}
+
+struct BlockValidationState {
+    mode @0 :Int32;
+    result @1 :Int32;
+    rejectReason @2 :Text;
+    debugMessage @3 :Text;
 }

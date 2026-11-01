@@ -10,4 +10,10 @@
 #include <ipc/capnp/mining.capnp.proxy-types.h>
 #include <test/ipc_test.capnp.h>
 
+
+namespace mp {
+void CustomBuildMessage(InvokeContext&, const BlockValidationState&, gen::BlockValidationState::Builder&&);
+void CustomReadMessage(InvokeContext&, const gen::BlockValidationState::Reader&, BlockValidationState&);
+}
+
 #endif // BITCOIN_TEST_IPC_TEST_TYPES_H

@@ -87,6 +87,7 @@ EXTENDED_SCRIPTS = [
     # Longest test should go first, to favor running tests in parallel
     'feature_sv2.py',
     'feature_ipc_gui.py',
+    'feature_ipc_lifecycle.py',
     'feature_pruning.py',
     'feature_dbcrash.py',
     'feature_index_prune.py',

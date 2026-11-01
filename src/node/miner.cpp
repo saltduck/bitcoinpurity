@@ -202,6 +202,7 @@ std::shared_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock()
     resetBlock();
 
     pblocktemplate.reset(new CBlockTemplate());
+    pblocktemplate->create_options = m_options;
     CBlock* const pblock = &pblocktemplate->block; // pointer for convenience
 
     // Add dummy coinbase tx as first transaction
