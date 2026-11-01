@@ -462,5 +462,15 @@ restart; BUILD_SV2=OFF retains a Rust-free build. Configure a Purity-compatible
 pool supporting Full-Template Job Declaration. Real pool interoperability and
 deployment remain separate from local acceptance. See [architecture](architecture/embedded-sv2.md)
 and [contract](api/sv2.md). Requirements and selected in-process mining interface
-adaptations are implemented. The Rust gateway, C ABI template bridge, SV2 build
-option, configuration, RPC, Qt and end-to-end/platform acceptance remain pending.
+adaptations, C ABI provider, Rust gateway, configuration, RPC and Qt are
+implemented. Independent regtest mining, witness transfer, pool share acceptance,
+rolled-version blocks, peer propagation, reorgs and outage recovery pass locally
+on macOS and Linux. Release CLI/Qt ON/OFF builds pass on those platforms.
+
+Windows GNU cross-builds produce daemon/CLI binaries. Emulated Wine passes
+enabled startup, retry-only failure status, RPC and joined shutdown; this does
+not replace native MSVC/Qt acceptance. Dedicated CI covers native Windows static
+CRT and macOS/Linux ON/OFF CLI/Qt, local mining, DATUM and fuzz regressions.
+Release jobs install pinned Rust. Native Windows CI and real pool/production
+acceptance remain open. Root CMake forces multiprocess OFF, so an enabled IPC
+binary build is not claimed; schemas and field numbers remain unchanged.

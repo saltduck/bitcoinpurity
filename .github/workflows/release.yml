@@ -57,11 +57,14 @@ jobs:
             librsvg2-bin \
             imagemagick
 
+      - name: Install pinned SV2 Rust toolchain
+        run: rustup toolchain install 1.96.0 --profile minimal
+
       - name: Configure
         run: |
           cmake -B build \
             -DCMAKE_BUILD_TYPE=${BUILD_TYPE} \
-            -DBUILD_GUI=ON \
+            -DBUILD_GUI=ON -DBUILD_SV2=ON \
             -DWITH_BDB=ON \
             -DWARN_INCOMPATIBLE_BDB=OFF \
             -DWITH_MINIUPNPC=ON \
@@ -146,11 +149,14 @@ jobs:
             librsvg2-bin \
             imagemagick
 
+      - name: Install pinned SV2 Rust toolchain
+        run: rustup toolchain install 1.96.0 --profile minimal
+
       - name: Configure
         run: |
           cmake -B build \
             -DCMAKE_BUILD_TYPE=${BUILD_TYPE} \
-            -DBUILD_GUI=ON \
+            -DBUILD_GUI=ON -DBUILD_SV2=ON \
             -DWITH_BDB=ON \
             -DWARN_INCOMPATIBLE_BDB=OFF \
             -DWITH_MINIUPNPC=ON \
@@ -201,16 +207,15 @@ jobs:
   # ============================================================
   macos-arm64:
     name: macOS Apple Silicon
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 120
 
     steps:
       - name: Checkout source
         uses: actions/checkout@v6
 
-      - name: Select Xcode
+      - name: Show AppleClang toolchain
         run: |
-          sudo xcode-select --switch /Applications/Xcode_15.0.app
           clang --version
 
       - name: Install dependencies
@@ -236,11 +241,14 @@ jobs:
             libicns \
             librsvg
 
+      - name: Install pinned SV2 Rust toolchain
+        run: rustup toolchain install 1.96.0 --profile minimal
+
       - name: Configure
         run: |
           cmake -B build \
             -DCMAKE_BUILD_TYPE=${BUILD_TYPE} \
-            -DBUILD_GUI=ON \
+            -DBUILD_GUI=ON -DBUILD_SV2=ON \
             -DWITH_BDB=OFF \
             -DWITH_MINIUPNPC=ON \
             -DWITH_ZMQ=ON \
@@ -291,7 +299,7 @@ jobs:
   macos-x86_64:
     if: false
     name: macOS Intel
-    runs-on: macos-13
+    runs-on: macos-15-intel
     timeout-minutes: 120
 
     steps:
@@ -327,11 +335,14 @@ jobs:
             libicns \
             librsvg
 
+      - name: Install pinned SV2 Rust toolchain
+        run: rustup toolchain install 1.96.0 --profile minimal
+
       - name: Configure
         run: |
           cmake -B build \
             -DCMAKE_BUILD_TYPE=${BUILD_TYPE} \
-            -DBUILD_GUI=ON \
+            -DBUILD_GUI=ON -DBUILD_SV2=ON \
             -DWITH_BDB=OFF \
             -DWITH_MINIUPNPC=ON \
             -DWITH_ZMQ=ON \
@@ -413,20 +424,11 @@ jobs:
             }
           }
           
-      - name: Configure vcpkg
-        shell: bash
+      - name: Configure vcpkg compatibility
+        shell: pwsh
         run: |
-          echo "set(VCPKG_BUILD_TYPE release)" \
-            >> "${VCPKG_INSTALLATION_ROOT}/triplets/x64-windows.cmake"
+          "CMAKE_POLICY_VERSION_MINIMUM=3.5" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
 
-          echo "set(VCPKG_BUILD_TYPE release)" \
-            >> "${VCPKG_INSTALLATION_ROOT}/triplets/x64-windows-static.cmake"
-
-          # libevent compatibility with newer CMake.
-          sed -i \
-            '1s/^/set(ENV{CMAKE_POLICY_VERSION_MINIMUM} 3.5)\n/' \
-            "${VCPKG_INSTALLATION_ROOT}/scripts/ports.cmake"
-      
       - name: Install rsvg-convert
         shell: pwsh
         run: |
@@ -447,14 +449,18 @@ jobs:
         run: |
           rsvg-convert --version      
       
+      - name: Install pinned SV2 Rust toolchain
+        run: rustup toolchain install 1.96.0 --profile minimal
+
       - name: Configure
         shell: pwsh
         run: |
           cmake -B build `
             --preset vs2022-static `
             -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT\scripts\buildsystems\vcpkg.cmake" `
+            -DVCPKG_OVERLAY_TRIPLETS="$env:GITHUB_WORKSPACE/depends/vcpkg-triplets" `
             -DVCPKG_MANIFEST_NO_DEFAULT_FEATURES=OFF `
-            -DBUILD_GUI=ON `
+            -DBUILD_GUI=ON -DBUILD_SV2=ON `
             -DWITH_BDB=ON `
             -DWARN_INCOMPATIBLE_BDB=OFF `
             -DWITH_MINIUPNPC=ON `

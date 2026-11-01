@@ -12,7 +12,8 @@ Use Bitcoin Core v32.1 mining semantics and assess PRs #33819, #34568, #34184,
 #34644, #34672, #34020 and #33745. Preserve Purity consensus, Knots transaction
 selection and existing IPC field numbers. Use unmodified SRI protocol libraries
 pinned to d1d30f3e755b0a5108633e1be7012034a8caaecd; implement lifecycle and policy
-in this repository using a Rust static library and C ABI.
+in this repository using a Rust static library and C ABI. Pin Rust 1.96.0 and
+commit Cargo.lock for reproducible dependency resolution.
 
 Authenticate Mining and JDS connections using configured authority public keys.
 Declare local templates, supply missing witness-encoded transactions, and wait
@@ -398,7 +399,8 @@ precedence chain.
 ## Non-goals
 
 - DATUM Prime, OCEAN pooled mining, accounting, payouts, Web dashboard/public
-  management API, Stratum V2, vardiff, or a public coordinator. The main-window
+  management API, vardiff, or a public coordinator in the DATUM backend. SV2 is
+  provided by the separate pooled backend specified above. The main-window
   Qt Mining page and non-secret aggregate status RPC are explicitly in scope.
 - Direct access to `CBlockTemplate`, `ChainstateManager`, or consensus internals.
 - Changes to ASERT, difficulty adjustment, validation, chain selection,

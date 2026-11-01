@@ -240,13 +240,10 @@ jobs:
           py -3 --version
           Write-Host "PowerShell version $($PSVersionTable.PSVersion.ToString())"
 
-      - name: Using vcpkg with MSBuild
-        shell: bash
+      - name: Configure vcpkg compatibility
+        shell: pwsh
         run: |
-          echo "set(VCPKG_BUILD_TYPE release)" >> "${VCPKG_INSTALLATION_ROOT}/triplets/x64-windows.cmake"
-          echo "set(VCPKG_BUILD_TYPE release)" >> "${VCPKG_INSTALLATION_ROOT}/triplets/x64-windows-static.cmake"
-          # Workaround for libevent, which requires CMake 3.1 but is incompatible with CMake >= 4.0.
-          sed -i '1s/^/set(ENV{CMAKE_POLICY_VERSION_MINIMUM} 3.5)\n/' "${VCPKG_INSTALLATION_ROOT}/scripts/ports.cmake"
+          "CMAKE_POLICY_VERSION_MINIMUM=3.5" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
 
       - name: vcpkg tools cache
         uses: actions/cache@v5
@@ -259,18 +256,18 @@ jobs:
         id: vcpkg-binary-cache
         with:
           path: ~/AppData/Local/vcpkg/archives
-          key: ${{ github.job }}-vcpkg-binary-${{ hashFiles('cmake_version', 'msbuild_version', 'toolset_version', 'vcpkg.json') }}
+          key: ${{ github.job }}-vcpkg-binary-${{ hashFiles('cmake_version', 'msbuild_version', 'toolset_version', 'vcpkg.json', 'depends/vcpkg-triplets/*.cmake') }}
 
       - name: Generate build system
         run: |
-          cmake -B build --preset vs2022-static -DBUILD_SV2=OFF -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT\scripts\buildsystems\vcpkg.cmake" -D RDTS_CONSENT=RUNTIME_CHECK ${{ matrix.generate-options }}
+          cmake -B build --preset vs2022-static -DBUILD_SV2=OFF "-DVCPKG_OVERLAY_TRIPLETS=$env:GITHUB_WORKSPACE/depends/vcpkg-triplets" -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT\scripts\buildsystems\vcpkg.cmake" -D RDTS_CONSENT=RUNTIME_CHECK ${{ matrix.generate-options }}
 
       - name: Save vcpkg binary cache
         uses: actions/cache/save@v5
         if: github.event_name != 'pull_request' && steps.vcpkg-binary-cache.outputs.cache-hit != 'true' && matrix.job-type == 'standard'
         with:
           path: ~/AppData/Local/vcpkg/archives
-          key: ${{ github.job }}-vcpkg-binary-${{ hashFiles('cmake_version', 'msbuild_version', 'toolset_version', 'vcpkg.json') }}
+          key: ${{ github.job }}-vcpkg-binary-${{ hashFiles('cmake_version', 'msbuild_version', 'toolset_version', 'vcpkg.json', 'depends/vcpkg-triplets/*.cmake') }}
 
       - name: Build
         working-directory: build
