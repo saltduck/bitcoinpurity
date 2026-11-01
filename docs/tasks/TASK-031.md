@@ -6,7 +6,7 @@ See [requirements](../../input/requirements.md), [architecture](../architecture/
 
 ## Status
 
-Pending implementation and validation.
+Template provider and C ABI callbacks implemented and locally validated; full gateway integration is tracked in TASK-032 onward.
 
 ## Witness validation cache backport (#33745)
 
@@ -64,3 +64,21 @@ Existing mismatched bilingual_str declaration and duplicate-link-library warning
 remain. Linux, Windows, Qt, IPC, sanitizers and fuzzing were not validated.
 No SV2 runtime or end-to-end mining has been implemented or tested; TASK-031
 remains partial and TASK-032 through TASK-035 remain pending.
+
+## Template provider and C ABI implementation
+
+Added a node-owned provider with bounded immutable template retention, exact
+witness transaction snapshots, wtxid/Merkle metadata and stable cached IDs.
+Pool output constraints reserve both byte size and weight plus sigops; requests
+that exceed configured limits fail instead of being clamped. Mainnet gates
+initial sync and header catch-up. Complete coinbases are validated before work
+is declared usable; solutions use normal full block submission. A per-provider
+interrupt and explicitly allocated/released length-delimited C buffers form the
+Rust boundary. Concurrent callbacks serialize on the provider, and interruption
+does not require waiting for that mutex.
+
+Eight miner_tests pass, including callback roundtrip/release, malformed output
+data, excessive sigops, complete witness validation, stable IDs and interruption.
+The new bridge test first failed to build against the missing provider.
+The provider has not yet been exercised by the full Rust gateway or on other
+platforms; those acceptance gates remain open.

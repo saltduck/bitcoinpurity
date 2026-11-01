@@ -9,10 +9,14 @@
 #include <consensus/consensus.h>
 #include <consensus/merkle.h>
 #include <consensus/tx_verify.h>
+#include <core_io.h>
 #include <interfaces/mining.h>
+#include <mining/sv2_template.h>
 #include <node/miner.h>
 #include <policy/policy.h>
 #include <pow.h>
+#include <streams.h>
+#include <univalue.h>
 #include <test/util/random.h>
 #include <test/util/transaction_utils.h>
 #include <test/util/txmempool.h>
@@ -187,6 +191,61 @@ BOOST_FIXTURE_TEST_CASE(interrupt_mining_wait, TestChain100Setup)
     BOOST_CHECK(!waiter.get());
     BOOST_CHECK(!mining->createNewBlock());
     BOOST_CHECK(independent->createNewBlock());
+}
+
+BOOST_FIXTURE_TEST_CASE(sv2_template_bridge, TestChain100Setup)
+{
+    mining::Sv2TemplateProvider provider{m_node};
+    DataStream outputs;
+    outputs << std::vector<CTxOut>{{0, CScript() << OP_TRUE}};
+    UniValue request{UniValue::VOBJ};
+    request.pushKV("op", "template");
+    request.pushKV("outputs", HexStr(outputs));
+    auto result = provider.Request(request);
+    BOOST_REQUIRE(result["ok"].get_bool());
+    BOOST_CHECK_EQUAL(result["height"].getInt<int>(), 101);
+    BOOST_CHECK_EQUAL(result["id"].getInt<uint64_t>(), provider.Request(request)["id"].getInt<uint64_t>());
+    BOOST_CHECK_EQUAL(result["transactions"].size(), result["wtxids"].size());
+
+    CMutableTransaction coinbase;
+    BOOST_REQUIRE(DecodeHexTx(coinbase, result["coinbase"].get_str(), true, true));
+    UniValue validate{UniValue::VOBJ};
+    validate.pushKV("op", "validate");
+    validate.pushKV("id", result["id"]);
+    validate.pushKV("coinbase", result["coinbase"]);
+    validate.pushKV("version", result["version"]);
+    validate.pushKV("ntime", result["ntime"]);
+    validate.pushKV("nonce", 0);
+    BOOST_CHECK(provider.Request(validate)["ok"].get_bool());
+    coinbase.vin[0].scriptWitness.SetNull();
+    DataStream invalid;
+    invalid << TX_WITH_WITNESS(coinbase);
+    validate.pushKV("coinbase", HexStr(invalid));
+    BOOST_CHECK(!provider.Request(validate)["ok"].get_bool());
+
+    auto callbacks = provider.Callbacks();
+    const auto encoded = request.write();
+    uint8_t* response{nullptr};
+    size_t length{0};
+    BOOST_REQUIRE_EQUAL(callbacks.request(callbacks.context, reinterpret_cast<const uint8_t*>(encoded.data()), encoded.size(), &response, &length), 0);
+    UniValue decoded;
+    BOOST_CHECK(decoded.read(std::string{reinterpret_cast<const char*>(response), length}));
+    callbacks.release(response, length);
+    BOOST_CHECK(decoded["ok"].get_bool());
+
+    request.pushKV("outputs", "00");
+    BOOST_CHECK(!provider.Request(request)["ok"].get_bool());
+    request.pushKV("outputs", "ff");
+    BOOST_CHECK(!provider.Request(request)["ok"].get_bool());
+    CScript expensive;
+    for (int i = 0; i < 50000; ++i) expensive << OP_CHECKSIG;
+    DataStream excessive;
+    excessive << std::vector<CTxOut>{{0, expensive}};
+    request.pushKV("outputs", HexStr(excessive));
+    BOOST_CHECK_EQUAL(provider.Request(request)["error"].get_str(), "coinbase-resources-exceeded");
+    provider.Interrupt();
+    request.pushKV("outputs", HexStr(outputs));
+    BOOST_CHECK(!provider.Request(request)["ok"].get_bool());
 }
 
 BOOST_AUTO_TEST_CASE(default_block_limits)
