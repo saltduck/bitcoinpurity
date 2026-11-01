@@ -117,3 +117,31 @@ bundled copy. No dependency source or original library is patched.
 These are local results and prepared CI gates, not native Windows or hosted CI
 results. The account-level restriction must be removed before the remaining
 acceptance can run.
+
+## Local regression after merging origin/master (2026-11-01)
+
+- macOS arm64 and Linux arm64: full builds and all 156 CTests pass; full Qt
+  tests pass. Rust locked unit/integration tests pass. SV2/DATUM-disabled
+  macOS daemon and Qt build passes without a Rust build step.
+- Extended macOS functional run: 378 scenarios, initially 306 passed, 70
+  conditionally skipped and two failed. Both failures were fixed in project
+  production code and their existing tests rerun successfully. The real
+  600-second Signet mining cadence test passed.
+- Database crash recovery exposed a post-IBD task writing UTXO state before
+  persisting the referenced block index. It now uses ForceFlushStateToDisk.
+  The existing 40-iteration recovery test passes independently on both systems,
+  including simulated crashes, restarts and final UTXO hash comparison.
+- CLI completion exposed an unsupported ANY result type in getsv2info help.
+  Its result now documents concrete fields, with enabled-only fields optional.
+  Existing completion and full SV2 tests pass on both systems.
+- Additional Linux RPC binding tests exposed AI_ADDRCONFIG filtering numeric
+  IPv6 loopback addresses. Numeric addresses now use AI_NUMERICHOST; all three
+  existing IPv4/IPv6/non-loopback binding scenarios pass.
+- Installed Python ZMQ support outside the repository and reran interface_zmq
+  successfully. Other conditional gaps include BDB wallets, historical/reference
+  binaries and platform-specific scenarios; skipped cases are not passes.
+- ASan/UBSan: all 12 mining/cache regression cases pass (macOS leak detection
+  disabled). macOS deployment regression, extracted app signature verification
+  and Cocoa GUI PoW pass. Linux extracted archive GUI PoW also passes.
+- No existing test cases or dependency sources were changed. Native Windows
+  and hosted CI acceptance remain outstanding under the account restriction.

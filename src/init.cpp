@@ -1429,7 +1429,8 @@ static void SyncCoinsTipAfterChainSync(const NodeContext& node)
     }
 
     LogDebug(BCLog::COINDB, "Finished syncing to tip, syncing chainstate to disk\n");
-    node.chainman->ActiveChainstate().CoinsTip().Sync();
+    // Persist block data and index before the UTXO state can refer to them.
+    node.chainman->ActiveChainstate().ForceFlushStateToDisk();
 }
 
 bool AppInitInterfaces(NodeContext& node)
