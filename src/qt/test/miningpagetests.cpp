@@ -2,6 +2,15 @@
 // Distributed under the MIT software license.
 
 #include <qt/miningpage.h>
+#include <bitcoin-build-config.h>
+#ifdef ENABLE_SV2
+#include <qt/sv2settings.h>
+#include <common/args.h>
+#include <test/util/setup_common.h>
+#include <QFile>
+#include <QComboBox>
+#include <QLineEdit>
+#endif
 #include <qt/test/miningpagetests.h>
 
 #include <QTest>
@@ -53,6 +62,57 @@ void MiningPageTests::hashrateBaselineAndFormula()
     const MiningHashrateResult irregular{non_minute.update(61 * 1000, true, true, 3, 1, 71)};
     QVERIFY(irregular.hashrate_ths);
     QVERIFY(std::abs(*irregular.hashrate_ths - (61 * HASHES_PER_DIFFICULTY / 61.0 / 1.0e12)) < 1e-15);
+}
+
+void MiningPageTests::fractionalShareWork()
+{
+    MiningHashrateTracker tracker;
+    tracker.resume();
+    tracker.update(0, true, true, 1, 1, 0.0L);
+    const auto result = tracker.update(MINUTE_MS, true, true, 1, 1, 0.5L);
+    QVERIFY(result.hashrate_ths);
+    const double expected = 0.5 * HASHES_PER_DIFFICULTY / 60.0 / 1.0e12;
+    QVERIFY(std::abs(*result.hashrate_ths - expected) < 1e-20);
+}
+
+void MiningPageTests::sv2SettingsValidateAndMaskCredentials()
+{
+#ifdef ENABLE_SV2
+    BasicTestingSetup setup{ChainType::REGTEST};
+    Sv2SettingsWidget widget;
+    QString error;
+    QVERIFY(!widget.Save());
+    widget.SetMode(2);
+    QCOMPARE(widget.Mode(), 2);
+    const std::map<std::string, QString> values{
+        {"sv2pool", "127.0.0.1:3333"}, {"sv2jds", "127.0.0.1:3334"},
+        {"sv2poolkey", "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"},
+        {"sv2jdskey", "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"},
+        {"sv2identity", "test-account"}, {"sv2password", "test-only-password"},
+    };
+    for (const auto& [name, value] : values) {
+        auto* field = widget.findChild<QLineEdit*>(QString::fromStdString(name));
+        QVERIFY(field);
+        field->setText(value);
+    }
+    QCOMPARE(widget.findChild<QLineEdit*>("sv2password")->echoMode(), QLineEdit::Password);
+    QVERIFY(widget.Validate(error));
+    widget.findChild<QLineEdit*>("sv2password")->setText("test#only");
+    QVERIFY(!widget.Validate(error));
+    QVERIFY(!error.isEmpty());
+    widget.findChild<QLineEdit*>("sv2password")->setText("test-only-password");
+    widget.SetMode(0);
+    QCOMPARE(widget.Mode(), 0);
+    QVERIFY(widget.Validate(error));
+    QVERIFY(widget.Save());
+    QFile config{QString::fromStdString(fs::PathToString(gArgs.GetRWConfigFilePath()))};
+    QVERIFY(config.open(QIODevice::ReadOnly));
+    QVERIFY(config.readAll().contains("sv2password=test-only-password"));
+    fs::path settings;
+    if (gArgs.GetSettingsPath(&settings)) QVERIFY(!fs::exists(settings));
+#else
+    QSKIP("SV2 not compiled");
+#endif
 }
 
 void MiningPageTests::hashrateWindowAndResets()

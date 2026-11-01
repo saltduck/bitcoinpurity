@@ -35,7 +35,7 @@ if(ENABLE_WALLET)
   )
 endif()
 
-if(BUILD_DATUM)
+if(BUILD_DATUM OR BUILD_SV2)
   target_sources(test_bitcoin-qt
     PRIVATE
       miningpagetests.cpp

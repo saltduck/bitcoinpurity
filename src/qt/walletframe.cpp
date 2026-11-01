@@ -8,7 +8,7 @@
 #include <node/interface_ui.h>
 #include <psbt.h>
 #include <qt/guiutil.h>
-#ifdef ENABLE_DATUM
+#if defined(ENABLE_DATUM) || defined(ENABLE_SV2)
 #include <qt/miningpage.h>
 #endif
 #include <qt/overviewpage.h>
@@ -84,7 +84,7 @@ WalletFrame::WalletFrame(const PlatformStyle* _platformStyle, QWidget* parent)
 
     m_page_pairing = new PairingPage(this);
     m_global_stack->addWidget(m_page_pairing);
-#ifdef ENABLE_DATUM
+#if defined(ENABLE_DATUM) || defined(ENABLE_SV2)
     m_page_mining = new MiningPage(m_mining_splitter);
     m_mining_splitter->addWidget(m_page_mining);
     m_mining_splitter->setStretchFactor(0, 0);
@@ -208,7 +208,7 @@ void WalletFrame::gotoPairingPage()
     m_global_stack->setCurrentWidget(m_page_pairing);
 }
 
-#ifdef ENABLE_DATUM
+#if defined(ENABLE_DATUM) || defined(ENABLE_SV2)
 void WalletFrame::gotoMiningPage()
 {
     for (auto i = mapWalletViews.constBegin(); i != mapWalletViews.constEnd(); ++i) {
@@ -259,7 +259,7 @@ void WalletFrame::setMiningWorkspaceVisible(bool visible)
     m_wallet_overview_tabs->tabBar()->setVisible(visible);
     m_wallet_overview_tabs->setMinimumWidth(visible ? 250 : 0);
     m_wallet_overview_tabs->setMaximumWidth(visible ? 290 : QWIDGETSIZE_MAX);
-#ifdef ENABLE_DATUM
+#if defined(ENABLE_DATUM) || defined(ENABLE_SV2)
     m_page_mining->setVisible(visible);
     if (visible) m_mining_splitter->setSizes({260, 670});
 #else
