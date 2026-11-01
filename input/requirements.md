@@ -1,5 +1,13 @@
 # Embedded DATUM Solo Mining
 
+## TASK-035 hosted acceptance and release archives
+
+Push the current SV2 branch and run native Linux/macOS/Windows CI, including
+MSVC/Qt, enabled/disabled builds and actual release archive checks. Fix project
+integration and packaging failures without modifying dependency source trees.
+Manual release workflow runs produce test artifacts only, without publishing
+a release. Keep TASK-035 open until native runs and packaging acceptance pass.
+
 ## Restore optional IPC builds
 
 Restore WITH_MULTIPROCESS as a default-OFF option. Reproduce enabled compiler

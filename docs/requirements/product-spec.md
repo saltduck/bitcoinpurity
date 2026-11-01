@@ -401,3 +401,12 @@ Cap'n Proto 1.2.0 source trees unmodified. Preserve IPC field numbers, Purity
 consensus, single-process binaries and embedded SV2 behavior. Reference Core
 v32.1 where useful. Validate enabled daemon/Qt, actual IPC/mining calls, disabled
 build and SV2 compatibility. Track concrete failures and evidence in TASK-036.
+
+
+## TASK-035 hosted acceptance and release archives
+
+Validate the pushed SV2 branch on native Linux/macOS/Windows, including MSVC/Qt,
+ON/OFF builds and extracted release binaries/application bundles. Manual release
+runs create artifacts only. Change project integration and packaging sources
+only; dependency sources remain unchanged. Account-level CI restrictions are
+external blockers, not successful acceptance.

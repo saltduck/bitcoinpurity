@@ -61,3 +61,10 @@ sources are unmodified.
 TASK-036 restores the separate multi-process build with existing dependencies.
 SV2 retains its same-process C ABI bridge. Preserve existing IPC ordinals and
 add explicit proxy support for Purity-specific virtual methods.
+
+
+## Release acceptance
+
+Native platform jobs exercise both build switches. Release packaging must also
+validate the extracted daemon/GUI and macOS application bundle, not just compile
+the source tree. Manual release runs do not publish tags or GitHub Releases.

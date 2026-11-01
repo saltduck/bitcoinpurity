@@ -81,3 +81,7 @@ local success does not establish interoperability with every SV2 pool.
 
 Optional IPC restoration (TASK-036) preserves this gateway API and existing
 Cap'n Proto ordinals; it does not move the gateway to a subprocess.
+
+
+TASK-035 release acceptance exercises the same RPC contract from packaged
+executables; packaging changes introduce no RPC or protocol migration.
