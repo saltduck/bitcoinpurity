@@ -1338,7 +1338,17 @@ public:
     //! ResizeCoinsCaches() as needed.
     void MaybeRebalanceCaches() EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
 
-    /** Update uncommitted block structures (currently: only the witness reserved value). This is safe for submitted blocks. */
+    /**
+     * Fill in uncommitted block structure. Currently this is only the coinbase
+     * witness reserved value: when segwit is active, a witness commitment is
+     * present, and the coinbase has no witness yet, the reserved value is set
+     * to 32 zero bytes.
+     *
+     * This matches a commitment generated for that default value, including the
+     * template's default_witness_commitment. It does not replace a witness the
+     * submitter already provided, and it is not safe for a commitment that was
+     * computed from some other reserved value.
+     */
     void UpdateUncommittedBlockStructures(CBlock& block, const CBlockIndex* pindexPrev) const;
 
     /** Produce the necessary coinbase commitment for a block (modifies the hash, don't call for mined blocks). */

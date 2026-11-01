@@ -995,7 +995,8 @@ public:
 
         block.hashMerkleRoot = BlockMerkleRoot(block);
 
-        // The template's cached validation does not apply to the replacement coinbase.
+        // The copy inherits validation flags from the template. The replaced
+        // coinbase and recomputed merkle root must be checked again.
         block.m_checked_witness_commitment = false;
         block.m_checked_merkle_root = false;
         block.fChecked = false;
@@ -1073,7 +1074,7 @@ public:
 
     std::unique_ptr<BlockTemplate> createNewBlock2(const BlockCreateOptions& assemble_options) override
     {
-        return std::make_unique<BlockTemplateImpl>(BlockAssembler{chainman().ActiveChainstate(), context()->mempool.get(), assemble_options, m_node}.CreateNewBlock(), m_node);
+        return interfaces::MakeBlockTemplate(BlockAssembler{chainman().ActiveChainstate(), context()->mempool.get(), assemble_options, m_node}.CreateNewBlock(), m_node);
     }
 
     NodeContext* context() override { return &m_node; }
@@ -1088,6 +1089,10 @@ namespace interfaces {
 std::unique_ptr<Node> MakeNode(node::NodeContext& context) { return std::make_unique<node::NodeImpl>(context); }
 std::unique_ptr<Chain> MakeChain(node::NodeContext& context) { return std::make_unique<node::ChainImpl>(context); }
 std::unique_ptr<Mining> MakeMining(node::NodeContext& context) { return std::make_unique<node::MinerImpl>(context); }
+std::unique_ptr<BlockTemplate> MakeBlockTemplate(std::shared_ptr<node::CBlockTemplate> block_template, node::NodeContext& context)
+{
+    return std::make_unique<node::BlockTemplateImpl>(std::move(block_template), context);
+}
 
 node::CoinbaseTx BlockTemplate::getCoinbase()
 {
