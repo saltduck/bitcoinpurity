@@ -934,47 +934,47 @@ public:
         assert(m_block_template);
     }
 
-    const CBlockHeader& getBlockHeader() const override
+    CBlockHeader getBlockHeader() override
     {
         return m_block_template->block;
     }
 
-    const CBlock& getBlock() const override
+    CBlock getBlock() override
     {
         return m_block_template->block;
     }
 
-    const std::vector<CAmount>& getTxFees() const override
+    std::vector<CAmount> getTxFees() override
     {
         return m_block_template->vTxFees;
     }
 
-    const std::vector<int64_t>& getTxSigops() const override
+    std::vector<int64_t> getTxSigops() override
     {
         return m_block_template->vTxSigOpsCost;
     }
 
-    const std::vector<double>& getTxCoinAgePriorities() const override
+    std::vector<double> getTxCoinAgePriorities() override
     {
         return m_block_template->vTxPriorities;
     }
 
-    CTransactionRef getCoinbaseTx() const override
+    CTransactionRef getCoinbaseTx() override
     {
         return m_block_template->block.vtx[0];
     }
 
-    const std::vector<unsigned char>& getCoinbaseCommitment() const override
+    std::vector<unsigned char> getCoinbaseCommitment() override
     {
         return m_block_template->vchCoinbaseCommitment;
     }
 
-    int getWitnessCommitmentIndex() const override
+    int getWitnessCommitmentIndex() override
     {
         return GetWitnessCommitmentIndex(m_block_template->block);
     }
 
-    std::vector<uint256> getCoinbaseMerklePath() const override
+    std::vector<uint256> getCoinbaseMerklePath() override
     {
         return TransactionMerklePath(m_block_template->block, 0);
     }
@@ -1089,7 +1089,7 @@ std::unique_ptr<Node> MakeNode(node::NodeContext& context) { return std::make_un
 std::unique_ptr<Chain> MakeChain(node::NodeContext& context) { return std::make_unique<node::ChainImpl>(context); }
 std::unique_ptr<Mining> MakeMining(node::NodeContext& context) { return std::make_unique<node::MinerImpl>(context); }
 
-node::CoinbaseTx BlockTemplate::getCoinbase() const
+node::CoinbaseTx BlockTemplate::getCoinbase()
 {
     const auto tx = getCoinbaseTx();
     CHECK_NONFATAL(tx && tx->vin.size() == 1 && !tx->vout.empty());

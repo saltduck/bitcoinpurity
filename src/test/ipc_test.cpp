@@ -2,17 +2,22 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <chainparams.h>
+#include <consensus/merkle.h>
+#include <consensus/validation.h>
 #include <interfaces/init.h>
+#include <interfaces/mining.h>
 #include <ipc/capnp/protocol.h>
 #include <ipc/process.h>
 #include <ipc/protocol.h>
-#include <logging.h>
 #include <mp/proxy-types.h>
+#include <node/types.h>
+#include <pow.h>
 #include <test/ipc_test.capnp.h>
 #include <test/ipc_test.capnp.proxy.h>
+#include <test/ipc_test.capnp.proxy-types.h>
 #include <test/ipc_test.h>
 #include <tinyformat.h>
-#include <validation.h>
 
 #include <future>
 #include <thread>
@@ -27,7 +32,10 @@
 class TestInit : public interfaces::Init
 {
 public:
+    explicit TestInit(node::NodeContext* node = nullptr) : m_node(node) {}
     std::unique_ptr<interfaces::Echo> makeEcho() override { return interfaces::MakeEcho(); }
+    std::unique_ptr<interfaces::Mining> makeMining() override { return m_node ? interfaces::MakeMining(*m_node) : nullptr; }
+    node::NodeContext* m_node;
 };
 
 //! Generate a temporary path with temp_directory_path and mkstemp
@@ -121,6 +129,44 @@ void IpcPipeTest()
     BOOST_CHECK_EQUAL(bs3.GetRejectReason(), bs4.GetRejectReason());
     BOOST_CHECK_EQUAL(bs3.GetDebugMessage(), bs4.GetDebugMessage());
 
+    node::BlockCreateOptions options;
+    options.use_mempool = false;
+    options.block_reserved_size = 1234;
+    options.block_reserved_weight = 9000;
+    options.coinbase_output_max_additional_sigops = 42;
+    options.coinbase_output_script = CScript() << OP_2;
+    options.nBlockMaxSize = 500000;
+    options.nBlockMaxWeight = 2000000;
+    options.blockMinFeeRate = CFeeRate{12345};
+    options.test_block_validity = false;
+    options.print_modified_fee = true;
+    BOOST_CHECK(foo->passBlockOptions(options) == options);
+    BOOST_CHECK(foo->passBlockOptions(node::BlockCreateOptions{}) == node::BlockCreateOptions{});
+
+    capnp::MallocMessageBuilder legacy;
+    auto params = legacy.initRoot<gen::FooInterface::PassBlockOptionsParams>();
+    auto old_options = params.initArg();
+    old_options.setUseMempool(true);
+    old_options.setBlockReservedWeight(DEFAULT_BLOCK_RESERVED_WEIGHT);
+    old_options.setCoinbaseOutputMaxAdditionalSigops(400);
+    auto reader = params.asReader();
+    using Accessor = mp::Accessor<mp::ipc_test_fields::Arg, mp::FIELD_IN | mp::FIELD_BOXED>;
+    mp::InvokeContext context{*foo->m_context.connection};
+    node::BlockCreateOptions decoded;
+    mp::ReadField(mp::TypeList<node::BlockCreateOptions>{}, context,
+        mp::Make<mp::StructField, Accessor>(reader), mp::ReadDestUpdate(decoded));
+    const node::BlockCreateOptions defaults;
+    BOOST_CHECK_EQUAL(decoded.use_mempool, defaults.use_mempool);
+    BOOST_CHECK_EQUAL(decoded.block_reserved_size, defaults.block_reserved_size);
+    BOOST_CHECK_EQUAL(decoded.block_reserved_weight, defaults.block_reserved_weight);
+    BOOST_CHECK_EQUAL(decoded.coinbase_output_max_additional_sigops, defaults.coinbase_output_max_additional_sigops);
+    BOOST_CHECK(decoded.coinbase_output_script == defaults.coinbase_output_script);
+    BOOST_CHECK_EQUAL(decoded.nBlockMaxSize, defaults.nBlockMaxSize);
+    BOOST_CHECK_EQUAL(decoded.nBlockMaxWeight, defaults.nBlockMaxWeight);
+    BOOST_CHECK_EQUAL(decoded.blockMinFeeRate.GetFeePerK(), defaults.blockMinFeeRate.GetFeePerK());
+    BOOST_CHECK_EQUAL(decoded.test_block_validity, defaults.test_block_validity);
+    BOOST_CHECK_EQUAL(decoded.print_modified_fee, defaults.print_modified_fee);
+
     auto script1{CScript() << OP_11};
     auto script2{foo->passScript(script1)};
     BOOST_CHECK_EQUAL(HexStr(script1), HexStr(script2));
@@ -131,20 +177,67 @@ void IpcPipeTest()
 }
 
 //! Test ipc::Protocol connect() and serve() methods connecting over a socketpair.
-void IpcSocketPairTest()
+void IpcSocketPairTest(node::NodeContext* node)
 {
     int fds[2];
     BOOST_CHECK_EQUAL(socketpair(AF_UNIX, SOCK_STREAM, 0, fds), 0);
-    std::unique_ptr<interfaces::Init> init{std::make_unique<TestInit>()};
+    std::unique_ptr<interfaces::Init> init{std::make_unique<TestInit>(node)};
     std::unique_ptr<ipc::Protocol> protocol{ipc::capnp::MakeCapnpProtocol()};
     std::promise<void> promise;
-    std::thread thread([&]() {
+    std::jthread thread([&]() {
         protocol->serve(fds[0], "test-serve", *init, [&] { promise.set_value(); });
     });
     promise.get_future().wait();
     std::unique_ptr<interfaces::Init> remote_init{protocol->connect(fds[1], "test-connect")};
     std::unique_ptr<interfaces::Echo> remote_echo{remote_init->makeEcho()};
     BOOST_CHECK_EQUAL(remote_echo->echo("echo test"), "echo test");
+    if (node) {
+        auto remote_mining = remote_init->makeMining();
+        auto local_mining = interfaces::MakeMining(*node);
+        BOOST_REQUIRE(remote_mining);
+        BOOST_CHECK(remote_mining->isTestChain());
+        auto local_tip = local_mining->getTip();
+        auto remote_tip = remote_mining->getTip();
+        BOOST_REQUIRE(local_tip);
+        BOOST_REQUIRE(remote_tip);
+        BOOST_CHECK(local_tip->hash == remote_tip->hash);
+        BOOST_CHECK_EQUAL(local_tip->height, remote_tip->height);
+        node::BlockCreateOptions options;
+        options.use_mempool = false;
+        options.block_reserved_size = 1234;
+        options.block_reserved_weight = 9000;
+        options.coinbase_output_script = CScript() << OP_2;
+        options.nBlockMaxSize = 500000;
+        options.nBlockMaxWeight = 2000000;
+        options.blockMinFeeRate = CFeeRate{12345};
+        options.test_block_validity = false;
+        options.print_modified_fee = true;
+        auto local = local_mining->createNewBlock2(options);
+        auto remote = remote_mining->createNewBlock2(options);
+        BOOST_REQUIRE(local);
+        BOOST_REQUIRE(remote);
+        BOOST_CHECK(remote->getBlock().GetHash() == local->getBlock().GetHash());
+        BOOST_CHECK(remote->getBlockHeader().GetHash() == local->getBlockHeader().GetHash());
+        BOOST_CHECK(remote->getTxFees() == local->getTxFees());
+        BOOST_CHECK(remote->getTxSigops() == local->getTxSigops());
+        BOOST_CHECK(remote->getTxCoinAgePriorities() == local->getTxCoinAgePriorities());
+        BOOST_CHECK(remote->getCoinbaseTx()->GetHash() == local->getCoinbaseTx()->GetHash());
+        BOOST_CHECK(remote->getCoinbaseCommitment() == local->getCoinbaseCommitment());
+        BOOST_CHECK_EQUAL(remote->getWitnessCommitmentIndex(), local->getWitnessCommitmentIndex());
+        BOOST_CHECK(remote->getCoinbaseMerklePath() == local->getCoinbaseMerklePath());
+        auto local_default = local_mining->createNewBlock();
+        BOOST_REQUIRE(local_default);
+        auto remote_default = remote_mining->createNewBlock();
+        BOOST_REQUIRE(remote_default);
+        CBlock candidate = remote->getBlock();
+        candidate.hashMerkleRoot = BlockMerkleRoot(candidate);
+        while (!CheckProofOfWork(candidate.GetHash(), candidate.nBits, Params().GetConsensus())) ++candidate.nNonce;
+        BOOST_CHECK(remote->submitSolution(candidate.nVersion, candidate.nTime, candidate.nNonce, remote->getCoinbaseTx()));
+        const auto submitted_tip = local_mining->getTip();
+        BOOST_REQUIRE(submitted_tip);
+        BOOST_CHECK(submitted_tip->hash == candidate.GetHash());
+        BOOST_CHECK_EQUAL(submitted_tip->height, local_tip->height + 1);
+    }
     remote_echo.reset();
     remote_init.reset();
     thread.join();

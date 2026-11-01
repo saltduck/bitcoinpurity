@@ -55,3 +55,9 @@ alive until Rust cancellation and join finish. No usable work exists without
 an upstream-acknowledged job. RPC and Qt read the same aggregate snapshot;
 settings require restart. Rust 1.96.0, SRI and lockfiles are pinned; dependency
 sources are unmodified.
+
+## Optional IPC restoration
+
+TASK-036 restores the separate multi-process build with existing dependencies.
+SV2 retains its same-process C ABI bridge. Preserve existing IPC ordinals and
+add explicit proxy support for Purity-specific virtual methods.

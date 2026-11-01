@@ -41,23 +41,28 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
           key: sv2-cargo-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('src/sv2/Cargo.lock') }}
+      - name: Build pinned IPC dependencies without source patches
+        run: sh contrib/devtools/build-ipc-deps.sh "$RUNNER_TEMP/ipc-deps" "$RUNNER_TEMP/ipc-prefix" 3
       - name: Configure SV2 and Qt
-        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_SV2=ON -DBUILD_DATUM=ON -DBUILD_GUI=ON -DBUILD_TESTS=ON -DWITH_BDB=OFF -DWITH_ZMQ=OFF -DWITH_USDT=OFF -DWERROR=OFF
+        run: cmake -S . -B build -G Ninja "-DCMAKE_PREFIX_PATH=$RUNNER_TEMP/ipc-prefix;$CMAKE_PREFIX_PATH" -DWITH_MULTIPROCESS=ON -DCMAKE_BUILD_TYPE=Release -DBUILD_SV2=ON -DBUILD_DATUM=ON -DBUILD_GUI=ON -DBUILD_TESTS=ON -DWITH_BDB=OFF -DWITH_ZMQ=OFF -DWITH_USDT=OFF -DWERROR=OFF
       - name: Build daemon, Qt and independent pool
-        run: cmake --build build --target bitcoind bitcoin-cli bitcoin-qt test_bitcoin test_bitcoin-qt sv2_test_pool -j 3
+        run: cmake --build build --target bitcoind bitcoin-cli bitcoin-qt bitcoin-node bitcoin-gui test_bitcoin test_bitcoin-qt sv2_test_pool -j 3
       - name: Rust protocol and lifecycle tests
         run: cargo test --locked --manifest-path src/sv2/Cargo.toml --features test-pool
       - name: Mining and Qt regression
         run: |
-          build/bin/test_bitcoin --run_test=miner_tests --log_level=test_suite
+          build/bin/test_bitcoin --run_test=ipc_tests,miner_tests --log_level=test_suite
           build/bin/test_bitcoin-qt
       - name: Full local chain and DATUM regression
         run: |
+          export BITCOIND="$PWD/build/bin/bitcoin-node"
+          python3 test/functional/feature_ipc_gui.py --configfile="$PWD/build/test/config.ini" --cachedir="$RUNNER_TEMP/sv2-cache" --portseed=728
+          python3 test/functional/rpc_misc.py --configfile="$PWD/build/test/config.ini" --cachedir="$RUNNER_TEMP/sv2-cache" --portseed=729
           python3 test/functional/feature_sv2.py --configfile="$PWD/build/test/config.ini" --cachedir="$RUNNER_TEMP/sv2-cache" --portseed=730
           python3 test/functional/feature_datum.py --configfile="$PWD/build/test/config.ini" --cachedir="$RUNNER_TEMP/datum-cache" --portseed=731
       - name: Build with SV2 and DATUM disabled without Rust
         run: |
-          cmake -S . -B build-off -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_SV2=OFF -DBUILD_DATUM=OFF -DBUILD_GUI=ON -DBUILD_TESTS=OFF -DWITH_BDB=OFF -DWITH_ZMQ=OFF -DWITH_USDT=OFF -DWERROR=OFF -DSV2_CARGO=/nonexistent/cargo -DSV2_RUSTC=/nonexistent/rustc
+          cmake -S . -B build-off -G Ninja -DWITH_MULTIPROCESS=OFF -DCMAKE_BUILD_TYPE=Release -DBUILD_SV2=OFF -DBUILD_DATUM=OFF -DBUILD_GUI=ON -DBUILD_TESTS=OFF -DWITH_BDB=OFF -DWITH_ZMQ=OFF -DWITH_USDT=OFF -DWERROR=OFF -DSV2_CARGO=/nonexistent/cargo -DSV2_RUSTC=/nonexistent/rustc
           cmake --build build-off --target bitcoind bitcoin-qt -j 3
           if grep -q 'cargo.*build.*locked' build-off/build.ninja; then exit 1; fi
       - uses: actions/upload-artifact@v4

@@ -628,7 +628,7 @@ static std::string gbt_vb_name(const Consensus::DeploymentPos pos) {
     return s;
 }
 
-static UniValue TemplateToJSON(const Consensus::Params&, const ChainstateManager&, const BlockTemplate*, const CBlockIndex*, const std::set<std::string>& setClientRules, unsigned int nTransactionsUpdatedLast);
+static UniValue TemplateToJSON(const Consensus::Params&, const ChainstateManager&, BlockTemplate*, const CBlockIndex*, const std::set<std::string>& setClientRules, unsigned int nTransactionsUpdatedLast);
 
 static RPCHelpMan getblocktemplate()
 {
@@ -949,7 +949,7 @@ static RPCHelpMan getblocktemplate()
     };
 }
 
-static UniValue TemplateToJSON(const Consensus::Params& consensusParams, const ChainstateManager& chainman, const BlockTemplate* block_template, const CBlockIndex* const pindexPrev, const std::set<std::string>& setClientRules, const unsigned int nTransactionsUpdatedLast) {
+static UniValue TemplateToJSON(const Consensus::Params& consensusParams, const ChainstateManager& chainman, BlockTemplate* block_template, const CBlockIndex* const pindexPrev, const std::set<std::string>& setClientRules, const unsigned int nTransactionsUpdatedLast) {
     CHECK_NONFATAL(block_template);
     const CBlock& block = block_template->getBlock();
 

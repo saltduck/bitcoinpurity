@@ -28,8 +28,8 @@ protocol version/feature rejection, JDS timeout, reorg, restart and wrong
 authority. The independent pool reconstructs the same block and a second node
 receives it over P2P. No pool template or Solo fallback is available.
 
-Root CMake currently forces WITH_MULTIPROCESS=OFF. Cap'n Proto schemas and field
-numbers are unchanged, but an enabled IPC binary build has not been validated.
+At this checkpoint IPC was forced OFF. TASK-036 subsequently restored the
+optional build and verified Linux/macOS IPC with SV2 enabled; see its results.
 
 ## Parser and memory checks
 

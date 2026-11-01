@@ -21,4 +21,5 @@ interface FooInterface $Proxy.wrap("FooImplementation") {
     passVectorChar @4 (arg :Data) -> (result :Data);
     passBlockState @5 (arg :Mining.BlockValidationState) -> (result :Mining.BlockValidationState);
     passScript @6 (arg :Data) -> (result :Data);
+    passBlockOptions @7 (arg :Mining.BlockCreateOptions) -> (result :Mining.BlockCreateOptions);
 }

@@ -92,6 +92,6 @@ to a second node. macOS and Linux mining suites pass. macOS C++ ASan/UBSan
 pass all eight cases; LeakSanitizer is unsupported on that host. Header catch-up
 cooldown resets when headers first get ahead, even if the tip has not changed.
 
-Cap'n Proto schemas and field numbers are unchanged. Root CMake currently forces
-WITH_MULTIPROCESS=OFF; an enabled IPC binary build is not claimed. New mining
-methods remain in-process.
+At this checkpoint IPC was forced OFF. TASK-036 subsequently restored the
+optional build, retaining old wire ordinals and adding missing fork methods.
+SV2-specific helper methods remain in-process.

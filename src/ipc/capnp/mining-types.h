@@ -9,9 +9,8 @@
 #include <ipc/capnp/common.capnp.proxy-types.h>
 #include <ipc/capnp/common-types.h>
 #include <ipc/capnp/mining.capnp.proxy.h>
-#include <node/miner.h>
 #include <node/types.h>
-#include <validation.h>
+#include <consensus/validation.h>
 
 namespace mp {
 // Custom serialization for BlockValidationState.

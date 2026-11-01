@@ -5,11 +5,14 @@
 #ifndef BITCOIN_TEST_IPC_TEST_H
 #define BITCOIN_TEST_IPC_TEST_H
 
+#include <consensus/validation.h>
+#include <node/types.h>
 #include <primitives/transaction.h>
 #include <script/script.h>
 #include <univalue.h>
 #include <util/fs.h>
-#include <validation.h>
+
+namespace node { struct NodeContext; }
 
 class FooImplementation
 {
@@ -21,10 +24,11 @@ public:
     std::vector<char> passVectorChar(std::vector<char> v) { return v; }
     BlockValidationState passBlockState(BlockValidationState s) { return s; }
     CScript passScript(CScript s) { return s; }
+    node::BlockCreateOptions passBlockOptions(const node::BlockCreateOptions& o) { return o; }
 };
 
 void IpcPipeTest();
-void IpcSocketPairTest();
+void IpcSocketPairTest(node::NodeContext* node = nullptr);
 void IpcSocketTest(const fs::path& datadir);
 
 #endif // BITCOIN_TEST_IPC_TEST_H

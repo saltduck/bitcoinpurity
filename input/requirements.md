@@ -1,5 +1,14 @@
 # Embedded DATUM Solo Mining
 
+## Restore optional IPC builds
+
+Restore WITH_MULTIPROCESS as a default-OFF option. Reproduce enabled compiler
+failures and fix only this project's integration. Keep libmultiprocess v5.0 and
+Cap'n Proto 1.2.0 source trees unmodified. Preserve IPC field numbers, Purity
+consensus, single-process binaries and embedded SV2 behavior. Reference Core
+v32.1 where useful. Validate enabled daemon/Qt, actual IPC/mining calls, disabled
+build and SV2 compatibility. Track concrete failures and evidence in TASK-036.
+
 ## Embedded Stratum V2 pooled mining
 
 Provide an in-process gateway from existing Stratum V1 miners to a Purity-chain

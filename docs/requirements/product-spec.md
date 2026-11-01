@@ -391,3 +391,13 @@ upstream share acknowledgement and block propagation to a second regtest node.
 Cover faults, reorgs, shutdown, protocol/FFI fuzzing and three-platform ON/OFF
 builds. Real pool interoperability and production deployment are separate gates.
 No native downstream SV2, backup pool or Signet signer integration is included.
+
+
+## Restore optional IPC builds
+
+Restore WITH_MULTIPROCESS as a default-OFF option. Reproduce enabled compiler
+failures and fix only this project's integration. Keep libmultiprocess v5.0 and
+Cap'n Proto 1.2.0 source trees unmodified. Preserve IPC field numbers, Purity
+consensus, single-process binaries and embedded SV2 behavior. Reference Core
+v32.1 where useful. Validate enabled daemon/Qt, actual IPC/mining calls, disabled
+build and SV2 compatibility. Track concrete failures and evidence in TASK-036.

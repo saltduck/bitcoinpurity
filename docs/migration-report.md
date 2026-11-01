@@ -472,5 +472,18 @@ enabled startup, retry-only failure status, RPC and joined shutdown; this does
 not replace native MSVC/Qt acceptance. Dedicated CI covers native Windows static
 CRT and macOS/Linux ON/OFF CLI/Qt, local mining, DATUM and fuzz regressions.
 Release jobs install pinned Rust. Native Windows CI and real pool/production
-acceptance remain open. Root CMake forces multiprocess OFF, so an enabled IPC
-binary build is not claimed; schemas and field numbers remain unchanged.
+acceptance remain open. TASK-036 subsequently restored optional IPC and
+verified Linux/macOS builds and runtime paths; existing ordinals remain unchanged.
+
+## Optional IPC restoration (TASK-036)
+
+Restore a default-OFF build option and fix project-owned integration, retaining
+unmodified libmultiprocess v5.0 and Cap'n Proto 1.2.0 dependencies. No database or
+consensus migration. Concrete failures and acceptance are recorded in TASK-036.
+
+IPC restoration builds bitcoin-node and bitcoin-gui on Linux/macOS. Local C++
+template getters return owned snapshots; consumers of the old const/reference
+C++ signatures need recompilation. Existing wire methods retain their ordinals;
+the missing fork methods and full options are additive. Core v32.1's incompatible
+schema is not substituted. No consensus, database, RPC JSON or SV2 protocol
+migration is required. See TASK-036 for failures and acceptance results.

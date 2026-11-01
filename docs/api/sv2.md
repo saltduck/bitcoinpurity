@@ -78,3 +78,6 @@ python3 test/functional/feature_sv2.py --configfile=/path/to/build/test/config.i
 The test-only fixture is not installed or included in release packages.
 Production pools must implement this pinned Full-Template protocol dialect;
 local success does not establish interoperability with every SV2 pool.
+
+Optional IPC restoration (TASK-036) preserves this gateway API and existing
+Cap'n Proto ordinals; it does not move the gateway to a subprocess.

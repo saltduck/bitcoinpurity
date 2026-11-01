@@ -174,6 +174,7 @@ endif()
 if(WITH_MULTIPROCESS)
   target_link_libraries(bitcoin_ipc_test
     PRIVATE
+      Boost::headers
       core_interface
       univalue
   )
