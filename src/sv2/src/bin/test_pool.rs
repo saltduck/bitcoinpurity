@@ -396,7 +396,12 @@ async fn main() {
                 } else {
                     Protocol::MiningProtocol
                 };
-                if setup.protocol != expected {
+                let endpoint = if is_jds { &cfg.jds } else { &cfg.mining };
+                let (host, port) = endpoint.rsplit_once(':').ok_or_else(protocol_error)?;
+                if setup.protocol != expected
+                    || setup.endpoint_host.as_bytes() != host.as_bytes()
+                    || setup.endpoint_port != port.parse::<u16>().map_err(|_| protocol_error())?
+                {
                     return Err(protocol_error());
                 }
                 connection

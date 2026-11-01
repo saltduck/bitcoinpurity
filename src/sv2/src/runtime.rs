@@ -294,15 +294,29 @@ macro_rules! decode {
             .into_owned()
     };
 }
-async fn setup(connection: &mut Connection, protocol: Protocol, flags: u32) -> Result<()> {
+async fn setup(
+    connection: &mut Connection,
+    protocol: Protocol,
+    flags: u32,
+    endpoint: &str,
+) -> Result<()> {
+    let (host, port) = endpoint.rsplit_once(':').ok_or_else(protocol_error)?;
+    let host = host
+        .strip_prefix('[')
+        .and_then(|s| s.strip_suffix(']'))
+        .unwrap_or(host);
     connection
         .send_owned(Any::Common(Common::SetupConnection(SetupConnectionOwned {
             protocol,
             min_version: 2,
             max_version: 2,
             flags,
-            endpoint_host: Vec::new().try_into().map_err(|_| protocol_error())?,
-            endpoint_port: 0,
+            endpoint_host: host
+                .as_bytes()
+                .to_vec()
+                .try_into()
+                .map_err(|_| protocol_error())?,
+            endpoint_port: port.parse().map_err(|_| protocol_error())?,
             vendor: b"Bitcoin Purity"
                 .to_vec()
                 .try_into()
@@ -336,9 +350,9 @@ async fn session(
     generation: u64,
 ) -> Result<()> {
     let mut pool = Connection::connect(&cfg.pool, authority(&cfg.pool_key)?).await?;
-    setup(&mut pool, Protocol::MiningProtocol, 6).await?;
+    setup(&mut pool, Protocol::MiningProtocol, 6, &cfg.pool).await?;
     let mut jds = Connection::connect(&cfg.jds, authority(&cfg.jds_key)?).await?;
-    setup(&mut jds, Protocol::JobDeclarationProtocol, 1).await?;
+    setup(&mut jds, Protocol::JobDeclarationProtocol, 1, &cfg.jds).await?;
     pool.send_owned(Any::Mining(Mining::OpenExtendedMiningChannel(
         OpenExtendedMiningChannelOwned {
             request_id: 1,

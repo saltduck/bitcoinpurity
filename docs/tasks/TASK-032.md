@@ -44,3 +44,8 @@ authorization deadline; the earlier writer race closed the socket before the
 queued false result was sent. The external miner test first observed EOF and
 then verified the actual false response after the fix. Block result/hash/time
 and fractional target difficulty are included in the shared status snapshot.
+
+
+Negotiation includes the configured endpoint host and port (IPv6 brackets are
+removed from the host field). The independent fixture validates these metadata
+fields; it first rejected the former empty-host/zero-port messages.
