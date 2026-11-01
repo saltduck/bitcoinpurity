@@ -53,6 +53,7 @@ struct Sv2TemplateProvider::Impl {
     uint64_t mempool_update{0};
     std::string outputs;
     std::chrono::steady_clock::time_point tip_seen{};
+    std::chrono::steady_clock::time_point created{};
     explicit Impl(node::NodeContext& n) : node{n}, mining{interfaces::MakeMining(n)} {}
 };
 Sv2TemplateProvider::Sv2TemplateProvider(node::NodeContext& n) : m_impl{std::make_unique<Impl>(n)} {}
@@ -102,7 +103,12 @@ UniValue Sv2TemplateProvider::Request(const UniValue& request)
             }
             const auto update = p.node.mempool->GetTransactionsUpdated();
             if (!p.last.isNull() && p.outputs == encoded && p.mempool_update == update &&
-                p.last["previous_block_hash"].get_str() == HexStr(tip->hash)) return p.last;
+                p.last["previous_block_hash"].get_str() == HexStr(tip->hash) && now - p.created < std::chrono::seconds{30}) {
+                if (!request["known_id"].isNull() && request["known_id"].getInt<uint64_t>() == p.last["id"].getInt<uint64_t>()) {
+                    UniValue out{UniValue::VOBJ};out.pushKV("ok",true);out.pushKV("unchanged",true);return out;
+                }
+                return p.last;
+            }
             node::BlockAssembler::Options options;
             node::ApplyArgsManOptions(*p.node.args, options);
             const uint64_t extra = GetSerializeSize(outputs);
@@ -127,6 +133,9 @@ UniValue Sv2TemplateProvider::Request(const UniValue& request)
             out.pushKV("nbits", block.nBits);
             out.pushKV("previous_block_hash", HexStr(block.hashPrevBlock));
             out.pushKV("coinbase", SerializeHex(TX_WITH_WITNESS(*block.vtx[0])));
+            out.pushKV("size", GetSerializeSize(TX_WITH_WITNESS(block)));
+            out.pushKV("weight", GetBlockWeight(block));
+            out.pushKV("reward", block.vtx[0]->GetValueOut());
             out.pushKV("coinbase_prefix", HexStr(tmpl->getCoinbase().script_sig_prefix));
             UniValue transactions{UniValue::VARR}, ids{UniValue::VARR}, path{UniValue::VARR};
             for (size_t i = 1; i < block.vtx.size(); ++i) {
@@ -139,6 +148,7 @@ UniValue Sv2TemplateProvider::Request(const UniValue& request)
             out.pushKV("merkle_path", path);
             p.templates.emplace(id, std::move(block));
             while (p.templates.size() > 32) p.templates.erase(p.templates.begin());
+            p.created = now;
             p.outputs = encoded;
             p.mempool_update = update;
             p.last = out;

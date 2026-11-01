@@ -206,6 +206,11 @@ BOOST_FIXTURE_TEST_CASE(sv2_template_bridge, TestChain100Setup)
     BOOST_CHECK_EQUAL(result["height"].getInt<int>(), 101);
     BOOST_CHECK_EQUAL(result["id"].getInt<uint64_t>(), provider.Request(request)["id"].getInt<uint64_t>());
     BOOST_CHECK_EQUAL(result["transactions"].size(), result["wtxids"].size());
+    BOOST_CHECK(result["size"].getInt<uint64_t>() > 80);
+    request.pushKV("known_id", result["id"]);
+    const auto unchanged = provider.Request(request);
+    BOOST_CHECK(unchanged["unchanged"].get_bool());
+    BOOST_CHECK(unchanged["transactions"].isNull());
 
     CMutableTransaction coinbase;
     BOOST_REQUIRE(DecodeHexTx(coinbase, result["coinbase"].get_str(), true, true));

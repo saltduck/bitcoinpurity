@@ -12,6 +12,11 @@ typedef struct {
     int32_t (*request)(void*, const uint8_t*, size_t, uint8_t**, size_t*);
     void (*release)(uint8_t*, size_t);
 } Sv2NodeCallbacks;
+int32_t purity_sv2_validate(const uint8_t*, size_t);
+void* purity_sv2_start(const uint8_t*, size_t, Sv2NodeCallbacks);
+size_t purity_sv2_status(const void*, uint8_t*, size_t);
+void purity_sv2_interrupt(const void*);
+void purity_sv2_stop(void*);
 #ifdef __cplusplus
 }
 #endif
