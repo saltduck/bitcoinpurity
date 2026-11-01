@@ -487,3 +487,20 @@ C++ signatures need recompilation. Existing wire methods retain their ordinals;
 the missing fork methods and full options are additive. Core v32.1's incompatible
 schema is not substituted. No consensus, database, RPC JSON or SV2 protocol
 migration is required. See TASK-036 for failures and acceptance results.
+
+
+## TASK-035 hosted acceptance follow-through
+
+The SV2 branch is pushed. GitHub's account-level Actions restriction currently
+rejects manual dispatch and prevents push-triggered runs; native Windows/Qt and
+hosted release acceptance remain unverified. Local release checks include actual
+application deployment/extraction. Packaging fixes are confined to this project
+and do not modify dependency sources or introduce a data/protocol migration.
+
+Project-owned macdeploy now resolves relative dependency paths from original
+libraries/plugins and rewrites only bundle copies. Native macOS full-feature
+source tests and extracted signed-app startup/PoW pass; Linux extracted-package
+startup/PoW also passes. Release CI now verifies actual archives, adds macOS app
+ZIPs and selects those as the canonical macOS update artifact, preserving CLI
+tar downloads. Manifest schema is unchanged. Hosted CI, native MSVC/Qt, and
+Windows release-archive runtime checks remain blocked by the Actions restriction.

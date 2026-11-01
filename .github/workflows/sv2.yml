@@ -119,6 +119,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           build/bin/test_bitcoin-qt.exe
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python test/functional/feature_ipc_gui.py --configfile="$PWD/build/test/config.ini" --cachedir="$env:RUNNER_TEMP/gui-cache" --gui-binary="$PWD/build/bin/bitcoin-qt.exe" --portseed=739
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python test/functional/feature_sv2.py --configfile="$PWD/build/test/config.ini" --cachedir="$env:RUNNER_TEMP/sv2-cache" --portseed=740
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python test/functional/feature_datum.py --configfile="$PWD/build/test/config.ini" --cachedir="$env:RUNNER_TEMP/datum-cache" --portseed=741

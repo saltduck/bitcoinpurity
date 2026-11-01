@@ -6,7 +6,9 @@ See [requirements](../../input/requirements.md), [architecture](../architecture/
 
 ## Status
 
-Local implementation and verification complete except native Windows/MSVC/Qt CI.
+Local Linux/macOS implementation and extracted-package checks pass. Hosted
+three-platform/native Windows MSVC/Qt acceptance is blocked by the GitHub
+account's Actions restriction. This task is not complete.
 No production pool interoperability or deployment is claimed.
 
 ## Local evidence
@@ -59,10 +61,59 @@ before configuring BUILD_SV2=ON. BUILD_SV2=OFF discovers no Rust tools.
 The pool fixture is test-only and is not installed in release packages.
 
 Windows uses a project-owned vcpkg triplet and policy environment to preserve
-the pinned libevent build without editing vcpkg's source files. Hosted CI has
-not been dispatched from this worktree; native Windows success remains pending.
+the pinned libevent build without editing vcpkg's source files. Hosted CI dispatch was attempted but rejected by GitHub; native Windows
+success remains pending.
 Release macOS runners use currently available arm64/Intel images and their
-image-selected Xcode. The new workflow passes actionlint 1.7.12. Existing
-release scripts retain unrelated ShellCheck SC2086 findings and an intentionally
-disabled Intel release job; no Intel release was enabled. General CI's existing
+image-selected Xcode. Workflow validation uses actionlint 1.7.12. Release shell variables are quoted
+to resolve SC2086. Validation excludes only the pre-existing constant-false
+condition for the intentionally disabled Intel release job; it stays disabled. General CI's existing
 runner-output diagnostics are outside this change.
+
+
+## Hosted acceptance follow-through
+
+Branch codex/embedded-sv2 was pushed at f5187c5fa3 after all 155 local CTest
+cases passed. GitHub rejected the release workflow dispatch with HTTP 422:
+Actions has been disabled for this user. The repository's Actions permission
+is enabled, but no workflow run was created by the push. The owner confirmed
+Actions cannot currently be restored. Native MSVC/Qt and hosted packaging
+acceptance therefore remain blocked; no passing CI result is claimed.
+
+A real local macOS deploy reproduced an unresolved
+@rpath/libbrotlicommon.1.dylib in the project-owned deployment script.
+The fix resolves load commands using the original library/plugin's directory
+and LC_RPATH, while retaining the original install name for rewriting only the
+bundled copy. No dependency source or original library is patched.
+
+### Additional local acceptance
+
+- New real Mach-O fixtures reproduce both @rpath and @loader_path transitive
+  dependencies, verify relocated binaries execute, and assert original input
+  executable/library bytes remain unchanged. Both subcases now pass.
+- macOS arm64 Release: rebuilt with SV2, DATUM, UPnP, ZMQ, SQLite wallet and
+  optional IPC enabled. All 155 CTests and the complete Qt suite pass, including
+  IntroTests with offscreen. Full external-V1/SV2/JDS PoW/reorg/fault acceptance
+  also passes with both mining backends compiled.
+- A real macOS application ZIP is generated, extracted with framework symlinks,
+  and passes deep/strict ad hoc signature verification. The extracted Cocoa
+  application starts against isolated regtest/settings paths, solves a block,
+  serves the next template and exits cleanly. Local Cocoa verification requires
+  system GUI/XPC access outside the execution sandbox.
+- Linux arm64: production executables are archived and extracted; extracted
+  daemon/CLI version checks and the GUI's real PoW/template/shutdown case pass.
+- The GUI functional test accepts an explicit artifact executable and platform.
+  An explicitly missing executable fails rather than silently skipping.
+- Release jobs now build/upload macOS application ZIPs in addition to CLI tar
+  archives and verify extracted binaries/GUI on each platform. The dedicated
+  native Windows job also exercises the actual GUI application.
+- Release manifest staging selects the macOS GUI ZIP as the single canonical
+  update artifact while retaining the supplementary CLI tar download. The
+  selection was exercised against the actual local ZIP/tar pair. Checkout now
+  precedes artifact download so workspace preparation cannot remove archives.
+- Version checks use isolated temporary datadirs with settings writes disabled.
+  Updated workflows pass actionlint with only the deliberate disabled-job
+  condition excluded.
+
+These are local results and prepared CI gates, not native Windows or hosted CI
+results. The account-level restriction must be removed before the remaining
+acceptance can run.

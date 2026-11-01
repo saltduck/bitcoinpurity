@@ -2,7 +2,7 @@
 # Copyright (c) 2026 The Bitcoin Purity developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
-"""Exercise the optional multiprocess GUI's IPC and mining initialization."""
+"""Exercise GUI mining initialization and optional spawned-process IPC."""
 
 import os
 from pathlib import Path
@@ -13,14 +13,20 @@ from test_framework.wallet import MiniWallet
 
 
 class IpcGuiTest(BitcoinTestFramework):
+    def add_options(self, parser):
+        parser.add_argument("--gui-binary", type=Path)
+        parser.add_argument("--gui-platform", default="windows" if os.name == "nt" else "offscreen")
+
     def set_test_params(self):
         self.setup_clean_chain = True
         self.num_nodes = 1
 
     def skip_test_if_missing_module(self):
-        self.gui = Path(self.config["environment"]["BUILDDIR"]) / "bin" / (
+        self.gui = self.options.gui_binary or Path(self.config["environment"]["BUILDDIR"]) / "bin" / (
             "bitcoin-gui" + self.config["environment"]["EXEEXT"])
         if not self.gui.exists():
+            if self.options.gui_binary:
+                raise AssertionError(f"GUI binary not found: {self.gui}")
             raise SkipTest("multiprocess GUI has not been built")
 
     def setup_nodes(self):
@@ -35,7 +41,7 @@ class IpcGuiTest(BitcoinTestFramework):
         # The minimal Qt backend cannot load application fonts on macOS.
         self.start_nodes([[f"-{self.chain}", "-splash=0", "-choosedatadir=0", "-disablewallet",
                            f"-guisettingsdir={node.datadir_path / 'gui-settings'}"]],
-                         env={**os.environ, "QT_QPA_PLATFORM": "offscreen",
+                         env={**os.environ, "QT_QPA_PLATFORM": self.options.gui_platform,
                               "XDG_RUNTIME_DIR": str(runtime_dir)})
 
     def run_test(self):

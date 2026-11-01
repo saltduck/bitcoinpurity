@@ -63,7 +63,7 @@ jobs:
       - name: Configure
         run: |
           cmake -B build \
-            -DCMAKE_BUILD_TYPE=${BUILD_TYPE} \
+            -DCMAKE_BUILD_TYPE="${BUILD_TYPE}" \
             -DBUILD_GUI=ON -DBUILD_SV2=ON \
             -DWITH_BDB=ON \
             -DWARN_INCOMPATIBLE_BDB=OFF \
@@ -75,7 +75,7 @@ jobs:
       - name: Build
         run: |
           cmake --build build \
-            --config ${BUILD_TYPE} \
+            --config "${BUILD_TYPE}" \
             -j "$(nproc)"
 
       - name: Show binaries
@@ -88,6 +88,7 @@ jobs:
           VERSION="$(sed -n 's/^#define CLIENT_VERSION_STRING "\(.*\)"/\1/p' build/src/bitcoin-build-config.h)"
           test -n "${VERSION}"
           PACKAGE="bitcoin-purity-${VERSION}-x86_64-linux-gnu"
+          echo "PACKAGE=${PACKAGE}" >> "$GITHUB_ENV"
 
           mkdir -p "release/${PACKAGE}/bin"
 
@@ -101,6 +102,18 @@ jobs:
             -C release \
             -czf "${PACKAGE}.tar.gz" \
             "${PACKAGE}"
+
+      - name: Verify extracted release binaries and GUI
+        shell: bash
+        run: |
+          mkdir "$RUNNER_TEMP/release-extracted"
+          tar -xzf "${PACKAGE}.tar.gz" -C "$RUNNER_TEMP/release-extracted"
+          export BITCOIND="$RUNNER_TEMP/release-extracted/$PACKAGE/bin/bitcoind"
+          export BITCOINCLI="$RUNNER_TEMP/release-extracted/$PACKAGE/bin/bitcoin-cli"
+          mkdir "$RUNNER_TEMP/release-version"
+          "$BITCOIND" -datadir="$RUNNER_TEMP/release-version" -nosettings -version
+          "$BITCOINCLI" -datadir="$RUNNER_TEMP/release-version" -version
+          python3 test/functional/feature_ipc_gui.py --configfile="$PWD/build/test/config.ini" --cachedir="$RUNNER_TEMP/package-cache" --gui-binary="$RUNNER_TEMP/release-extracted/$PACKAGE/bin/bitcoin-qt" --portseed=761
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -155,7 +168,7 @@ jobs:
       - name: Configure
         run: |
           cmake -B build \
-            -DCMAKE_BUILD_TYPE=${BUILD_TYPE} \
+            -DCMAKE_BUILD_TYPE="${BUILD_TYPE}" \
             -DBUILD_GUI=ON -DBUILD_SV2=ON \
             -DWITH_BDB=ON \
             -DWARN_INCOMPATIBLE_BDB=OFF \
@@ -167,7 +180,7 @@ jobs:
       - name: Build
         run: |
           cmake --build build \
-            --config ${BUILD_TYPE} \
+            --config "${BUILD_TYPE}" \
             -j "$(nproc)"
 
       - name: Show binaries
@@ -180,6 +193,7 @@ jobs:
           VERSION="$(sed -n 's/^#define CLIENT_VERSION_STRING "\(.*\)"/\1/p' build/src/bitcoin-build-config.h)"
           test -n "${VERSION}"
           PACKAGE="bitcoin-purity-${VERSION}-aarch64-linux-gnu"
+          echo "PACKAGE=${PACKAGE}" >> "$GITHUB_ENV"
 
           mkdir -p "release/${PACKAGE}/bin"
 
@@ -193,6 +207,18 @@ jobs:
             -C release \
             -czf "${PACKAGE}.tar.gz" \
             "${PACKAGE}"
+
+      - name: Verify extracted release binaries and GUI
+        shell: bash
+        run: |
+          mkdir "$RUNNER_TEMP/release-extracted"
+          tar -xzf "${PACKAGE}.tar.gz" -C "$RUNNER_TEMP/release-extracted"
+          export BITCOIND="$RUNNER_TEMP/release-extracted/$PACKAGE/bin/bitcoind"
+          export BITCOINCLI="$RUNNER_TEMP/release-extracted/$PACKAGE/bin/bitcoin-cli"
+          mkdir "$RUNNER_TEMP/release-version"
+          "$BITCOIND" -datadir="$RUNNER_TEMP/release-version" -nosettings -version
+          "$BITCOINCLI" -datadir="$RUNNER_TEMP/release-version" -version
+          python3 test/functional/feature_ipc_gui.py --configfile="$PWD/build/test/config.ini" --cachedir="$RUNNER_TEMP/package-cache" --gui-binary="$RUNNER_TEMP/release-extracted/$PACKAGE/bin/bitcoin-qt" --portseed=761
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -247,7 +273,7 @@ jobs:
       - name: Configure
         run: |
           cmake -B build \
-            -DCMAKE_BUILD_TYPE=${BUILD_TYPE} \
+            -DCMAKE_BUILD_TYPE="${BUILD_TYPE}" \
             -DBUILD_GUI=ON -DBUILD_SV2=ON \
             -DWITH_BDB=OFF \
             -DWITH_MINIUPNPC=ON \
@@ -258,12 +284,18 @@ jobs:
       - name: Build
         run: |
           cmake --build build \
-            --config ${BUILD_TYPE} \
+            --config "${BUILD_TYPE}" \
             -j "$(sysctl -n hw.logicalcpu)"
 
       - name: Show binaries
         run: |
           find build/bin -maxdepth 2 -type f -print
+
+      - name: Verify deployment and build application archive
+        run: |
+          python3 contrib/macdeploy/test_macdeploy.py
+          cmake --build build --target deploy -j 3
+          cp build/Bitcoin-Purity-*.zip .
 
       - name: Prepare package
         shell: bash
@@ -271,6 +303,7 @@ jobs:
           VERSION="$(sed -n 's/^#define CLIENT_VERSION_STRING "\(.*\)"/\1/p' build/src/bitcoin-build-config.h)"
           test -n "${VERSION}"
           PACKAGE="bitcoin-purity-${VERSION}-arm64-apple-darwin"
+          echo "PACKAGE=${PACKAGE}" >> "$GITHUB_ENV"
 
           mkdir -p "release/${PACKAGE}/bin"
 
@@ -285,11 +318,28 @@ jobs:
             -czf "${PACKAGE}.tar.gz" \
             "${PACKAGE}"
 
+      - name: Verify extracted release binaries and GUI
+        shell: bash
+        run: |
+          mkdir "$RUNNER_TEMP/release-extracted"
+          tar -xzf "${PACKAGE}.tar.gz" -C "$RUNNER_TEMP/release-extracted"
+          export BITCOIND="$RUNNER_TEMP/release-extracted/$PACKAGE/bin/bitcoind"
+          export BITCOINCLI="$RUNNER_TEMP/release-extracted/$PACKAGE/bin/bitcoin-cli"
+          mkdir "$RUNNER_TEMP/release-version"
+          "$BITCOIND" -datadir="$RUNNER_TEMP/release-version" -nosettings -version
+          "$BITCOINCLI" -datadir="$RUNNER_TEMP/release-version" -version
+          ditto -x -k Bitcoin-Purity-*.zip "$RUNNER_TEMP/release-extracted"
+          APP="$RUNNER_TEMP/release-extracted/Bitcoin Purity.app"
+          codesign --verify --deep --strict "$APP"
+          python3 test/functional/feature_ipc_gui.py --configfile="$PWD/build/test/config.ini" --cachedir="$RUNNER_TEMP/package-cache" --gui-binary="$APP/Contents/MacOS/Bitcoin-Qt" --gui-platform=cocoa --portseed=762
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: macos-arm64
-          path: bitcoin-purity-*.tar.gz
+          path: |
+            bitcoin-purity-*.tar.gz
+            Bitcoin-Purity-*.zip
           if-no-files-found: error
 
 
@@ -341,7 +391,7 @@ jobs:
       - name: Configure
         run: |
           cmake -B build \
-            -DCMAKE_BUILD_TYPE=${BUILD_TYPE} \
+            -DCMAKE_BUILD_TYPE="${BUILD_TYPE}" \
             -DBUILD_GUI=ON -DBUILD_SV2=ON \
             -DWITH_BDB=OFF \
             -DWITH_MINIUPNPC=ON \
@@ -352,12 +402,18 @@ jobs:
       - name: Build
         run: |
           cmake --build build \
-            --config ${BUILD_TYPE} \
+            --config "${BUILD_TYPE}" \
             -j "$(sysctl -n hw.logicalcpu)"
 
       - name: Show binaries
         run: |
           find build/bin -maxdepth 2 -type f -print
+
+      - name: Verify deployment and build application archive
+        run: |
+          python3 contrib/macdeploy/test_macdeploy.py
+          cmake --build build --target deploy -j 3
+          cp build/Bitcoin-Purity-*.zip .
 
       - name: Prepare package
         shell: bash
@@ -365,6 +421,7 @@ jobs:
           VERSION="$(sed -n 's/^#define CLIENT_VERSION_STRING "\(.*\)"/\1/p' build/src/bitcoin-build-config.h)"
           test -n "${VERSION}"
           PACKAGE="bitcoin-purity-${VERSION}-x86_64-apple-darwin"
+          echo "PACKAGE=${PACKAGE}" >> "$GITHUB_ENV"
 
           mkdir -p "release/${PACKAGE}/bin"
 
@@ -379,11 +436,28 @@ jobs:
             -czf "${PACKAGE}.tar.gz" \
             "${PACKAGE}"
 
+      - name: Verify extracted release binaries and GUI
+        shell: bash
+        run: |
+          mkdir "$RUNNER_TEMP/release-extracted"
+          tar -xzf "${PACKAGE}.tar.gz" -C "$RUNNER_TEMP/release-extracted"
+          export BITCOIND="$RUNNER_TEMP/release-extracted/$PACKAGE/bin/bitcoind"
+          export BITCOINCLI="$RUNNER_TEMP/release-extracted/$PACKAGE/bin/bitcoin-cli"
+          mkdir "$RUNNER_TEMP/release-version"
+          "$BITCOIND" -datadir="$RUNNER_TEMP/release-version" -nosettings -version
+          "$BITCOINCLI" -datadir="$RUNNER_TEMP/release-version" -version
+          ditto -x -k Bitcoin-Purity-*.zip "$RUNNER_TEMP/release-extracted"
+          APP="$RUNNER_TEMP/release-extracted/Bitcoin Purity.app"
+          codesign --verify --deep --strict "$APP"
+          python3 test/functional/feature_ipc_gui.py --configfile="$PWD/build/test/config.ini" --cachedir="$RUNNER_TEMP/package-cache" --gui-binary="$APP/Contents/MacOS/Bitcoin-Qt" --gui-platform=cocoa --portseed=762
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: macos-x86_64
-          path: bitcoin-purity-*.tar.gz
+          path: |
+            bitcoin-purity-*.tar.gz
+            Bitcoin-Purity-*.zip
           if-no-files-found: error
 
 
@@ -489,6 +563,7 @@ jobs:
           }
           $version = $Matches[1]
           $package = "bitcoin-purity-$version-win64"
+          "PACKAGE=$package" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
           $target = "release\$package\bin"
 
           New-Item `
@@ -513,6 +588,22 @@ jobs:
           Compress-Archive `
             -Path "release\$package" `
             -DestinationPath "$package.zip"
+
+      - name: Verify extracted Windows binaries and GUI
+        shell: pwsh
+        run: |
+          $archive = Get-Item bitcoin-purity-*.zip
+          Expand-Archive -Path $archive.FullName -DestinationPath "$env:RUNNER_TEMP/release-extracted"
+          $bin = "$env:RUNNER_TEMP/release-extracted/$env:PACKAGE/bin"
+          $env:BITCOIND = "$bin/bitcoind.exe"
+          $env:BITCOINCLI = "$bin/bitcoin-cli.exe"
+          New-Item -ItemType Directory "$env:RUNNER_TEMP/release-version" | Out-Null
+          & $env:BITCOIND "-datadir=$env:RUNNER_TEMP/release-version" -nosettings -version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & $env:BITCOINCLI "-datadir=$env:RUNNER_TEMP/release-version" -version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python test/functional/feature_ipc_gui.py --configfile="$PWD/build/test/config.ini" --cachedir="$env:RUNNER_TEMP/package-cache" --gui-binary="$bin/bitcoin-qt.exe" --portseed=763
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -541,6 +632,13 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/')
 
     steps:
+      - name: Checkout source for manifest tooling
+        uses: actions/checkout@v6
+        with:
+          sparse-checkout: |
+            contrib/official-packages
+          sparse-checkout-cone-mode: false
+
       - name: Download build artifacts
         uses: actions/download-artifact@v4
         with:
@@ -572,18 +670,18 @@ jobs:
 
           cat SHA256SUMS
 
-      - name: Checkout source for manifest tooling
-        uses: actions/checkout@v6
-        with:
-          sparse-checkout: |
-            contrib/official-packages
-          sparse-checkout-cone-mode: false
-
       - name: Generate releases manifest
         run: |
+          mkdir manifest-artifacts
+          for archive in release-artifacts/*; do
+            case "$archive" in
+              *apple-darwin.tar.gz|*/SHA256SUMS) continue ;;
+            esac
+            cp "$archive" manifest-artifacts/
+          done
           python3 contrib/official-packages/generate-releases-manifest.py \
             --version "${GITHUB_REF_NAME}" \
-            --artifacts-dir release-artifacts \
+            --artifacts-dir manifest-artifacts \
             --repo "${GITHUB_REPOSITORY}" \
             --output release-artifacts/releases.json
 
