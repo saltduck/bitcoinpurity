@@ -20,3 +20,11 @@ futures-util = { version = "0.3", features = ["sink"] }
 
 [profile.release]
 panic = "unwind"
+
+[features]
+test-pool = []
+
+[[bin]]
+name = "purity-sv2-test-pool"
+path = "src/bin/test_pool.rs"
+required-features = ["test-pool"]

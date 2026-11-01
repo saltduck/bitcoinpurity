@@ -85,6 +85,7 @@ EXTENDED_SCRIPTS = [
     'feature_purity_signet_reference.py',
     # These tests are not run by default.
     # Longest test should go first, to favor running tests in parallel
+    'feature_sv2.py',
     'feature_pruning.py',
     'feature_dbcrash.py',
     'feature_index_prune.py',

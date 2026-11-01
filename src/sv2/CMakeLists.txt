@@ -42,3 +42,12 @@ else()
   set_property(TARGET sv2_rust APPEND PROPERTY INTERFACE_LINK_LIBRARIES ${CMAKE_DL_LIBS} Threads::Threads m)
 endif()
 
+if(BUILD_TESTS)
+  add_custom_target(sv2_test_pool
+    COMMAND "${CMAKE_COMMAND}" -E env "CARGO_TARGET_DIR=${sv2_target_dir}" "${SV2_CARGO}" build --locked --release --features test-pool --bin purity-sv2-test-pool ${sv2_target_args}
+    COMMAND "${CMAKE_COMMAND}" -E make_directory "${PROJECT_BINARY_DIR}/bin"
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${sv2_profile_dir}/purity-sv2-test-pool${CMAKE_EXECUTABLE_SUFFIX}" "${PROJECT_BINARY_DIR}/bin/purity-sv2-test-pool${CMAKE_EXECUTABLE_SUFFIX}"
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+    VERBATIM)
+  add_dependencies(sv2_test_pool sv2_rust_build)
+endif()
