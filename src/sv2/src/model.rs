@@ -61,7 +61,7 @@ impl Job {
         )
     }
     pub fn prepare(
-        template: Template,
+        mut template: Template,
         outputs: &[u8],
         prefix: Vec<u8>,
         rollable: usize,
@@ -81,10 +81,13 @@ impl Job {
         {
             return Err(protocol_error());
         }
-        let sig_prefix = bytes(&template.coinbase_prefix)?;
+        let mut sig_prefix = bytes(&template.coinbase_prefix)?;
         if sig_prefix.is_empty() || sig_prefix.len() > 8 {
             return Err(protocol_error());
         }
+        if sig_prefix.len() + 1 + prefix.len() + rollable > 100 { return Err(protocol_error()); }
+        sig_prefix.push((prefix.len() + rollable) as u8);
+        template.coinbase_prefix = hex::encode(&sig_prefix);
         pool_outputs[0].value = coinbase.output[0].value;
         pool_outputs.extend_from_slice(&coinbase.output[1..]);
         coinbase.output = pool_outputs;
