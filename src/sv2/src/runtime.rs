@@ -268,9 +268,10 @@ async fn run(
         shared.update(|s| {
             s.status = "connecting".into();
         });
+        let mut confirmed = false;
         let outcome = tokio::select! {
             _ = stopped(&shared) => break,
-            result = session(&config, &*node, &shared, &jobs, &mut receiver, generation) => result
+            result = session(&config, &*node, &shared, &jobs, &mut receiver, generation, &mut confirmed) => result
         };
         let _ = jobs.send(None);
         shared.update(|s| {
@@ -292,8 +293,9 @@ async fn run(
         while let Ok(share) = receiver.try_recv() {
             shared.reject(share);
         }
-        tokio::select! { _=stopped(&shared)=>break, _=sleep(Duration::from_secs(delay))=>{} }
-        delay = (delay * 2).min(30);
+        let (wait, next) = reconnect_delay(delay, confirmed);
+        tokio::select! { _=stopped(&shared)=>break, _=sleep(Duration::from_secs(wait))=>{} }
+        delay = next;
     }
     let _ = jobs.send(None);
     server.abort();
@@ -425,6 +427,7 @@ async fn session(
     jobs: &watch::Sender<Option<Arc<Job>>>,
     shares: &mut mpsc::Receiver<Share>,
     generation: u64,
+    confirmed: &mut bool,
 ) -> Result<()> {
     shared.update(|s| s.stage = "mining-connect-noise".into());
     let mut pool = Connection::connect(&cfg.pool, authority(&cfg.pool_key)?).await?;
@@ -601,6 +604,7 @@ async fn session(
                         let mut job=proposed.take().ok_or_else(protocol_error)?;
                         job.target=target;
                         install_confirmed_job(&mut channel, &mut job, history.back().map(Arc::as_ref), success.job_id)?;
+                        *confirmed = true;
                         let job=Arc::new(job);
                         shared.update(|s|{s.running=true;s.status="running".into();s.stage="mining".into();s.error.clear();s.current_height=job.template.height;
                             s.job_id=job.id();s.job_created=now();s.nbits=job.template.nbits;
@@ -989,4 +993,21 @@ mod diagnostic_tests {
             "{error}"
         );
     }
+}
+
+#[cfg(test)]
+mod backoff_tests {
+    #[test]
+    fn confirmed_session_resets_even_after_work_was_withdrawn() {
+        let mut delay=1;
+        let mut observed=Vec::new();
+        for _ in 0..7 { let (wait,next)=super::reconnect_delay(delay,false); observed.push(wait);delay=next; }
+        assert_eq!(observed,vec![1,2,4,8,16,30,30]);
+        assert_eq!(super::reconnect_delay(delay,true),(1,2));
+    }
+}
+
+fn reconnect_delay(delay: u64, confirmed: bool) -> (u64, u64) {
+ let wait=if confirmed {1} else {delay};
+ (wait,(wait*2).min(30))
 }
