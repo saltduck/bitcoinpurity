@@ -61,6 +61,8 @@ jobs:
           python3 test/functional/feature_ipc_lifecycle.py --configfile="$PWD/build/test/config.ini" --cachedir="$RUNNER_TEMP/sv2-cache" --portseed=732
           python3 test/functional/rpc_misc.py --configfile="$PWD/build/test/config.ini" --cachedir="$RUNNER_TEMP/sv2-cache" --portseed=729
           python3 test/functional/feature_sv2.py --configfile="$PWD/build/test/config.ini" --cachedir="$RUNNER_TEMP/sv2-cache" --portseed=730
+          python3 test/functional/feature_sv2.py --configfile="$PWD/build/test/config.ini" --cachedir="$RUNNER_TEMP/sv2-cache" --portseed=733 --extranonce-size=12 --coinbase-tags
+          python3 test/functional/feature_sv2.py --configfile="$PWD/build/test/config.ini" --cachedir="$RUNNER_TEMP/sv2-cache" --portseed=734 --extranonce-size=32 --coinbase-tags
           python3 test/functional/feature_datum.py --configfile="$PWD/build/test/config.ini" --cachedir="$RUNNER_TEMP/datum-cache" --portseed=731
       - name: Build with SV2 and DATUM disabled without Rust
         run: |

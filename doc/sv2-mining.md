@@ -152,7 +152,7 @@ same status snapshot as this RPC.
 | --- | --- |
 | Miner cannot connect | Check the node's LAN address, listener port and firewall. A listener on `127.0.0.1` is unavailable to LAN miners. Check total and per-IP connection limits. |
 | Miner authorization fails | Check `sv2auth`, the `sv2user` / `user.worker` format and `sv2password`. These are local credentials. |
-| Status stays at `connecting` or `retrying` | Check both pool endpoints, reachability, authority public keys, upstream identity and `error`. |
+| Status stays at `connecting` or `retrying` | Check `stage` and the retained bounded `error`, then both endpoints, reachability, authority public keys and upstream identity. |
 | Status stays at `declaring` | Check that the pool's Mining/JDS services support this Full-Template protocol dialect and accept locally declared jobs. |
 | Status is `waiting-for-local-template` | Check node synchronization and local template availability. |
 | Shares are locally valid but not accepted | Compare `pending_shares`, `rejected_shares`, `abandoned_shares` and `error`. Only upstream acknowledgement increases `accepted_shares`. |

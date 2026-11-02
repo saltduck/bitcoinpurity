@@ -555,3 +555,13 @@ schemas to the reference version independently of C++ binding annotations.
 
 Attachment baseline predates 9461eee44d. Selectively adapt to be1821d9e7;
 never overwrite existing review fixes or dependency source.
+
+## Generic SV2 interoperability follow-up (TASK-039--046)
+
+Corrections were committed independently, preserving Core v32.1 IPC, F1-F4,
+Purity consensus and empty-tag defaults. Local Linux/macOS regression, disabled
+builds and packages pass. A limited independently rebuilt external-pool regtest
+also observed pool ACK, local block acceptance and second-node propagation.
+See TASK-046 for initial failures, fixture timestamp correction and remaining
+gates. External operator-owned materials are not vendored or committed.
+Native Windows/hosted CI and broader independent acceptance remain open.

@@ -560,3 +560,7 @@ precedence chain.
   limits, deadlines and disconnect of subscribed miners when work disappears.
 - Retain generic empty-tag and 12/16/32-byte cases. Do not implement fixed PUSH12
   or a named-pool mode. Independent pool/native Windows acceptance remains open.
+
+External pool operators' own source, configuration, patches, scripts, binaries
+and raw logs must stay outside this repository; retain only generic changes
+and project-owned acceptance conclusions.

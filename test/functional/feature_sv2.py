@@ -24,6 +24,8 @@ class Sv2Test(BitcoinTestFramework):
         self.num_nodes = 2
 
     def add_options(self, parser):
+        parser.add_argument("--extranonce-size", type=int, choices=(12, 16, 32), default=16)
+        parser.add_argument("--coinbase-tags", action="store_true")
         parser.add_argument("--sv2-test-pool", default=os.getenv("SV2_TEST_POOL"))
 
     def skip_test_if_missing_module(self):
@@ -69,6 +71,13 @@ class Sv2Test(BitcoinTestFramework):
     def solve(self, subscribed, job, block, start=0):
         extra = "00" * subscribed[2]
         coinbase = bytes.fromhex(job[2] + subscribed[1] + extra + job[3])
+        if self.options.coinbase_tags:
+            assert b"/TestPool/" in coinbase
+            assert b"/TestMiner/" in coinbase
+            assert b"/ConfigPool/" not in coinbase
+            assert b"/ConfigMiner/" not in coinbase
+        else:
+            assert b"/TestPool/" not in coinbase
         root = hash256(coinbase)
         for branch in job[4]:
             root = hash256(root + bytes.fromhex(branch))
@@ -95,12 +104,16 @@ class Sv2Test(BitcoinTestFramework):
         self.pool_events = Path(self.options.tmpdir) / "sv2-pool-events.jsonl"
         self.pool_config.write_text(json.dumps({"mining": f"127.0.0.1:{p2p_port(9)}",
                                                "jds": f"127.0.0.1:{p2p_port(10)}",
-                                               "events": str(self.pool_events), "mode": ""}))
+                                               "events": str(self.pool_events), "mode": "", "extranonce_size": self.options.extranonce_size}))
         ready = self.fixture()
         args = ["-sv2=1", f"-sv2port={self.miner_port}", f"-sv2pool={ready['mining']}",
                 f"-sv2jds={ready['jds']}", f"-sv2poolkey={ready['public_key']}",
                 f"-sv2jdskey={ready['public_key']}", "-sv2identity=test-pool-account",
                 "-sv2auth=1", "-sv2user=miner", "-sv2password=test-only-password"]
+        if self.options.coinbase_tags:
+            with node.bitcoinconf.open("a", encoding="utf8") as config:
+                config.write("\nsv2pooltag=/ConfigPool/\nsv2minertag=/ConfigMiner/\n")
+            args += ["-sv2pooltag=/TestPool/", "-sv2minertag=/TestMiner/"]
         try:
             self.stop_node(0)
             node.assert_start_raises_init_error(extra_args=args + ["-sv2port=0"],
@@ -128,6 +141,7 @@ class Sv2Test(BitcoinTestFramework):
             assert_equal(configured["version-rolling.mask"], "1fffe000")
             share, nonce = self.solve(subscribed, job, False)
             self.log.info("Same-parent template refresh preserves delayed J1 shares and block solutions")
+            node.setmocktime(int(time.time()) + 5)
             old_parent = node.getbestblockhash()
             old_job = node.getsv2info()["job_id"]
             wallet.rescan_utxos()
@@ -258,6 +272,18 @@ class Sv2Test(BitcoinTestFramework):
                 if fault == "duplicate-missing":
                     self.wait_until(lambda: any(e["event"] == "duplicate-missing-request" and e["transactions"] >= 2 for e in self.events()))
                     assert not any(e["event"] == "unexpected-duplicate-response" for e in self.events())
+                info = node.getsv2info()
+                assert info["stage"]
+                assert info["error"]
+                if fault == "missing-features":
+                    assert "unsupported-feature-flags" in info["error"]
+                unavailable = StratumClient(self.miner_port)
+                unavailable.send(901, "mining.subscribe", [])
+                response, _ = unavailable.receive_id(901)
+                assert_equal(response["error"][0], 20)
+                assert_equal(response["result"], None)
+                assert_equal(unavailable.stream.readline(), b"")
+                unavailable.close()
                 assert_equal(node.getsv2info()["running"], False)
                 assert_equal(node.getsv2info()["authorized_clients"], 0)
                 assert_equal(node.getblockcount(), expected_height)

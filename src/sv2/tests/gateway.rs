@@ -32,6 +32,11 @@ fn unavailable_pool_exposes_no_miner_work_and_stop_joins() {
     assert!(replies[2]["result"].is_null());
     assert_eq!(replies[2]["error"][0],20);
     assert_eq!(gateway.status().rejected_shares,0);
+    let deadline=std::time::Instant::now()+Duration::from_secs(2);
+    while gateway.status().clients!=0 && std::time::Instant::now()<deadline {std::thread::sleep(Duration::from_millis(1));}
+    assert_eq!(gateway.status().clients,0);
+    assert_eq!(gateway.status().authorized_clients,0);
+    assert_eq!(gateway.status().subscribed_clients,0);
     assert!(!gateway.status().running);
     let start = std::time::Instant::now();
     gateway.stop();
@@ -67,4 +72,24 @@ fn stop_cancels_an_incomplete_noise_handshake() {
     gateway.stop();
     assert!(start.elapsed() < Duration::from_secs(2));
     peer.join().unwrap();
+}
+
+#[test]
+fn unavailable_clients_still_obey_connection_limits() {
+    let cfg:Config=serde_json::from_value(serde_json::json!({
+        "listen":"127.0.0.1:0","pool":"127.0.0.1:1","jds":"127.0.0.1:1",
+        "pool_key":"79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "jds_key":"79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "identity":"test","max_clients":1,"max_per_ip":1
+    })).unwrap();
+    let gateway=Gateway::start(cfg,Arc::new(NoTemplates)).unwrap();
+    let first=std::net::TcpStream::connect(gateway.address).unwrap();
+    let deadline=std::time::Instant::now()+Duration::from_secs(2);
+    while gateway.status().clients!=1 && std::time::Instant::now()<deadline {std::thread::sleep(Duration::from_millis(1));}
+    assert_eq!(gateway.status().clients,1);
+    let mut second=std::net::TcpStream::connect(gateway.address).unwrap();
+    second.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
+    assert_eq!(second.read(&mut [0;1]).unwrap(),0);
+    drop(first);
+    gateway.stop();
 }

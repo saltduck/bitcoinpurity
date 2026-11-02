@@ -123,3 +123,9 @@ v31-era binding must be updated externally; its current layout is not the target
 channel, allocation, template, declaration, custom ACK or mining operation.
 `error` retains the failed stage and bounded sanitized code across retries until
 confirmed work recovers. Server error_details and account credentials are omitted.
+
+`sv2pooltag` and `sv2minertag` default to empty. Their nonempty UTF-8 data pushes
+total at most 59 bytes including length bytes; control characters are rejected.
+They precede a negotiated-length extranonce data push. CLI/configuration/Qt use
+the same validation and changes require restart. An unavailable V1 subscribe
+returns error 20 with result=null, then EOF after the response is flushed.

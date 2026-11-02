@@ -5,7 +5,7 @@ use purity_sv2::wire::{protocol_error, Connection, Result};
 use serde::Deserialize;
 use serde_json::json;
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     fs::OpenOptions,
     io::Write,
     sync::{
@@ -42,7 +42,10 @@ struct Config {
     events: String,
     #[serde(default)]
     mode: String,
+    #[serde(default = "default_extranonce_size")]
+    extranonce_size: u8,
 }
+fn default_extranonce_size() -> u8 {16}
 #[derive(Clone)]
 struct Declaration {
     message: DeclareMiningJobOwned,
@@ -213,11 +216,11 @@ async fn mining_server(
     }
     let open = decode!(frame, OpenExtendedMiningChannel);
     let mut allocator =
-        ExtranonceAllocator::new(vec![0x50], 16, 32).map_err(|_| protocol_error())?;
+        ExtranonceAllocator::new(vec![0x50], cfg.extranonce_size, 32).map_err(|_| protocol_error())?;
     let prefix = allocator
         .allocate_extended(open.min_extranonce_size as usize)
         .map_err(|_| protocol_error())?;
-    let rollable = 16 - prefix.as_bytes().len();
+    let rollable = usize::from(cfg.extranonce_size) - prefix.as_bytes().len();
     let mut channel = ExtendedChannel::new_for_pool(
         1,
         "regtest".into(),
@@ -256,6 +259,9 @@ async fn mining_server(
             },
         )))
         .await?;
+    let mut seen = BTreeSet::new();
+    let mut validators = BTreeMap::new();
+    let mut job_serial=0u32;
     let mut declared: BTreeMap<u32, (SetCustomMiningJobOwned, Declaration)> = BTreeMap::new();
     loop {
         let mut frame = connection.receive().await?;
@@ -271,13 +277,24 @@ async fn mining_server(
                 if record.message.version != custom.version {
                     return Err(protocol_error());
                 }
-                let id = channel
-                    .on_set_custom_mining_job(custom.clone())
-                    .map_err(|_| protocol_error())?;
+                if declared.values().any(|(old,_)| old.prev_hash != custom.prev_hash || old.nbits != custom.nbits) {
+                    declared.clear(); validators.clear(); seen.clear();
+                }
+                // The pinned server API stales all jobs when ntime changes. Keep
+                // bounded per-job validators so this fixture tests delayed work
+                // with each declared timestamp and target, without dependency patches.
+                let mut job_allocator=ExtranonceAllocator::new(vec![0x50],cfg.extranonce_size,32).map_err(|_|protocol_error())?;
+                let job_prefix=job_allocator.allocate_extended(open.min_extranonce_size as usize).map_err(|_|protocol_error())?;
+                let mut validator=ExtendedChannel::new_for_pool(1,"regtest".into(),job_prefix,share_target,1e12,true,rollable as u16,1,6.0,"test".into(),Some(16)).map_err(|_|protocol_error())?;
+                validator.set_target(share_target).map_err(|_|protocol_error())?;
+                let internal=validator.on_set_custom_mining_job(custom.clone()).map_err(|_|protocol_error())?;
+                job_serial=job_serial.checked_add(1).ok_or_else(protocol_error)?;
+                let id=job_serial;
+                validators.insert(id,(validator,internal));
                 let request_id = custom.request_id;
                 declared.insert(id, (custom, record));
                 while declared.len() > 16 {
-                    declared.pop_first();
+                    if let Some((id,_))=declared.pop_first() {validators.remove(&id);}
                 }
                 connection
                     .send_owned(Any::Mining(Mining::SetCustomMiningJobSuccess(
@@ -295,7 +312,14 @@ async fn mining_server(
                 if mode(&path) == "close" {
                     return Err(protocol_error());
                 }
-                let result = channel.validate_share(share.clone());
+                let result = validators.get_mut(&share.job_id).ok_or_else(protocol_error).and_then(|(validator, internal)| {
+                    let mut mapped=share.clone(); mapped.job_id=*internal;
+                    validator.validate_share(mapped).map_err(|_|protocol_error())
+                }).and_then(|valid| {
+                    let hash=match &valid {ShareValidationResult::Valid(hash)|ShareValidationResult::BlockFound(hash,_,_)=>hash};
+                    if !seen.insert(hash.to_byte_array()) {return Err(protocol_error());}
+                    Ok(valid)
+                });
                 if mode(&path) == "reject-share" || result.is_err() {
                     connection
                         .send_owned(Any::Mining(Mining::SubmitSharesError(

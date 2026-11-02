@@ -946,6 +946,11 @@ mod diagnostic_tests {
 
     use super::*;
     use stratum_core::bitcoin::secp256k1::{Keypair, Secp256k1, SecretKey};
+    #[tokio::test]
+    async fn encrypted_legal_success_flags() {
+        for flags in [0,2] {negotiate(Protocol::MiningProtocol,6,2,flags,false).await.unwrap();}
+        negotiate(Protocol::JobDeclarationProtocol,1,2,0,false).await.unwrap();
+    }
     async fn negotiate(
         protocol: Protocol,
         flags: u32,

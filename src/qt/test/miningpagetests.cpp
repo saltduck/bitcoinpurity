@@ -97,6 +97,9 @@ void MiningPageTests::sv2SettingsValidateAndMaskCredentials()
     }
     QCOMPARE(widget.findChild<QLineEdit*>("sv2password")->echoMode(), QLineEdit::Password);
     QVERIFY(widget.Validate(error));
+    widget.findChild<QLineEdit*>("sv2pooltag")->setText(QString(59, 'x'));
+    QVERIFY(!widget.Validate(error));
+    widget.findChild<QLineEdit*>("sv2pooltag")->setText("/TestPool/");
     widget.findChild<QLineEdit*>("sv2password")->setText("test#only");
     QVERIFY(!widget.Validate(error));
     QVERIFY(!error.isEmpty());
