@@ -129,3 +129,19 @@ total at most 59 bytes including length bytes; control characters are rejected.
 They precede a negotiated-length extranonce data push. CLI/configuration/Qt use
 the same validation and changes require restart. An unavailable V1 subscribe
 returns error 20 with result=null, then EOF after the response is flushed.
+
+### Periodic SV2 job refresh (2026-11-03)
+
+`sv2jobinterval` is available through CLI, configuration files and Qt. It defaults
+to 30 seconds and accepts integer seconds from 30 through 60 inclusive; invalid
+values fail startup when SV2 is enabled. Changes require restart and retain
+normal command-line/configuration precedence. Ordinary mempool changes are
+coalesced until the next refresh deadline, without postponing that deadline.
+Even an unchanged mempool gets periodic fresh work. New chain tips/reorgs and
+invalid work are handled immediately; upstream target changes retain their
+existing immediate job installation and per-job difficulty rules. Work is only
+published after a valid Custom Job acknowledgement. Same-parent refreshes retain
+valid past work and use clean_jobs=false; parent changes invalidate old work.
+The monotonic template refresh interval is not a hard delivery guarantee during
+upstream latency or failure. No miner-model detection or pool-specific behavior
+is introduced. See TASK-047 for regression evidence.

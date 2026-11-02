@@ -39,6 +39,11 @@ Sv2SettingsWidget::Sv2SettingsWidget(QWidget* parent) : QWidget(parent)
         m_fields.emplace(name, input);
         form->addRow(tr(label), input);
     }
+    m_job_interval = new QSpinBox(this);
+    m_job_interval->setObjectName("sv2jobinterval");
+    m_job_interval->setRange(30, 60);
+    m_job_interval->setValue(gArgs.GetIntArg("-sv2jobinterval", 30));
+    form->addRow(tr("Job refresh interval (seconds):"), m_job_interval);
     m_port = new QSpinBox(this);
     m_port->setRange(1, 65535);
     m_port->setValue(gArgs.GetIntArg("-sv2port", 23334));
@@ -68,6 +73,7 @@ std::map<std::string, std::string> Sv2SettingsWidget::Values() const
     values.emplace("datum", Mode() == 1 ? "1" : "0");
 #endif
     values.emplace("sv2auth", m_auth->isChecked() ? "1" : "0");
+    values.emplace("sv2jobinterval", std::to_string(m_job_interval->value()));
     values.emplace("sv2port", std::to_string(m_port->value()));
     values.emplace("sv2maxclients", std::to_string(m_clients->value()));
     values.emplace("sv2maxperip", std::to_string(m_per_ip->value()));

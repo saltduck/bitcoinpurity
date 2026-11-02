@@ -67,6 +67,7 @@ sv2password=<LOCAL_MINER_PASSWORD>
 # Connection limits.
 sv2maxclients=32
 sv2maxperip=4
+sv2jobinterval=30
 ```
 
 Authority keys accept either 32-byte hexadecimal or SRI Base58 encoding. Use
@@ -188,3 +189,23 @@ When upstream work is unavailable, a new mining.subscribe receives error 20
 allocated. Configure/local authorization can respond before subscription but do
 not imply upstream readiness. Existing subscribed miners disconnect when work is
 withdrawn. Limits and the ten-second subscription/authorization deadline remain.
+
+## Job refresh interval
+
+`sv2jobinterval` defaults to **30 seconds** and accepts integer values from **30
+to 60**, inclusive. Set it in the configuration file, pass
+`-sv2jobinterval=45` on the command line, or use **Job refresh interval (seconds)**
+in Qt's SV2 settings. Changes require restart; command-line values take precedence.
+Out-of-range values are configuration errors when SV2 is enabled.
+
+Ordinary transaction changes are combined into the next scheduled template,
+without delaying the deadline. Fresh jobs are also generated when transactions
+have not changed. New blocks/reorgs and invalid work are handled immediately,
+and target changes retain their existing immediate processing. Same-parent
+refreshes preserve valid previous jobs (`clean_jobs=false`); a new parent retires
+old work. Every new job still requires pool acknowledgement before publication.
+
+The interval controls normal template refresh, not a guaranteed miner delivery
+latency during pool delays or outages. The 30-second default leaves margin below
+a one-minute device timeout; compatibility with particular ASIC firmware still
+requires device testing. No miner-model-specific configuration is required.

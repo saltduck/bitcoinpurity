@@ -12,9 +12,9 @@
 #include <node/miner.h>
 #include <streams.h>
 #include <sync.h>
-#include <txmempool.h>
 #include <univalue.h>
 #include <util/strencodings.h>
+#include <util/time.h>
 #include <validation.h>
 #include <algorithm>
 #include <atomic>
@@ -51,10 +51,9 @@ struct Sv2TemplateProvider::Impl {
     std::map<uint64_t, CBlock> templates;
     UniValue last;
     uint256 tip;
-    uint64_t mempool_update{0};
     std::string outputs;
-    std::chrono::steady_clock::time_point tip_seen{};
-    std::chrono::steady_clock::time_point created{};
+    MockableSteadyClock::time_point tip_seen{};
+    MockableSteadyClock::time_point created{};
     explicit Impl(node::NodeContext& n) : node{n}, mining{interfaces::MakeMining(n)} {}
 };
 Sv2TemplateProvider::Sv2TemplateProvider(node::NodeContext& n) : m_impl{std::make_unique<Impl>(n)} {}
@@ -85,7 +84,7 @@ UniValue Sv2TemplateProvider::Request(const UniValue& request)
             }
             auto tip = p.mining->getTip();
             if (!tip) return Failure("not-ready");
-            const auto now = std::chrono::steady_clock::now();
+            const auto now = MockableSteadyClock::now();
             if (p.tip != tip->hash) {
                 p.tip = tip->hash;
                 p.tip_seen = now;
@@ -104,9 +103,8 @@ UniValue Sv2TemplateProvider::Request(const UniValue& request)
                 p.headers_ahead = ahead > 0;
                 if (ahead > 0 && now - p.tip_seen < std::chrono::seconds{std::clamp(ahead, 3, 20)}) return Failure("catching-up");
             }
-            const auto update = p.node.mempool->GetTransactionsUpdated();
-            if (!p.last.isNull() && p.outputs == encoded && p.mempool_update == update &&
-                p.last["previous_block_hash"].get_str() == HexStr(tip->hash) && now - p.created < std::chrono::seconds{30}) {
+            if (!p.last.isNull() && p.outputs == encoded &&
+                p.last["previous_block_hash"].get_str() == HexStr(tip->hash) && now - p.created < std::chrono::seconds{p.node.args->GetIntArg("-sv2jobinterval", 30)}) {
                 if (!request["known_id"].isNull() && request["known_id"].getInt<uint64_t>() == p.last["id"].getInt<uint64_t>()) {
                     UniValue out{UniValue::VOBJ};out.pushKV("ok",true);out.pushKV("unchanged",true);return out;
                 }
@@ -153,7 +151,6 @@ UniValue Sv2TemplateProvider::Request(const UniValue& request)
             while (p.templates.size() > 32) p.templates.erase(p.templates.begin());
             p.created = now;
             p.outputs = encoded;
-            p.mempool_update = update;
             p.last = out;
             return out;
         }

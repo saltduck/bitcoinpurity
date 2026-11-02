@@ -40,6 +40,7 @@ void SetupSv2Args(ArgsManager& args)
     args.AddArg("-sv2identity=<account>","Pool account identity for this gateway",ArgsManager::ALLOW_ANY|ArgsManager::SENSITIVE,OptionsCategory::OPTIONS);
     args.AddArg("-sv2pooltag=<text>","Fixed pool coinbase tag (default: empty; combined encoded tags at most 59 UTF-8 bytes)",ArgsManager::ALLOW_ANY,OptionsCategory::OPTIONS);
     args.AddArg("-sv2minertag=<text>","Fixed miner coinbase tag (default: empty)",ArgsManager::ALLOW_ANY,OptionsCategory::OPTIONS);
+    args.AddArg("-sv2jobinterval=<seconds>","Periodic job refresh interval in seconds (default: 30, range: 30-60); new chain tips update immediately",ArgsManager::ALLOW_ANY,OptionsCategory::OPTIONS);
     args.AddArg("-sv2auth","Require local miner authentication (default: 0)",ArgsManager::ALLOW_ANY,OptionsCategory::OPTIONS);
     args.AddArg("-sv2user=<user>","Local miner username; user.worker is also accepted",ArgsManager::ALLOW_ANY|ArgsManager::SENSITIVE,OptionsCategory::OPTIONS);
     args.AddArg("-sv2password=<password>","Local miner password",ArgsManager::ALLOW_ANY|ArgsManager::SENSITIVE,OptionsCategory::OPTIONS);
@@ -53,6 +54,8 @@ bool ValidateSv2Options(const ArgsManager& args,bilingual_str& error)
     if (args.GetChainType()!=ChainType::MAIN && args.GetChainType()!=ChainType::REGTEST) {error=Untranslated("SV2 supports only mainnet and regtest");return false;}
     const auto port=args.GetIntArg("-sv2port",23334);
     if (port<1 || port>65535) {error=Untranslated("-sv2port must be between 1 and 65535");return false;}
+    const auto interval=args.GetIntArg("-sv2jobinterval",30);
+    if (interval<30 || interval>60) {error=Untranslated("-sv2jobinterval must be between 30 and 60 seconds");return false;}
     const auto config=Config(args).write();
     if (purity_sv2_validate(reinterpret_cast<const uint8_t*>(config.data()),config.size())!=0) {
         error=Untranslated("Invalid SV2 configuration: check endpoints, authority keys, identity, authentication and client limits");return false;

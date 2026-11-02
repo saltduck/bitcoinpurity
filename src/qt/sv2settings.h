@@ -25,6 +25,7 @@ private:
     QComboBox* m_mode;
     QCheckBox* m_auth;
     QSpinBox* m_port;
+    QSpinBox* m_job_interval;
     QSpinBox* m_clients;
     QSpinBox* m_per_ip;
     std::map<std::string, QLineEdit*> m_fields;

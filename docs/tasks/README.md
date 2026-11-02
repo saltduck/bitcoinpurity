@@ -93,3 +93,5 @@
 - [TASK-044: Generic pool and miner tags](TASK-044.md)
 - [TASK-045: Reply to unavailable subscriptions before closing](TASK-045.md)
 - [TASK-046: Regression and interoperability evidence](TASK-046.md)
+
+- [TASK-047: Configurable periodic SV2 job refresh](TASK-047.md)

@@ -272,6 +272,61 @@ BOOST_FIXTURE_TEST_CASE(sv2_template_bridge, TestChain100Setup)
     BOOST_CHECK(!provider.Request(request)["ok"].get_bool());
 }
 
+BOOST_FIXTURE_TEST_CASE(sv2_job_refresh_interval, TestChain100Setup)
+{
+    struct ResetClock {
+        ~ResetClock() { MockableSteadyClock::ClearMockTime(); }
+    } reset_clock;
+    size_t coinbase_index{0};
+    for (const int seconds : {30, 45, 60}) {
+        if (seconds != 30) m_node.args->ForceSetArg("-sv2jobinterval", std::to_string(seconds));
+        auto time = MockableSteadyClock::INITIAL_MOCK_TIME;
+        MockableSteadyClock::SetMockTime(time);
+        mining::Sv2TemplateProvider provider{m_node};
+        DataStream outputs;
+        outputs << std::vector<CTxOut>{{0, CScript() << OP_TRUE}};
+        UniValue request{UniValue::VOBJ};
+        request.pushKV("op", "template");
+        request.pushKV("outputs", HexStr(outputs));
+        const auto first = provider.Request(request);
+        BOOST_REQUIRE(first["ok"].get_bool());
+        request.pushKV("known_id", first["id"]);
+        auto tx = CreateValidMempoolTransaction(m_coinbase_txns[coinbase_index], 0, coinbase_index + 1,
+                                     coinbaseKey, GetScriptForDestination(PKHash{coinbaseKey.GetPubKey()}),
+                                     m_coinbase_txns[coinbase_index]->vout[0].nValue - 10000, false);
+        {
+            LOCK(cs_main);
+            const auto accepted = m_node.chainman->ProcessTransaction(MakeTransactionRef(tx));
+            BOOST_REQUIRE_MESSAGE(accepted.m_result_type == MempoolAcceptResult::ResultType::VALID, accepted.m_state.ToString());
+        }
+        ++coinbase_index;
+        for (int elapsed = 1; elapsed < seconds; ++elapsed) {
+            time += std::chrono::seconds{1};
+            MockableSteadyClock::SetMockTime(time);
+            m_node.mempool->AddTransactionsUpdated(1);
+            const auto unchanged = provider.Request(request);
+            BOOST_CHECK_MESSAGE((unchanged["unchanged"].isBool() && unchanged["unchanged"].get_bool()), "Transaction changes must not refresh or postpone the job deadline");
+        }
+        time += std::chrono::seconds{1};
+        MockableSteadyClock::SetMockTime(time);
+        const auto refreshed = provider.Request(request);
+        BOOST_REQUIRE(refreshed["ok"].get_bool());
+        BOOST_CHECK(refreshed["id"].getInt<uint64_t>() != first["id"].getInt<uint64_t>());
+        BOOST_CHECK_EQUAL(refreshed["transactions"].size(), first["transactions"].size() + 1);
+        request.pushKV("known_id", refreshed["id"]);
+        time += std::chrono::seconds{seconds};
+        MockableSteadyClock::SetMockTime(time);
+        const auto idle = provider.Request(request);
+        BOOST_REQUIRE(idle["ok"].get_bool());
+        BOOST_CHECK(idle["id"].getInt<uint64_t>() != refreshed["id"].getInt<uint64_t>());
+        request.pushKV("known_id", idle["id"]);
+        CreateAndProcessBlock({}, CScript() << OP_TRUE);
+        const auto new_tip = provider.Request(request);
+        BOOST_REQUIRE(new_tip["ok"].get_bool());
+        BOOST_CHECK(new_tip["previous_block_hash"].get_str() != idle["previous_block_hash"].get_str());
+    }
+}
+
 BOOST_AUTO_TEST_CASE(default_block_limits)
 {
     ArgsManager args;

@@ -565,3 +565,11 @@ also observed pool ACK, local block acceptance and second-node propagation.
 See TASK-046 for initial failures, fixture timestamp correction and remaining
 gates. External operator-owned materials are not vendored or committed.
 Native Windows/hosted CI and broader independent acceptance remain open.
+
+## TASK-047: Periodic SV2 work refresh
+
+Replace per-mempool-change rebuilding with a monotonic configurable 30–60 second
+refresh deadline (default 30). Keep immediate tip transitions, target changes,
+acknowledgement gating and existing consensus/IPC contracts. Existing settings
+need no migration. CLI/config/Qt changes require restart. Only project-owned code
+and generic tests are involved; no external pool source is incorporated.

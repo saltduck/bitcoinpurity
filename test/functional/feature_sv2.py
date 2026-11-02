@@ -26,6 +26,7 @@ class Sv2Test(BitcoinTestFramework):
     def add_options(self, parser):
         parser.add_argument("--extranonce-size", type=int, choices=(12, 16, 32), default=16)
         parser.add_argument("--coinbase-tags", action="store_true")
+        parser.add_argument("--job-interval", type=int, choices=(30, 60), default=30)
         parser.add_argument("--sv2-test-pool", default=os.getenv("SV2_TEST_POOL"))
 
     def skip_test_if_missing_module(self):
@@ -110,6 +111,10 @@ class Sv2Test(BitcoinTestFramework):
                 f"-sv2jds={ready['jds']}", f"-sv2poolkey={ready['public_key']}",
                 f"-sv2jdskey={ready['public_key']}", "-sv2identity=test-pool-account",
                 "-sv2auth=1", "-sv2user=miner", "-sv2password=test-only-password"]
+        with node.bitcoinconf.open("a", encoding="utf8") as config:
+            config.write("\nsv2jobinterval=60\n")
+        if self.options.job_interval == 30:
+            args += ["-sv2jobinterval=30"]
         if self.options.coinbase_tags:
             with node.bitcoinconf.open("a", encoding="utf8") as config:
                 config.write("\nsv2pooltag=/ConfigPool/\nsv2minertag=/ConfigMiner/\n")
@@ -118,6 +123,9 @@ class Sv2Test(BitcoinTestFramework):
             self.stop_node(0)
             node.assert_start_raises_init_error(extra_args=args + ["-sv2port=0"],
                 expected_msg="-sv2port must be between 1 and 65535", match=ErrorMatch.PARTIAL_REGEX)
+            for interval in (29, 61):
+                node.assert_start_raises_init_error(extra_args=args + [f"-sv2jobinterval={interval}"],
+                    expected_msg="-sv2jobinterval must be between 30 and 60 seconds", match=ErrorMatch.PARTIAL_REGEX)
             if self.is_datum_compiled():
                 node.assert_start_raises_init_error(extra_args=args + ["-datum=1"],
                     expected_msg="DATUM Solo and SV2 pooled mining cannot be enabled together", match=ErrorMatch.PARTIAL_REGEX)
@@ -143,10 +151,16 @@ class Sv2Test(BitcoinTestFramework):
             self.log.info("Same-parent template refresh preserves delayed J1 shares and block solutions")
             node.setmocktime(int(time.time()) + 5)
             old_parent = node.getbestblockhash()
-            old_job = node.getsv2info()["job_id"]
+            old_info = node.getsv2info()
+            old_job = old_info["job_id"]
             wallet.rescan_utxos()
             wallet.send_self_transfer(from_node=node)
-            self.wait_until(lambda: node.getsv2info()["job_id"] != old_job)
+            self.wait_until(lambda: node.getsv2info()["job_id"] != old_job,
+                            timeout=self.options.job_interval + 20)
+            refresh_seconds = node.getsv2info()["job_created"] - old_info["job_created"]
+            assert refresh_seconds >= self.options.job_interval - 1
+            if self.options.job_interval == 30:
+                assert refresh_seconds < 60  # CLI overrides the 60-second configuration value.
             assert_equal(node.getbestblockhash(), old_parent)
             while True:
                 updated = client.receive()
@@ -243,7 +257,7 @@ class Sv2Test(BitcoinTestFramework):
             self.mode("reject-job")
             wallet.rescan_utxos()
             wallet.send_self_transfer(from_node=node)
-            self.wait_until(lambda: not node.getsv2info()["running"], timeout=20)
+            self.wait_until(lambda: not node.getsv2info()["running"], timeout=self.options.job_interval + 20)
             self.mode("")
             self.wait_until(lambda: node.getsv2info()["running"], timeout=40)
             info = node.getsv2info()
@@ -256,7 +270,7 @@ class Sv2Test(BitcoinTestFramework):
             self.mode("strict-target")
             self.restart_node(0, extra_args=args)
             self.wait_until(lambda: node.getsv2info()["running"], timeout=40)
-            self.wait_until(lambda: node.getsv2info()["transactions"] >= 2)
+            self.wait_until(lambda: node.getsv2info()["transactions"] >= 2, timeout=self.options.job_interval + 20)
             assert_equal(node.getsv2info()["share_difficulty"], 1)
             invalid_client, invalid_subscribed, invalid_job = self.miner()
             invalid, _ = self.solve(invalid_subscribed, invalid_job, False)
