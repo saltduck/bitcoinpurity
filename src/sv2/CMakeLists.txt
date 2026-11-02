@@ -24,8 +24,11 @@ else()
 endif()
 file(GLOB_RECURSE sv2_sources CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/*.rs")
 set(sv2_cargo_env "CARGO_TARGET_DIR=${sv2_target_dir}")
+set(sv2_test_cargo_env "CARGO_TARGET_DIR=${sv2_target_dir}-test-pool")
+string(REPLACE "${sv2_target_dir}" "${sv2_target_dir}-test-pool" sv2_test_profile_dir "${sv2_profile_dir}")
 if(MSVC AND NOT CMAKE_MSVC_RUNTIME_LIBRARY MATCHES "DLL")
   list(APPEND sv2_cargo_env "RUSTFLAGS=$ENV{RUSTFLAGS} -C target-feature=+crt-static")
+  list(APPEND sv2_test_cargo_env "RUSTFLAGS=$ENV{RUSTFLAGS} -C target-feature=+crt-static")
 endif()
 add_custom_command(OUTPUT "${sv2_archive}"
   COMMAND "${CMAKE_COMMAND}" -E env ${sv2_cargo_env} "${SV2_CARGO}" build --locked --release --lib ${sv2_target_args}
@@ -48,9 +51,9 @@ endif()
 
 if(BUILD_TESTS)
   add_custom_target(sv2_test_pool
-    COMMAND "${CMAKE_COMMAND}" -E env ${sv2_cargo_env} "${SV2_CARGO}" build --locked --release --features test-pool --bin purity-sv2-test-pool ${sv2_target_args}
+    COMMAND "${CMAKE_COMMAND}" -E env ${sv2_test_cargo_env} "${SV2_CARGO}" build --locked --release --features test-pool --bin purity-sv2-test-pool ${sv2_target_args}
     COMMAND "${CMAKE_COMMAND}" -E make_directory "${PROJECT_BINARY_DIR}/bin"
-    COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${sv2_profile_dir}/purity-sv2-test-pool${CMAKE_EXECUTABLE_SUFFIX}" "${PROJECT_BINARY_DIR}/bin/purity-sv2-test-pool${CMAKE_EXECUTABLE_SUFFIX}"
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${sv2_test_profile_dir}/purity-sv2-test-pool${CMAKE_EXECUTABLE_SUFFIX}" "${PROJECT_BINARY_DIR}/bin/purity-sv2-test-pool${CMAKE_EXECUTABLE_SUFFIX}"
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
     VERBATIM)
   add_dependencies(sv2_test_pool sv2_rust_build)
