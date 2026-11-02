@@ -182,3 +182,9 @@ Tags precede the negotiated extranonce data push and cannot be changed by miners
 Changes take effect after restart, with existing command-line/config precedence.
 The payout remains the local template's available reward, preserving required
 outputs and witness. There is no named-pool mode or fixed PUSH12 requirement.
+
+When upstream work is unavailable, a new mining.subscribe receives error 20
+("Upstream work unavailable") followed by connection close. No extranonce is
+allocated. Configure/local authorization can respond before subscription but do
+not imply upstream readiness. Existing subscribed miners disconnect when work is
+withdrawn. Limits and the ten-second subscription/authorization deadline remain.

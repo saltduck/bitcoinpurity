@@ -1,6 +1,6 @@
 use purity_sv2::runtime::{Config, Gateway, Node};
 use serde_json::Value;
-use std::{io::Read, sync::Arc, time::Duration};
+use std::{io::{Read,Write}, sync::Arc, time::Duration};
 struct NoTemplates;
 impl Node for NoTemplates {
     fn request(&self, _: Value) -> Result<Value, ()> {
@@ -21,8 +21,17 @@ fn unavailable_pool_exposes_no_miner_work_and_stop_joins() {
     socket
         .set_read_timeout(Some(Duration::from_secs(2)))
         .unwrap();
-    let mut byte = [0; 1];
-    assert_eq!(socket.read(&mut byte).unwrap(), 0);
+    socket.write_all(b"{\"id\":1,\"method\":\"mining.configure\",\"params\":[[\"version-rolling\"],{}]}\n{\"id\":2,\"method\":\"mining.authorize\",\"params\":[\"miner\",\"x\"]}\n{\"id\":3,\"method\":\"mining.subscribe\",\"params\":[]}\n").unwrap();
+    let mut replies=String::new();
+    socket.read_to_string(&mut replies).unwrap();
+    let replies:Vec<Value>=replies.lines().map(|line|serde_json::from_str(line).unwrap()).collect();
+    assert_eq!(replies.len(),3);
+    assert_eq!(replies[0]["result"]["version-rolling"],true);
+    assert_eq!(replies[1]["result"],true);
+    assert_eq!(replies[2]["id"],3);
+    assert!(replies[2]["result"].is_null());
+    assert_eq!(replies[2]["error"][0],20);
+    assert_eq!(gateway.status().rejected_shares,0);
     assert!(!gateway.status().running);
     let start = std::time::Instant::now();
     gateway.stop();

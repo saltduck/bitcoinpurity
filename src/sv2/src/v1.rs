@@ -21,7 +21,7 @@ use stratum_core::{
 };
 use tokio::{
     net::{TcpListener, TcpStream},
-    sync::{mpsc, watch},
+    sync::{mpsc, oneshot, watch},
     task::JoinSet,
     time::{sleep_until, timeout},
 };
@@ -80,7 +80,6 @@ pub(crate) async fn serve(
             _=tasks.join_next(),if !tasks.is_empty()=>{}
             accepted=listener.accept()=> {
                 let Ok((socket,address))=accepted else {break};
-                if jobs.borrow().is_none() {drop(socket);continue;}
                 let count:usize=counts.lock().unwrap_or_else(|p|p.into_inner()).values().sum();
                 let per_ip=*counts.lock().unwrap_or_else(|p|p.into_inner()).get(&address.ip()).unwrap_or(&0);
                 if count>=cfg.max_clients || per_ip>=cfg.max_per_ip || serial>=u32::MAX as u64 {drop(socket);continue;}
@@ -115,14 +114,24 @@ async fn client(
     let (mut writer, mut reader) =
         Framed::new(socket, LinesCodec::new_with_max_length(16384)).split();
     let (out, mut outgoing) = mpsc::channel::<Value>(64);
+    let (close, mut closing) = oneshot::channel::<()>();
     let writes = async {
-        while let Some(value) = outgoing.recv().await {
+        loop {
+            let value = tokio::select! {
+                value = outgoing.recv() => value,
+                _ = &mut closing => {
+                    while let Ok(value) = outgoing.try_recv() {
+                        timeout(Duration::from_secs(5), writer.send(value.to_string())).await.map_err(|_|protocol_error())?.map_err(|_|protocol_error())?;
+                    }
+                    return Ok::<_, std::io::Error>(());
+                }
+            };
+            let Some(value) = value else { return Ok::<_, std::io::Error>(()); };
             timeout(Duration::from_secs(5), writer.send(value.to_string()))
                 .await
                 .map_err(|_| protocol_error())?
                 .map_err(|_| protocol_error())?;
         }
-        Ok::<_, std::io::Error>(())
     };
     let reads = async {
         let mut subscribed = false;
@@ -136,7 +145,11 @@ async fn client(
                 _=sleep_until(deadline),if !subscribed || !authorized.load(Ordering::Relaxed)=>return Err(protocol_error()),
                 changed=jobs.changed()=> {
                     changed.map_err(|_|protocol_error())?;
-                    let job=jobs.borrow().clone().ok_or_else(protocol_error)?;
+                    let Some(job)=jobs.borrow().clone() else {
+                        known.clear();
+                        if subscribed {return Err(protocol_error());}
+                        continue;
+                    };
                     if subscribed && authorized.load(Ordering::Relaxed) {
                         work(&job,&out).await?;known.push_back(job);
                         while known.len()>16 {known.pop_front();}
@@ -150,10 +163,17 @@ async fn client(
                     let id=request["id"].clone();
                     let params=&request["params"];
                     let mut response=json!({"id":id,"result":true,"error":null});
-                    let job=jobs.borrow().clone().ok_or_else(protocol_error)?;
+                    let job=jobs.borrow().clone();
                     match request["method"].as_str().ok_or_else(protocol_error)? {
                         "mining.subscribe"=> {
                             if subscribed {return Err(protocol_error());}
+                            let Some(job)=job.as_ref() else {
+                                response["result"]=Value::Null;
+                                response["error"]=json!([20,"Upstream work unavailable",null]);
+                                out.send(response).await.map_err(|_|protocol_error())?;
+                                let _ = close.send(());
+                                return std::future::pending::<Result<()>>().await;
+                            };
                             let mut prefix=job.extranonce_prefix.clone();prefix.extend_from_slice(&serial.to_le_bytes());
                             response["result"]=json!([[["mining.set_difficulty",format!("{serial:x}")],["mining.notify",format!("{serial:x}")]],hex::encode(prefix),job.rollable_size-4]);
                             subscribed=true;
@@ -214,7 +234,7 @@ async fn client(
                     out.send(response).await.map_err(|_|protocol_error())?;
                     if subscribed && authorized.load(Ordering::Relaxed) &&
                         matches!(request["method"].as_str(),Some("mining.subscribe"|"mining.authorize")) {
-                        work(&job,&out).await?;known.push_back(job);
+                        if let Some(job)=job {work(&job,&out).await?;known.push_back(job);}
                         while known.len()>16 {known.pop_front();}
                     }
                 }
