@@ -267,18 +267,24 @@ async fn run(
         generation += 1;
         shared.update(|s| {
             s.status = "connecting".into();
-            s.error.clear();
         });
-        tokio::select! {
+        let outcome = tokio::select! {
             _ = stopped(&shared) => break,
-            _ = session(&config, &*node, &shared, &jobs, &mut receiver, generation) => {}
-        }
+            result = session(&config, &*node, &shared, &jobs, &mut receiver, generation) => result
+        };
         let _ = jobs.send(None);
         shared.update(|s| {
             s.running = false;
             s.status = "retrying".into();
             if s.error.is_empty() {
-                s.error = "upstream-unavailable-or-protocol-failure".into();
+                s.error = format!(
+                    "{}: {}",
+                    s.stage,
+                    outcome
+                        .err()
+                        .map(|e| e.to_string())
+                        .unwrap_or_else(|| "session-ended".into())
+                );
             }
             s.abandoned_shares += s.pending_shares;
             s.pending_shares = 0;
@@ -307,6 +313,23 @@ fn validate_setup_success(protocol: Protocol, success: SetupConnectionSuccess) -
         return Err(protocol_error());
     }
     Ok(())
+}
+fn failure(message: impl Into<String>) -> std::io::Error {
+    std::io::Error::new(std::io::ErrorKind::InvalidData, message.into())
+}
+fn error_code(bytes: &[u8]) -> String {
+    // Keep diagnostic codes bounded and exclude control characters and error_details.
+    String::from_utf8_lossy(bytes)
+        .chars()
+        .take(64)
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || "-_".contains(c) {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect()
 }
 async fn setup(
     connection: &mut Connection,
@@ -343,6 +366,14 @@ async fn setup(
     let mut frame = timeout(Duration::from_secs(10), connection.receive())
         .await
         .map_err(|_| protocol_error())??;
+    if frame.kind == 2 {
+        let error = decode!(frame, SetupConnectionError);
+        return Err(failure(format!(
+            "SetupConnectionError: {} (flags=0x{:08x})",
+            error_code(error.error_code.as_bytes()),
+            error.flags
+        )));
+    }
     if frame.kind != 1 {
         return Err(protocol_error());
     }
@@ -395,10 +426,15 @@ async fn session(
     shares: &mut mpsc::Receiver<Share>,
     generation: u64,
 ) -> Result<()> {
+    shared.update(|s| s.stage = "mining-connect-noise".into());
     let mut pool = Connection::connect(&cfg.pool, authority(&cfg.pool_key)?).await?;
+    shared.update(|s| s.stage = "mining-setup".into());
     setup(&mut pool, Protocol::MiningProtocol, 6, &cfg.pool).await?;
+    shared.update(|s| s.stage = "jds-connect-noise".into());
     let mut jds = Connection::connect(&cfg.jds, authority(&cfg.jds_key)?).await?;
+    shared.update(|s| s.stage = "jds-setup".into());
     setup(&mut jds, Protocol::JobDeclarationProtocol, 1, &cfg.jds).await?;
+    shared.update(|s| s.stage = "open-extended-channel".into());
     pool.send_owned(Any::Mining(Mining::OpenExtendedMiningChannel(
         OpenExtendedMiningChannelOwned {
             request_id: 1,
@@ -417,6 +453,13 @@ async fn session(
     let mut open = timeout(Duration::from_secs(10), pool.receive())
         .await
         .map_err(|_| protocol_error())??;
+    if open.kind == 0x12 {
+        let error = decode!(open, OpenMiningChannelError);
+        return Err(failure(format!(
+            "OpenMiningChannelError: {}",
+            error_code(error.error_code.as_bytes())
+        )));
+    }
     if open.kind != 0x14 {
         return Err(protocol_error());
     }
@@ -459,20 +502,21 @@ async fn session(
     loop {
         tokio::select! {
             _ = tick.tick() => {
-                if phase != 0 && phase != 2 && deadline.elapsed() > Duration::from_secs(15) {return Err(protocol_error());}
-                if pending.values().any(|p|p.started.elapsed()>Duration::from_secs(30)) {return Err(protocol_error());}
+                if phase != 0 && phase != 2 && deadline.elapsed() > Duration::from_secs(15) {return Err(failure("upstream-response-timeout"));}
+                if pending.values().any(|p|p.started.elapsed()>Duration::from_secs(30)) {return Err(failure("share-acknowledgement-timeout"));}
                 if phase == 0 || phase == 2 {
                     if !outputs.is_empty() {
                         let mut query=json!({"op":"template","outputs":hex::encode(&outputs)});
                         if phase==0 && !force {
                             if let Some(job)=history.back() {query["known_id"]=json!(job.template.id);}
                         }
+                        shared.update(|s| s.stage = "local-template".into());
                         let value = request_node(node,query)?;
-                        if value["unchanged"]==true {continue;}
+                        if value["unchanged"]==true {shared.update(|s| s.stage="mining".into());continue;}
                         if value["ok"] == true {
                             let template:Template = serde_json::from_value(value).map_err(|_|protocol_error())?;
                             if phase == 0 {
-                                if !force && history.back().is_some_and(|j|j.template.id==template.id) {continue;}
+                                if !force && history.back().is_some_and(|j|j.template.id==template.id) {shared.update(|s| s.stage="mining".into());continue;}
                                 if history.back().is_some_and(|j|j.template.previous_block_hash != template.previous_block_hash) {
                                     let _ = jobs.send(None);
                                     shared.update(|s|s.running=false);
@@ -480,7 +524,8 @@ async fn session(
                             } else {
                                 let job = Job::prepare(template,&outputs,prefix.clone(),open.extranonce_size as usize,open.channel_id,generation,target)?;
                                 let check = request_node(node,job.node_request("validate",&vec![0;job.rollable_size],job.template.version,job.template.ntime,0)?)?;
-                                if check["ok"] != true {return Err(protocol_error());}
+                                if check["ok"] != true {return Err(failure(format!("local-template-invalid: {}",error_code(check["error"].as_str().unwrap_or("validation-failed").as_bytes()))));}
+                                shared.update(|s| s.stage = "declare-mining-job".into());
                                 jds.send_owned(Any::JobDeclaration(Jd::DeclareMiningJob(DeclareMiningJobOwned {
                                     request_id:req,mining_job_token:token.clone().try_into().map_err(|_|protocol_error())?,
                                     version:job.template.version,
@@ -497,6 +542,7 @@ async fn session(
                         }
                     }
                     req = req.checked_add(1).ok_or_else(protocol_error)?;
+                    shared.update(|s| s.stage = "allocate-mining-job-token".into());
                     jds.send_owned(Any::JobDeclaration(Jd::AllocateMiningJobToken(AllocateMiningJobTokenOwned {
                         user_identifier:cfg.identity.as_bytes().to_vec().try_into().map_err(|_|protocol_error())?,request_id:req,
                     }))).await?;
@@ -533,8 +579,13 @@ async fn session(
                         if declared.request_id!=req {return Err(protocol_error());}
                         let job=proposed.as_ref().ok_or_else(protocol_error)?;
                         let message=job.custom(req,declared.new_mining_job_token.to_owned_bytes())?;
+                        shared.update(|s| s.stage = "set-custom-mining-job".into());
                         pool.send_owned(Any::Mining(Mining::SetCustomMiningJob(message.clone()))).await?;
                         custom=Some(message);phase=4;deadline=Instant::now();
+                    }
+                    0x59 => {
+                        let error=decode!(frame,DeclareMiningJobError);
+                        return Err(failure(format!("DeclareMiningJobError: {}",error_code(error.error_code.as_bytes()))));
                     }
                     _=>return Err(protocol_error())
                 }
@@ -551,7 +602,7 @@ async fn session(
                         job.target=target;
                         install_confirmed_job(&mut channel, &mut job, history.back().map(Arc::as_ref), success.job_id)?;
                         let job=Arc::new(job);
-                        shared.update(|s|{s.running=true;s.status="running".into();s.error.clear();s.current_height=job.template.height;
+                        shared.update(|s|{s.running=true;s.status="running".into();s.stage="mining".into();s.error.clear();s.current_height=job.template.height;
                             s.job_id=job.id();s.job_created=now();s.nbits=job.template.nbits;
                             s.share_difficulty=Target::from_le_bytes(job.target).difficulty_float();
                             s.network_difficulty=Target::from_compact(stratum_core::bitcoin::CompactTarget::from_consensus(job.template.nbits)).difficulty_float();
@@ -584,6 +635,14 @@ async fn session(
                         if rejected.channel_id!=open.channel_id {return Err(protocol_error());}
                         let p=pending.remove(&rejected.sequence_number).ok_or_else(protocol_error)?;
                         p.share.answer(false);shared.update(|s|{s.rejected_shares+=1;s.pending_shares=pending.len() as u64;});
+                    }
+                    0x24 => {
+                        let error=decode!(frame,SetCustomMiningJobError);
+                        return Err(failure(format!("SetCustomMiningJobError: {}",error_code(error.error_code.as_bytes()))));
+                    }
+                    0x18 => {
+                        let closed=decode!(frame,CloseChannel);
+                        return Err(failure(format!("CloseChannel: {}",error_code(closed.reason_code.as_bytes()))));
                     }
                     0x15|0x1f|0x20|0x25=>{}
                     _=>return Err(protocol_error())
@@ -861,5 +920,73 @@ mod review_tests {
             assert_eq!(s.abandoned_shares, 0);
             assert_eq!(s.accepted_shares, 0);
         });
+    }
+}
+
+#[cfg(test)]
+mod diagnostic_tests {
+    #[test]
+    fn diagnostic_codes_are_bounded_and_sanitized() {
+        assert_eq!(super::error_code(b"bad\ncode\x00"), "bad_code_");
+        assert_eq!(super::error_code(&[b'x'; 255]).len(), 64);
+    }
+
+    use super::*;
+    use stratum_core::bitcoin::secp256k1::{Keypair, Secp256k1, SecretKey};
+    async fn negotiate(
+        protocol: Protocol,
+        flags: u32,
+        version: u16,
+        reply_flags: u32,
+        rejection: bool,
+    ) -> Result<()> {
+        let secret = [1u8; 32];
+        let key =
+            Keypair::from_secret_key(&Secp256k1::new(), &SecretKey::from_slice(&secret).unwrap());
+        let public = key.x_only_public_key().0.serialize();
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap().to_string();
+        let peer = tokio::spawn(async move {
+            let (socket, _) = listener.accept().await.unwrap();
+            let mut connection = Connection::respond(socket, public, secret).await.unwrap();
+            let mut frame = connection.receive().await.unwrap();
+            assert_eq!(frame.kind, 0);
+            let request = binary_sv2::from_bytes::<SetupConnection>(&mut frame.payload).unwrap();
+            assert_eq!(request.flags, flags);
+            assert_eq!(request.protocol, protocol);
+            let reply = if rejection {
+                Common::SetupConnectionError(SetupConnectionErrorOwned {
+                    flags,
+                    error_code: b"unsupported-feature-flags".to_vec().try_into().unwrap(),
+                })
+            } else {
+                Common::SetupConnectionSuccess(SetupConnectionSuccess {
+                    used_version: version,
+                    flags: reply_flags,
+                })
+            };
+            connection.send_owned(Any::Common(reply)).await.unwrap();
+        });
+        let mut connection = Connection::connect(&address, public).await.unwrap();
+        let result = setup(&mut connection, protocol, flags, &address).await;
+        peer.await.unwrap();
+        result
+    }
+
+    #[tokio::test]
+    async fn setup_rejects_incompatible_version_rolling_and_reports_server_error() {
+        assert!(negotiate(Protocol::MiningProtocol, 6, 2, 1, false)
+            .await
+            .is_err());
+        assert!(negotiate(Protocol::MiningProtocol, 6, 1, 0, false)
+            .await
+            .is_err());
+        let error = negotiate(Protocol::MiningProtocol, 6, 2, 0, true)
+            .await
+            .unwrap_err();
+        assert!(
+            error.to_string().contains("unsupported-feature-flags"),
+            "{error}"
+        );
     }
 }

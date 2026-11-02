@@ -118,3 +118,8 @@ v31-era binding must be updated externally; its current layout is not the target
   limits, deadlines and disconnect of subscribed miners when work disappears.
 - Retain generic empty-tag and 12/16/32-byte cases. Do not implement fixed PUSH12
   or a named-pool mode. Independent pool/native Windows acceptance remains open.
+
+`getsv2info.stage` identifies the current connection/authentication, Setup,
+channel, allocation, template, declaration, custom ACK or mining operation.
+`error` retains the failed stage and bounded sanitized code across retries until
+confirmed work recovers. Server error_details and account credentials are omitted.

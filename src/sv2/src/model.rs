@@ -215,6 +215,7 @@ pub struct Status {
     pub enabled: bool,
     pub running: bool,
     pub status: String,
+    pub stage: String,
     pub error: String,
     pub listen: String,
     pub port: u16,

@@ -711,6 +711,7 @@ void MiningPage::refresh()
         status.enabled = true;
         status.running = sv2["running"].isBool() && sv2["running"].get_bool();
         status.status = "SV2: " + text("status");
+        if (!text("stage").empty()) status.status += " · " + text("stage");
         if (!text("error").empty()) status.status += " · " + text("error");
         status.listen = text("listen"); status.port = number("port");
         status.auth_required = sv2["auth_required"].isBool() && sv2["auth_required"].get_bool();

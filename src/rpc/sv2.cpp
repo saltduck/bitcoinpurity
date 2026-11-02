@@ -11,6 +11,7 @@ RPCHelpMan getsv2info()
             {RPCResult::Type::BOOL,"enabled","Whether SV2 is enabled"},
             {RPCResult::Type::BOOL,"running","Whether the gateway is running"},
             {RPCResult::Type::STR,"status","Gateway lifecycle state"},
+            {RPCResult::Type::STR,"stage",/*optional=*/true,"Current SV2/JDS operation"},
             {RPCResult::Type::STR,"error",/*optional=*/true,"Error"},
             {RPCResult::Type::STR,"listen",/*optional=*/true,"Listen"},
             {RPCResult::Type::NUM,"port",/*optional=*/true,"Port"},
