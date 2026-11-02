@@ -58,6 +58,10 @@ pub struct Config {
     pub jds_key: String,
     pub identity: String,
     #[serde(default)]
+    pub pool_tag: String,
+    #[serde(default)]
+    pub miner_tag: String,
+    #[serde(default)]
     pub auth: bool,
     #[serde(default)]
     pub user: String,
@@ -96,6 +100,10 @@ impl Config {
             {
                 return Err(protocol_error());
             }
+        }
+        if [&self.pool_tag,&self.miner_tag].iter().any(|tag|tag.chars().any(char::is_control)) ||
+            [&self.pool_tag,&self.miner_tag].iter().map(|tag| tag.len()+usize::from(!tag.is_empty())).sum::<usize>()>59 {
+            return Err(failure("coinbase-tags-too-long-or-invalid"));
         }
         if self.identity.is_empty()
             || self.identity.len() > 255
@@ -517,7 +525,7 @@ async fn session(
                         let value = request_node(node,query)?;
                         if value["unchanged"]==true {shared.update(|s| s.stage="mining".into());continue;}
                         if value["ok"] == true {
-                            let template:Template = serde_json::from_value(value).map_err(|_|protocol_error())?;
+                            let mut template:Template = serde_json::from_value(value).map_err(|_|protocol_error())?;
                             if phase == 0 {
                                 if !force && history.back().is_some_and(|j|j.template.id==template.id) {shared.update(|s| s.stage="mining".into());continue;}
                                 if history.back().is_some_and(|j|j.template.previous_block_hash != template.previous_block_hash) {
@@ -525,6 +533,7 @@ async fn session(
                                     shared.update(|s|s.running=false);
                                 }
                             } else {
+                                template.add_coinbase_tags(&cfg.pool_tag, &cfg.miner_tag)?;
                                 let job = Job::prepare(template,&outputs,prefix.clone(),open.extranonce_size as usize,open.channel_id,generation,target)?;
                                 let check = request_node(node,job.node_request("validate",&vec![0;job.rollable_size],job.template.version,job.template.ntime,0)?)?;
                                 if check["ok"] != true {return Err(failure(format!("local-template-invalid: {}",error_code(check["error"].as_str().unwrap_or("validation-failed").as_bytes()))));}
@@ -1010,4 +1019,27 @@ mod backoff_tests {
 fn reconnect_delay(delay: u64, confirmed: bool) -> (u64, u64) {
  let wait=if confirmed {1} else {delay};
  (wait,(wait*2).min(30))
+}
+
+#[cfg(test)] mod tag_tests {use super::*; #[test]
+    fn tag_config_limits_count_utf8_bytes_and_pushes() {
+        let base = json!({"listen":"127.0.0.1:0","pool":"127.0.0.1:1","jds":"127.0.0.1:1",
+            "pool_key":"79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+            "jds_key":"79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798","identity":"test"});
+        for (pool, miner, valid) in [
+            ("a".repeat(58), String::new(), true),
+            ("a".repeat(59), String::new(), false),
+            ("/TestPool/".into(), "b".repeat(47), true),
+            ("/TestPool/".into(), "b".repeat(48), false),
+            ("\u{00e9}".repeat(29), String::new(), true),
+            ("\u{00e9}".repeat(30), String::new(), false),
+        ] {
+            let mut value = base.clone();
+            value["pool_tag"] = json!(pool);
+            value["miner_tag"] = json!(miner);
+            let cfg: Config = serde_json::from_value(value).unwrap();
+            assert_eq!(cfg.validate().is_ok(), valid);
+        }
+    }
+
 }

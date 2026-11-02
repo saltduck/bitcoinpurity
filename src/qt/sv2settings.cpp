@@ -31,7 +31,7 @@ Sv2SettingsWidget::Sv2SettingsWidget(QWidget* parent) : QWidget(parent)
     m_auth = new QCheckBox(tr("Authenticate local miners"), this);
     m_auth->setChecked(gArgs.GetBoolArg("-sv2auth", false));
     form->addRow(m_auth);
-    for (const auto& [name, label] : {std::pair{"sv2listen", QT_TR_NOOP("Miner listen address:")}, {"sv2pool", QT_TR_NOOP("Mining endpoint (host:port):")}, {"sv2jds", QT_TR_NOOP("Job Declaration endpoint (host:port):")}, {"sv2poolkey", QT_TR_NOOP("Mining authority public key:")}, {"sv2jdskey", QT_TR_NOOP("JDS authority public key:")}, {"sv2identity", QT_TR_NOOP("Pool account identity:")}, {"sv2user", QT_TR_NOOP("Local miner username:")}, {"sv2password", QT_TR_NOOP("Local miner password:")}}) {
+    for (const auto& [name, label] : {std::pair{"sv2listen", QT_TR_NOOP("Miner listen address:")}, {"sv2pool", QT_TR_NOOP("Mining endpoint (host:port):")}, {"sv2jds", QT_TR_NOOP("Job Declaration endpoint (host:port):")}, {"sv2poolkey", QT_TR_NOOP("Mining authority public key:")}, {"sv2jdskey", QT_TR_NOOP("JDS authority public key:")}, {"sv2identity", QT_TR_NOOP("Pool account identity:")}, {"sv2pooltag", QT_TR_NOOP("Pool coinbase tag (optional):")}, {"sv2minertag", QT_TR_NOOP("Miner coinbase tag (optional):")}, {"sv2user", QT_TR_NOOP("Local miner username:")}, {"sv2password", QT_TR_NOOP("Local miner password:")}}) {
         auto* input = new QLineEdit(this);
         input->setObjectName(name);
         input->setText(QString::fromStdString(gArgs.GetArg("-" + std::string{name}, std::string{name} == "sv2listen" ? "127.0.0.1" : "")));

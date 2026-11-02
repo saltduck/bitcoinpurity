@@ -170,3 +170,15 @@ its normal non-mining operation while the pool is unavailable.
 - [Configuration and RPC contract](../docs/api/sv2.md)
 - [Embedded gateway architecture](../docs/architecture/embedded-sv2.md)
 - [Build, test and release acceptance status](../docs/tasks/TASK-035.md)
+
+## Optional fixed coinbase tags
+
+`sv2pooltag` and `sv2minertag` default to empty and are also available in Qt.
+Obtain any required pool tag from the operator; the protocol does not announce
+it and Purity does not infer it from an endpoint or account. Both tags together
+use at most 59 UTF-8 bytes including one push byte for each nonempty tag. Control
+characters are rejected. The actual scriptSig is checked against 100 bytes.
+Tags precede the negotiated extranonce data push and cannot be changed by miners.
+Changes take effect after restart, with existing command-line/config precedence.
+The payout remains the local template's available reward, preserving required
+outputs and witness. There is no named-pool mode or fixed PUSH12 requirement.

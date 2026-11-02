@@ -91,3 +91,39 @@ fn reviewer_negotiated_sizes_and_sigops() {
     raw.extend_from_slice(&[0xae;12]);
     assert_eq!(ScriptBuf::from_bytes(raw).count_sigops_legacy(), 240);
 }
+#[test]
+fn fixed_pool_and_miner_tags_survive_extranonce_and_script_is_bounded() {
+    let mut prefix = vec![3, 0x40, 0x0d, 3, 10];
+    prefix.extend_from_slice(b"/TestPool/");
+    prefix.push(7);
+    prefix.extend_from_slice(b"/miner/");
+    let job = prepare(prefix.clone()).unwrap();
+    let complete = job.complete_coinbase(&[0x4c; 8]).unwrap();
+    assert_eq!(
+        &complete.input[0].script_sig.as_bytes()[..prefix.len()],
+        prefix
+    );
+    assert!(prepare(vec![0; 88]).is_err());
+}
+
+#[test]
+fn configured_tags_are_encoded_as_independent_script_pushes() {
+    let mut value = template(vec![3, 0x40, 0x0d, 3]);
+    value.add_coinbase_tags("/TestPool/", "/miner/").unwrap();
+    assert_eq!(
+        hex::decode(&value.coinbase_prefix).unwrap(),
+        b"\x03\x40\x0d\x03\x0a/TestPool/\x07/miner/"
+    );
+    assert!(value.add_coinbase_tags(&"x".repeat(76), "").is_err());
+}
+
+
+#[test]
+fn maximum_script_size_is_enforced() {
+    let outputs=serialize(&vec![TxOut{value:Amount::ZERO,script_pubkey:ScriptBuf::new()}]);
+    for (length,valid) in [(67,true),(68,false)] {
+        let job=Job::prepare(template(vec![0;length]), &outputs,vec![1,2,3,4],28,1,1,[255;32]);
+        assert_eq!(job.is_ok(),valid);
+        if let Ok(job)=job {assert_eq!(job.coinbase.input[0].script_sig.len(),100);}
+    }
+}

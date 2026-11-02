@@ -88,7 +88,7 @@ void MiningPageTests::sv2SettingsValidateAndMaskCredentials()
         {"sv2pool", "127.0.0.1:3333"}, {"sv2jds", "127.0.0.1:3334"},
         {"sv2poolkey", "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"},
         {"sv2jdskey", "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"},
-        {"sv2identity", "test-account"}, {"sv2password", "test-only-password"},
+        {"sv2identity", "test-account"}, {"sv2pooltag", "/TestPool/"}, {"sv2minertag", "/Miner/"}, {"sv2password", "test-only-password"},
     };
     for (const auto& [name, value] : values) {
         auto* field = widget.findChild<QLineEdit*>(QString::fromStdString(name));
@@ -107,7 +107,10 @@ void MiningPageTests::sv2SettingsValidateAndMaskCredentials()
     QVERIFY(widget.Save());
     QFile config{QString::fromStdString(fs::PathToString(gArgs.GetRWConfigFilePath()))};
     QVERIFY(config.open(QIODevice::ReadOnly));
-    QVERIFY(config.readAll().contains("sv2password=test-only-password"));
+    const auto saved = config.readAll();
+    QVERIFY(saved.contains("sv2password=test-only-password"));
+    QVERIFY(saved.contains("sv2pooltag=/TestPool/"));
+    QVERIFY(saved.contains("sv2minertag=/Miner/"));
     fs::path settings;
     if (gArgs.GetSettingsPath(&settings)) QVERIFY(!fs::exists(settings));
 #else

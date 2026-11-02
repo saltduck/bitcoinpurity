@@ -21,7 +21,7 @@ UniValue Config(const ArgsManager& args)
     UniValue config{UniValue::VOBJ};
     const auto listen=args.GetArg("-sv2listen","127.0.0.1");
     config.pushKV("listen",(listen.find(':')==std::string::npos ? listen : "["+listen+"]")+":"+std::to_string(args.GetIntArg("-sv2port",23334)));
-    for (const auto& [key,option]:{std::pair{"pool","-sv2pool"},{"jds","-sv2jds"},{"pool_key","-sv2poolkey"},{"jds_key","-sv2jdskey"},{"identity","-sv2identity"},{"user","-sv2user"},{"password","-sv2password"}}) config.pushKV(key,args.GetArg(option,""));
+    for (const auto& [key,option]:{std::pair{"pool","-sv2pool"},{"jds","-sv2jds"},{"pool_key","-sv2poolkey"},{"jds_key","-sv2jdskey"},{"identity","-sv2identity"},{"pool_tag","-sv2pooltag"},{"miner_tag","-sv2minertag"},{"user","-sv2user"},{"password","-sv2password"}}) config.pushKV(key,args.GetArg(option,""));
     config.pushKV("auth",args.GetBoolArg("-sv2auth",false));
     config.pushKV("max_clients",args.GetIntArg("-sv2maxclients",32));
     config.pushKV("max_per_ip",args.GetIntArg("-sv2maxperip",4));
@@ -38,6 +38,8 @@ void SetupSv2Args(ArgsManager& args)
     args.AddArg("-sv2poolkey=<key>","Mining authority public key (32-byte hex or SRI Base58)",ArgsManager::ALLOW_ANY,OptionsCategory::OPTIONS);
     args.AddArg("-sv2jdskey=<key>","JDS authority public key (32-byte hex or SRI Base58)",ArgsManager::ALLOW_ANY,OptionsCategory::OPTIONS);
     args.AddArg("-sv2identity=<account>","Pool account identity for this gateway",ArgsManager::ALLOW_ANY|ArgsManager::SENSITIVE,OptionsCategory::OPTIONS);
+    args.AddArg("-sv2pooltag=<text>","Fixed pool coinbase tag (default: empty; combined encoded tags at most 59 UTF-8 bytes)",ArgsManager::ALLOW_ANY,OptionsCategory::OPTIONS);
+    args.AddArg("-sv2minertag=<text>","Fixed miner coinbase tag (default: empty)",ArgsManager::ALLOW_ANY,OptionsCategory::OPTIONS);
     args.AddArg("-sv2auth","Require local miner authentication (default: 0)",ArgsManager::ALLOW_ANY,OptionsCategory::OPTIONS);
     args.AddArg("-sv2user=<user>","Local miner username; user.worker is also accepted",ArgsManager::ALLOW_ANY|ArgsManager::SENSITIVE,OptionsCategory::OPTIONS);
     args.AddArg("-sv2password=<password>","Local miner password",ArgsManager::ALLOW_ANY|ArgsManager::SENSITIVE,OptionsCategory::OPTIONS);

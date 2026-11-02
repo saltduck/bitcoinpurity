@@ -53,6 +53,23 @@ pub fn hash(s: &str) -> Result<[u8; 32]> {
 pub fn uint256(s: &str) -> Result<stratum_core::binary_sv2::U256Owned> {
     Ok(hash(s)?.into())
 }
+impl Template {
+    pub fn add_coinbase_tags(&mut self, pool_tag: &str, miner_tag: &str) -> Result<()> {
+        let mut prefix = bytes(&self.coinbase_prefix)?;
+        for tag in [pool_tag, miner_tag] {
+            if tag.is_empty() {
+                continue;
+            }
+            if tag.len() > 75 || tag.chars().any(char::is_control) {
+                return Err(protocol_error());
+            }
+            prefix.push(tag.len() as u8);
+            prefix.extend_from_slice(tag.as_bytes());
+        }
+        self.coinbase_prefix = hex::encode(prefix);
+        Ok(())
+    }
+}
 impl Job {
     pub fn id(&self) -> String {
         format!(
@@ -82,7 +99,7 @@ impl Job {
             return Err(protocol_error());
         }
         let mut sig_prefix = bytes(&template.coinbase_prefix)?;
-        if sig_prefix.is_empty() || sig_prefix.len() > 8 {
+        if sig_prefix.is_empty() || sig_prefix.len() > 67 {
             return Err(protocol_error());
         }
         if sig_prefix.len() + 1 + prefix.len() + rollable > 100 { return Err(protocol_error()); }
