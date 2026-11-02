@@ -536,3 +536,22 @@ exception safely. Use the unmodified snapshot shipped in the fixed Core v32.1
 archive instead. Only this project's integration and dependency recipes change;
 no dependency source is patched. The schema contract check binds all five
 schemas to the reference version independently of C++ binding annotations.
+
+### Generic SV2 interoperability corrections (2026-11-02)
+
+- Implement TASK-039 through TASK-046 as separate commits, with failing tests
+  before each correction. Retain existing F1-F4 and Core v32.1 IPC behavior.
+- Separate production/test Cargo outputs; expose bounded, sanitized stage/error
+  diagnostics through the shared RPC/Qt snapshot; retain failures until recovery.
+- Reset reconnect backoff after a session has ever obtained confirmed custom work.
+- Build BIP34 + optional pool/miner pushes + negotiated extranonce data push.
+  Tags default empty; UTF-8 encoded tags including push bytes total at most 59.
+  Validate actual scriptSig <=100 bytes. Preserve witness, payouts and templates.
+- Add sv2pooltag/sv2minertag to CLI/configuration/Qt, effective after restart.
+- Unavailable subscribe receives error 20, flushed before close. Preserve client
+  limits, deadlines and disconnect of subscribed miners when work disappears.
+- Retain generic empty-tag and 12/16/32-byte cases. Do not implement fixed PUSH12
+  or a named-pool mode. Independent pool/native Windows acceptance remains open.
+
+Attachment baseline predates 9461eee44d. Selectively adapt to be1821d9e7;
+never overwrite existing review fixes or dependency source.

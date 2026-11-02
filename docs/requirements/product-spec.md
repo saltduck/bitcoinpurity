@@ -420,3 +420,19 @@ Core v32.1 is the single target contract (TASK-038). Existing IPC clients must
 regenerate bindings and update calls; no parallel legacy socket is planned.
 Purity consensus and in-process SV2 behavior remain project-owned. CKPool's
 v31-era binding must be updated externally; its current layout is not the target.
+
+### Generic SV2 interoperability corrections (2026-11-02)
+
+- Implement TASK-039 through TASK-046 as separate commits, with failing tests
+  before each correction. Retain existing F1-F4 and Core v32.1 IPC behavior.
+- Separate production/test Cargo outputs; expose bounded, sanitized stage/error
+  diagnostics through the shared RPC/Qt snapshot; retain failures until recovery.
+- Reset reconnect backoff after a session has ever obtained confirmed custom work.
+- Build BIP34 + optional pool/miner pushes + negotiated extranonce data push.
+  Tags default empty; UTF-8 encoded tags including push bytes total at most 59.
+  Validate actual scriptSig <=100 bytes. Preserve witness, payouts and templates.
+- Add sv2pooltag/sv2minertag to CLI/configuration/Qt, effective after restart.
+- Unavailable subscribe receives error 20, flushed before close. Preserve client
+  limits, deadlines and disconnect of subscribed miners when work disappears.
+- Retain generic empty-tag and 12/16/32-byte cases. Do not implement fixed PUSH12
+  or a named-pool mode. Independent pool/native Windows acceptance remains open.

@@ -84,3 +84,12 @@
 - [TASK-037: SV2 pre-release correctness and independent interoperability](TASK-037.md)
 
 - [TASK-038: Align the IPC wire contract with Bitcoin Core v32.1](TASK-038.md)
+
+- [TASK-039: Requirements and contracts](TASK-039.md)
+- [TASK-040: Isolate Cargo artifacts](TASK-040.md)
+- [TASK-041: Stage-aware diagnostics](TASK-041.md)
+- [TASK-042: Reset reconnect backoff after confirmed work](TASK-042.md)
+- [TASK-043: Encode negotiated extranonce as data](TASK-043.md)
+- [TASK-044: Generic pool and miner tags](TASK-044.md)
+- [TASK-045: Reply to unavailable subscriptions before closing](TASK-045.md)
+- [TASK-046: Regression and interoperability evidence](TASK-046.md)
