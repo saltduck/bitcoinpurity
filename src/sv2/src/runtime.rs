@@ -423,13 +423,22 @@ fn install_confirmed_job(
         .map_err(|_| protocol_error())?;
     Ok(())
 }
+// The connections are independent, so a stalled pool write must not hold back
+// a JDS solution push.
 async fn send_share_paths(
     mining: impl std::future::Future<Output = Result<()>>,
     jds: impl std::future::Future<Output = Result<()>>,
 ) -> (Result<()>, Result<()>) {
-    let mining_result = mining.await;
-    let jds_result = jds.await;
-    (mining_result, jds_result)
+    futures_util::future::join(mining, jds).await
+}
+// Upstream writes are polled first so a found block reaches the pool and JDS
+// without waiting for local validation; a stalled write still lets the local
+// submission run in the same poll.
+async fn submit_paths<U: std::future::Future>(
+    upstream: U,
+    local: impl FnOnce() -> Option<Value>,
+) -> (U::Output, Option<Value>) {
+    futures_util::future::join(upstream, async { local() }).await
 }
 fn request_node(node: &dyn Node, request: Value) -> Result<Value> {
     node.request(request).map_err(|_| protocol_error())
@@ -697,9 +706,26 @@ async fn session(
                 let hash=match validation {ShareValidationResult::Valid(h)|ShareValidationResult::BlockFound(h)=>h};
                 shared.update(|s| s.local_valid_shares+=1);
                 let mut solution = None;
+                let mut submit = None;
                 if matches!(validation,ShareValidationResult::BlockFound(_)) {
-                    let response=request_node(node,job.node_request("submit",&share.extranonce,share.version,share.ntime,share.nonce)?)
-                        .unwrap_or_else(|_| json!({"ok":false,"error":"local-submit-unavailable"}));
+                    submit = Some(job.node_request("submit",&share.extranonce,share.version,share.ntime,share.nonce)?);
+                    let mut full=job.extranonce_prefix.clone();full.extend_from_slice(&share.extranonce);
+                    solution = Some(Any::JobDeclaration(Jd::PushSolution(PushSolutionOwned {
+                        extranonce:full.try_into().map_err(|_|protocol_error())?,
+                        prev_hash:model::uint256(&job.template.previous_block_hash)?,nonce:share.nonce,ntime:share.ntime,nbits:job.template.nbits,version:share.version,
+                    })));
+                }
+                pending.insert(sequence,Pending {share,started:Instant::now(),difficulty:Target::from_le_bytes(job.target).difficulty_float(),achieved:Target::from_le_bytes(hash.to_byte_array()).difficulty_float()});
+                shared.update(|s|s.pending_shares=pending.len() as u64);
+                let ((mining_result, jds_result), response) = submit_paths(
+                    send_share_paths(
+                        pool.send_owned(Any::Mining(Mining::SubmitSharesExtended(message))),
+                        async { if let Some(solution) = solution { jds.send_owned(solution).await } else { Ok(()) } },
+                    ),
+                    || submit.map(|request| request_node(node,request)
+                        .unwrap_or_else(|_| json!({"ok":false,"error":"local-submit-unavailable"}))),
+                ).await;
+                if let Some(response) = response {
                     shared.update(|s|{
                         s.block_candidates+=1;
                         s.last_block_hash=hash.to_string();s.last_block_time=now();
@@ -715,18 +741,7 @@ async fn session(
                             }
                         }.into();
                     });
-                    let mut full=job.extranonce_prefix.clone();full.extend_from_slice(&share.extranonce);
-                    solution = Some(Any::JobDeclaration(Jd::PushSolution(PushSolutionOwned {
-                        extranonce:full.try_into().map_err(|_|protocol_error())?,
-                        prev_hash:model::uint256(&job.template.previous_block_hash)?,nonce:share.nonce,ntime:share.ntime,nbits:job.template.nbits,version:share.version,
-                    })));
                 }
-                pending.insert(sequence,Pending {share,started:Instant::now(),difficulty:Target::from_le_bytes(job.target).difficulty_float(),achieved:Target::from_le_bytes(hash.to_byte_array()).difficulty_float()});
-                shared.update(|s|s.pending_shares=pending.len() as u64);
-                let (mining_result, jds_result) = send_share_paths(
-                    pool.send_owned(Any::Mining(Mining::SubmitSharesExtended(message))),
-                    async { if let Some(solution) = solution { jds.send_owned(solution).await } else { Ok(()) } },
-                ).await;
                 shared.update(|s| {
                     s.error = match (mining_result.is_err(), jds_result.is_err()) {
                         (true, true) => "mining-and-jds-submit-failed",
@@ -921,6 +936,46 @@ mod review_tests {
             assert!(other_result.is_ok());
             assert!(other_attempted.load(Ordering::SeqCst));
         }
+    }
+    #[tokio::test]
+    async fn found_block_reaches_upstream_before_local_submit() {
+        let order = Mutex::new(Vec::new());
+        let upstream = async { order.lock().unwrap().push("upstream") };
+        let (_, response) = submit_paths(upstream, || {
+            order.lock().unwrap().push("local");
+            Some(json!({"ok": true}))
+        })
+        .await;
+        assert_eq!(*order.lock().unwrap(), ["upstream", "local"]);
+        assert_eq!(response.unwrap()["ok"], true);
+
+        let order = Mutex::new(Vec::new());
+        let stalled = async {
+            sleep(Duration::from_millis(50)).await;
+            order.lock().unwrap().push("upstream");
+        };
+        submit_paths(stalled, || {
+            order.lock().unwrap().push("local");
+            None
+        })
+        .await;
+        assert_eq!(*order.lock().unwrap(), ["local", "upstream"]);
+    }
+    #[tokio::test]
+    async fn stalled_pool_write_does_not_delay_jds_solution() {
+        let order = Mutex::new(Vec::new());
+        let mining = async {
+            sleep(Duration::from_millis(50)).await;
+            order.lock().unwrap().push("mining");
+            Ok(())
+        };
+        let jds = async {
+            order.lock().unwrap().push("jds");
+            Ok(())
+        };
+        let (mining_result, jds_result) = send_share_paths(mining, jds).await;
+        assert!(mining_result.is_ok() && jds_result.is_ok());
+        assert_eq!(*order.lock().unwrap(), ["jds", "mining"]);
     }
     #[test]
     fn local_rejection_counts_and_answers_once() {
