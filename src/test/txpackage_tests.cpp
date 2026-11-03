@@ -20,6 +20,8 @@
 
 #include <boost/test/unit_test.hpp>
 
+#include <limits>
+
 using namespace util::hex_literals;
 
 // A fee amount that is above 1sat/vB but below 5sat/vB for most transactions created within these
@@ -128,6 +130,23 @@ BOOST_AUTO_TEST_CASE(package_hash_tests)
     BOOST_CHECK_EQUAL(calculated_hash_123, GetPackageHash(package_213));
     BOOST_CHECK_EQUAL(calculated_hash_123, GetPackageHash(package_312));
     BOOST_CHECK_EQUAL(calculated_hash_123, GetPackageHash(package_321));
+}
+
+BOOST_AUTO_TEST_CASE(package_weight_overflow)
+{
+    CMutableTransaction tx;
+    tx.vin.resize(1);
+    tx.vout.resize(1);
+    tx.vout[0].scriptPubKey.resize(22'000'000);
+    const auto tx_ref = MakeTransactionRef(std::move(tx));
+    const Package package(MAX_PACKAGE_COUNT, tx_ref);
+    BOOST_REQUIRE(GetTransactionWeight(*tx_ref) * int64_t{MAX_PACKAGE_COUNT} > std::numeric_limits<int>::max());
+
+    PackageValidationState state;
+    BOOST_CHECK(!IsWellFormedPackage(package, state, /*require_sorted=*/true));
+    BOOST_CHECK_EQUAL(state.GetResult(), PackageValidationResult::PCKG_POLICY);
+    // Weight must be rejected before checking the repeated transaction's txid.
+    BOOST_CHECK_EQUAL(state.GetRejectReason(), "package-too-large");
 }
 
 BOOST_AUTO_TEST_CASE(package_sanitization_tests)
