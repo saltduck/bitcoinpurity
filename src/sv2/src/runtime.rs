@@ -129,6 +129,12 @@ pub(crate) struct Shared {
     status: Mutex<Status>,
 }
 impl Shared {
+    pub(crate) fn new(status: Status) -> Self {
+        Self {
+            stop: AtomicBool::new(false),
+            status: Mutex::new(status),
+        }
+    }
     pub(crate) fn reject(&self, share: Share) {
         self.update(|s| s.rejected_shares += 1);
         share.answer(false);
@@ -159,18 +165,15 @@ impl Gateway {
         let listener = std::net::TcpListener::bind(&config.listen)?;
         listener.set_nonblocking(true)?;
         let address = listener.local_addr()?;
-        let shared = Arc::new(Shared {
-            stop: AtomicBool::new(false),
-            status: Mutex::new(Status {
-                enabled: true,
-                listen: address.ip().to_string(),
-                port: address.port(),
-                auth_required: config.auth,
-                status: "connecting".into(),
-                session_started: now(),
-                ..Status::default()
-            }),
-        });
+        let shared = Arc::new(Shared::new(Status {
+            enabled: true,
+            listen: address.ip().to_string(),
+            port: address.port(),
+            auth_required: config.auth,
+            status: "connecting".into(),
+            session_started: now(),
+            ..Status::default()
+        }));
         let state = shared.clone();
         let thread = thread::Builder::new()
             .name("purity-sv2".into())

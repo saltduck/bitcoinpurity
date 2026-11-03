@@ -9,7 +9,7 @@ use futures_util::{SinkExt, StreamExt};
 use serde_json::{json, Value};
 use std::{
     collections::{HashMap, VecDeque},
-    net::IpAddr,
+    net::{IpAddr, SocketAddr},
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc, Mutex,
@@ -23,7 +23,7 @@ use tokio::{
     net::{TcpListener, TcpStream},
     sync::{mpsc, oneshot, watch},
     task::JoinSet,
-    time::{sleep_until, timeout},
+    time::{sleep, sleep_until, timeout},
 };
 use tokio_util::codec::{Framed, LinesCodec};
 struct ClientGuard {
@@ -64,8 +64,19 @@ async fn work(job: &Job, out: &mpsc::Sender<Value>) -> Result<()> {
         .map_err(|_| protocol_error())?;
     Ok(())
 }
+// Accept errors are per connection (ECONNABORTED, pending network errors) or
+// transient resource limits (EMFILE/ENFILE); the pause bounds retry spinning.
+const ACCEPT_RETRY: Duration = Duration::from_millis(100);
+pub(crate) trait Acceptor {
+    async fn accept(&mut self) -> std::io::Result<(TcpStream, SocketAddr)>;
+}
+impl Acceptor for TcpListener {
+    async fn accept(&mut self) -> std::io::Result<(TcpStream, SocketAddr)> {
+        TcpListener::accept(self).await
+    }
+}
 pub(crate) async fn serve(
-    listener: TcpListener,
+    mut listener: impl Acceptor,
     cfg: Config,
     jobs: watch::Receiver<Option<Arc<Job>>>,
     shares: mpsc::Sender<Share>,
@@ -79,7 +90,13 @@ pub(crate) async fn serve(
             _=stopped(&shared)=>break,
             _=tasks.join_next(),if !tasks.is_empty()=>{}
             accepted=listener.accept()=> {
-                let Ok((socket,address))=accepted else {break};
+                let (socket,address)=match accepted {
+                    Ok(accepted)=>accepted,
+                    Err(_)=>{
+                        tokio::select! {_=stopped(&shared)=>break,_=sleep(ACCEPT_RETRY)=>{}}
+                        continue;
+                    }
+                };
                 let count:usize=counts.lock().unwrap_or_else(|p|p.into_inner()).values().sum();
                 let per_ip=*counts.lock().unwrap_or_else(|p|p.into_inner()).get(&address.ip()).unwrap_or(&0);
                 if count>=cfg.max_clients || per_ip>=cfg.max_per_ip || serial>=u32::MAX as u64 {drop(socket);continue;}
@@ -242,4 +259,55 @@ async fn client(
         }
     };
     tokio::select! {_=stopped(&shared)=>Ok(()),result=reads=>result,result=writes=>result}
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::Status;
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+    struct Flaky {
+        listener: TcpListener,
+        failures: usize,
+    }
+    impl Acceptor for Flaky {
+        async fn accept(&mut self) -> std::io::Result<(TcpStream, SocketAddr)> {
+            if self.failures > 0 {
+                self.failures -= 1;
+                return Err(std::io::ErrorKind::ConnectionAborted.into());
+            }
+            self.listener.accept().await
+        }
+    }
+    #[tokio::test]
+    async fn accept_errors_do_not_stop_the_listener() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let cfg: Config = serde_json::from_value(json!({"listen":"127.0.0.1:0","pool":"127.0.0.1:1","jds":"127.0.0.1:1",
+            "pool_key":"79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+            "jds_key":"79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798","identity":"test"}))
+        .unwrap();
+        let (_jobs, job_receiver) = watch::channel(None);
+        let (shares, _receiver) = mpsc::channel(1);
+        let shared = Arc::new(Shared::new(Status::default()));
+        let server = tokio::spawn(serve(
+            Flaky { listener, failures: 3 },
+            cfg,
+            job_receiver,
+            shares,
+            shared.clone(),
+        ));
+        let mut socket = TcpStream::connect(address).await.unwrap();
+        socket
+            .write_all(b"{\"id\":1,\"method\":\"mining.subscribe\",\"params\":[]}\n")
+            .await
+            .unwrap();
+        let mut line = String::new();
+        timeout(Duration::from_secs(5), BufReader::new(&mut socket).read_line(&mut line))
+            .await
+            .expect("listener must keep accepting after accept errors")
+            .unwrap();
+        assert!(line.contains("Upstream work unavailable"), "{line}");
+        shared.stop.store(true, Ordering::Release);
+        timeout(Duration::from_secs(5), server).await.unwrap().unwrap();
+    }
 }
