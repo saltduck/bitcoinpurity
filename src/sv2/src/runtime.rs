@@ -37,7 +37,7 @@ use stratum_core::{
 };
 use tokio::{
     net::TcpListener,
-    sync::{mpsc, watch},
+    sync::{mpsc, oneshot, watch},
     time::{interval, sleep, timeout},
 };
 pub trait Node: Send + Sync {
@@ -150,6 +150,34 @@ pub struct Gateway {
     pub address: SocketAddr,
     shared: Arc<Shared>,
     thread: Option<thread::JoinHandle<()>>,
+    worker: Option<thread::JoinHandle<()>>,
+}
+type NodeCall = (Value, oneshot::Sender<Result<Value>>);
+// Node calls assemble, validate and submit blocks under cs_main, so they run on
+// their own thread instead of stalling miner and pool I/O on the runtime thread.
+#[derive(Clone)]
+pub(crate) struct NodeClient(mpsc::UnboundedSender<NodeCall>);
+impl NodeClient {
+    fn spawn(node: Arc<dyn Node>) -> std::io::Result<(Self, thread::JoinHandle<()>)> {
+        let (calls, mut receiver) = mpsc::unbounded_channel::<NodeCall>();
+        let worker = thread::Builder::new()
+            .name("purity-sv2-node".into())
+            .spawn(move || {
+                while let Some((request, reply)) = receiver.blocking_recv() {
+                    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        node.request(request)
+                    }))
+                    .unwrap_or(Err(()));
+                    let _ = reply.send(result.map_err(|_| protocol_error()));
+                }
+            })?;
+        Ok((Self(calls), worker))
+    }
+    async fn request(&self, request: Value) -> Result<Value> {
+        let (reply, response) = oneshot::channel();
+        self.0.send((request, reply)).map_err(|_| protocol_error())?;
+        response.await.map_err(|_| protocol_error())?
+    }
 }
 pub fn now() -> u64 {
     SystemTime::now()
@@ -178,6 +206,7 @@ impl Gateway {
             ..Status::default()
         }));
         let state = shared.clone();
+        let (node, worker) = NodeClient::spawn(node)?;
         let thread = thread::Builder::new()
             .name("purity-sv2".into())
             .spawn(move || {
@@ -203,7 +232,16 @@ impl Gateway {
             address,
             shared,
             thread: Some(thread),
+            worker: Some(worker),
         })
+    }
+    // The runtime thread owns every NodeClient, so once it exits the worker
+    // finishes any in-flight node call and ends before the node may be freed.
+    fn join(&mut self) {
+        self.interrupt();
+        for handle in [self.thread.take(), self.worker.take()].into_iter().flatten() {
+            let _ = handle.join();
+        }
     }
     pub fn status(&self) -> Status {
         self.shared
@@ -216,18 +254,12 @@ impl Gateway {
         self.shared.stop.store(true, Ordering::Release);
     }
     pub fn stop(mut self) {
-        self.interrupt();
-        if let Some(t) = self.thread.take() {
-            let _ = t.join();
-        }
+        self.join();
     }
 }
 impl Drop for Gateway {
     fn drop(&mut self) {
-        self.interrupt();
-        if let Some(t) = self.thread.take() {
-            let _ = t.join();
-        }
+        self.join();
     }
 }
 pub(crate) struct Share {
@@ -259,7 +291,7 @@ struct Pending {
 }
 async fn run(
     config: Config,
-    node: Arc<dyn Node>,
+    node: NodeClient,
     listener: std::net::TcpListener,
     shared: Arc<Shared>,
 ) {
@@ -285,7 +317,7 @@ async fn run(
         let mut confirmed = false;
         let outcome = tokio::select! {
             _ = stopped(&shared) => break,
-            result = session(&config, &*node, &shared, &jobs, &mut receiver, generation, &mut confirmed) => result
+            result = session(&config, &node, &shared, &jobs, &mut receiver, generation, &mut confirmed) => result
         };
         let _ = jobs.send(None);
         shared.update(|s| {
@@ -432,20 +464,50 @@ async fn send_share_paths(
     futures_util::future::join(mining, jds).await
 }
 // Upstream writes are polled first so a found block reaches the pool and JDS
-// without waiting for local validation; a stalled write still lets the local
-// submission run in the same poll.
+// before the local submission is queued; neither path waits for the other.
 async fn submit_paths<U: std::future::Future>(
     upstream: U,
-    local: impl FnOnce() -> Option<Value>,
+    local: impl std::future::Future<Output = Option<Value>>,
 ) -> (U::Output, Option<Value>) {
-    futures_util::future::join(upstream, async { local() }).await
+    futures_util::future::join(upstream, local).await
 }
-fn request_node(node: &dyn Node, request: Value) -> Result<Value> {
-    node.request(request).map_err(|_| protocol_error())
+const SHARE_ACK_TIMEOUT: Duration = Duration::from_secs(30);
+// SubmitShares.Success reports a count rather than sequence numbers, and a
+// delayed SubmitShares.Error may follow a Success that already covers its
+// share. Queued batches therefore settle once the unresolved shares they cover
+// fit their cumulative count; a surplus count is drift, not a protocol error.
+fn settle_acknowledged<T>(pending: &mut BTreeMap<u32, T>, credits: &mut VecDeque<(u32, u32)>) -> Vec<T> {
+    let mut total = 0u64;
+    let mut through = None;
+    for (index, (last, count)) in credits.iter().enumerate() {
+        total += u64::from(*count);
+        if pending.range(..=*last).count() as u64 <= total {
+            through = Some((index, *last));
+        }
+    }
+    let Some((index, last)) = through else {
+        return Vec::new();
+    };
+    credits.drain(..=index);
+    let keys: Vec<u32> = pending.range(..=last).map(|(s, _)| *s).collect();
+    keys.into_iter().filter_map(|s| pending.remove(&s)).collect()
+}
+fn credit_share(shared: &Shared, p: Pending, accepted: bool) {
+    p.share.answer(accepted);
+    shared.update(|s| {
+        if accepted {
+            s.accepted_shares += 1;
+            s.accepted_difficulty += p.difficulty;
+            s.best_share_difficulty = s.best_share_difficulty.max(p.achieved);
+            s.last_share_time = now();
+        } else {
+            s.rejected_shares += 1;
+        }
+    });
 }
 async fn session(
     cfg: &Config,
-    node: &dyn Node,
+    node: &NodeClient,
     shared: &Shared,
     jobs: &watch::Sender<Option<Arc<Job>>>,
     shares: &mut mpsc::Receiver<Share>,
@@ -523,6 +585,8 @@ async fn session(
     let mut custom: Option<SetCustomMiningJobOwned> = None;
     let mut history: VecDeque<Arc<Job>> = VecDeque::new();
     let mut pending: BTreeMap<u32, Pending> = BTreeMap::new();
+    let mut credits: VecDeque<(u32, u32)> = VecDeque::new();
+    let mut acknowledged: Option<u32> = None;
     let mut sequence = 0u32;
     let mut force = false;
     let mut unavailable_since: Option<Instant> = None;
@@ -530,7 +594,14 @@ async fn session(
         tokio::select! {
             _ = tick.tick() => {
                 if phase != 0 && phase != 2 && deadline.elapsed() > Duration::from_secs(15) {return Err(failure("upstream-response-timeout"));}
-                if pending.values().any(|p|p.started.elapsed()>Duration::from_secs(30)) {return Err(failure("share-acknowledgement-timeout"));}
+                let expired:Vec<u32>=pending.iter().filter(|(_,p)|p.started.elapsed()>SHARE_ACK_TIMEOUT).map(|(s,_)|*s).collect();
+                if expired.iter().any(|s|acknowledged.is_none_or(|a|*s>a)) {return Err(failure("share-acknowledgement-timeout"));}
+                if !expired.is_empty() {
+                    // The pool answered these shares' range without crediting them.
+                    for s in expired { if let Some(p)=pending.remove(&s) {credit_share(shared,p,false);} }
+                    for p in settle_acknowledged(&mut pending,&mut credits) {credit_share(shared,p,true);}
+                    shared.update(|s|s.pending_shares=pending.len() as u64);
+                }
                 if phase == 0 || phase == 2 {
                     if !outputs.is_empty() {
                         let mut query=json!({"op":"template","outputs":hex::encode(&outputs)});
@@ -538,7 +609,7 @@ async fn session(
                             if let Some(job)=history.back() {query["known_id"]=json!(job.template.id);}
                         }
                         shared.update(|s| s.stage = "local-template".into());
-                        let value = request_node(node,query)?;
+                        let value = node.request(query).await?;
                         if value["ok"] == true {unavailable_since=None;}
                         if value["unchanged"]==true {shared.update(|s| s.stage="mining".into());continue;}
                         if value["ok"] == true {
@@ -550,7 +621,7 @@ async fn session(
                             } else {
                                 template.add_coinbase_tags(&cfg.pool_tag, &cfg.miner_tag)?;
                                 let job = Job::prepare(template,&outputs,prefix.clone(),open.extranonce_size as usize,open.channel_id,generation,target)?;
-                                let check = request_node(node,job.node_request("validate",&vec![0;job.rollable_size],job.template.version,job.template.ntime,0)?)?;
+                                let check = node.request(job.node_request("validate",&vec![0;job.rollable_size],job.template.version,job.template.ntime,0)?).await?;
                                 if check["ok"] != true {return Err(failure(format!("local-template-invalid: {}",error_code(check["error"].as_str().unwrap_or("validation-failed").as_bytes()))));}
                                 shared.update(|s| s.stage = "declare-mining-job".into());
                                 jds.send_owned(Any::JobDeclaration(Jd::DeclareMiningJob(DeclareMiningJobOwned {
@@ -654,21 +725,19 @@ async fn session(
                     0x1c => {
                         let accepted=decode!(frame,SubmitSharesSuccess);
                         if accepted.channel_id!=open.channel_id {return Err(protocol_error());}
-                        let keys:Vec<u32>=pending.range(..=accepted.last_sequence_number).map(|(s,_)|*s).collect();
-                        if keys.len()!=accepted.new_submits_accepted_count as usize {return Err(protocol_error());}
-                        for key in keys {
-                            if let Some(p)=pending.remove(&key) {
-                                p.share.answer(true);
-                                shared.update(|s|{s.accepted_shares+=1;s.accepted_difficulty+=p.difficulty;s.best_share_difficulty=s.best_share_difficulty.max(p.achieved);s.last_share_time=now();});
-                            }
-                        }
+                        if credits.len()>=1024 {return Err(failure("share-acknowledgement-overflow"));}
+                        acknowledged=acknowledged.max(Some(accepted.last_sequence_number));
+                        credits.push_back((accepted.last_sequence_number,accepted.new_submits_accepted_count));
+                        for p in settle_acknowledged(&mut pending,&mut credits) {credit_share(shared,p,true);}
                         shared.update(|s|s.pending_shares=pending.len() as u64);
                     }
                     0x1d => {
                         let rejected=decode!(frame,SubmitSharesError);
                         if rejected.channel_id!=open.channel_id {return Err(protocol_error());}
-                        let p=pending.remove(&rejected.sequence_number).ok_or_else(protocol_error)?;
-                        p.share.answer(false);shared.update(|s|{s.rejected_shares+=1;s.pending_shares=pending.len() as u64;});
+                        // A delayed error may name a share a Success count already settled.
+                        if let Some(p)=pending.remove(&rejected.sequence_number) {credit_share(shared,p,false);}
+                        for p in settle_acknowledged(&mut pending,&mut credits) {credit_share(shared,p,true);}
+                        shared.update(|s|s.pending_shares=pending.len() as u64);
                     }
                     0x24 => {
                         let error=decode!(frame,SetCustomMiningJobError);
@@ -722,8 +791,11 @@ async fn session(
                         pool.send_owned(Any::Mining(Mining::SubmitSharesExtended(message))),
                         async { if let Some(solution) = solution { jds.send_owned(solution).await } else { Ok(()) } },
                     ),
-                    || submit.map(|request| request_node(node,request)
-                        .unwrap_or_else(|_| json!({"ok":false,"error":"local-submit-unavailable"}))),
+                    async { match submit {
+                        Some(request) => Some(node.request(request).await
+                            .unwrap_or_else(|_| json!({"ok":false,"error":"local-submit-unavailable"}))),
+                        None => None,
+                    } },
                 ).await;
                 if let Some(response) = response {
                     shared.update(|s|{
@@ -941,7 +1013,7 @@ mod review_tests {
     async fn found_block_reaches_upstream_before_local_submit() {
         let order = Mutex::new(Vec::new());
         let upstream = async { order.lock().unwrap().push("upstream") };
-        let (_, response) = submit_paths(upstream, || {
+        let (_, response) = submit_paths(upstream, async {
             order.lock().unwrap().push("local");
             Some(json!({"ok": true}))
         })
@@ -954,7 +1026,7 @@ mod review_tests {
             sleep(Duration::from_millis(50)).await;
             order.lock().unwrap().push("upstream");
         };
-        submit_paths(stalled, || {
+        submit_paths(stalled, async {
             order.lock().unwrap().push("local");
             None
         })
@@ -976,6 +1048,67 @@ mod review_tests {
         let (mining_result, jds_result) = send_share_paths(mining, jds).await;
         assert!(mining_result.is_ok() && jds_result.is_ok());
         assert_eq!(*order.lock().unwrap(), ["jds", "mining"]);
+    }
+    fn settle(pending: &mut BTreeMap<u32, ()>, credits: &mut VecDeque<(u32, u32)>, batch: (u32, u32)) -> usize {
+        credits.push_back(batch);
+        settle_acknowledged(pending, credits).len()
+    }
+    #[test]
+    fn success_counts_settle_without_exact_sequence_matches() {
+        let shares = |n: u32| (1..=n).map(|s| (s, ())).collect::<BTreeMap<_, _>>();
+        // An exact count settles at once.
+        let (mut pending, mut credits) = (shares(3), VecDeque::new());
+        assert_eq!(settle(&mut pending, &mut credits, (3, 3)), 3);
+        assert!(pending.is_empty() && credits.is_empty());
+        // A delayed error after its covering Success settles the rest.
+        let (mut pending, mut credits) = (shares(10), VecDeque::new());
+        assert_eq!(settle(&mut pending, &mut credits, (10, 9)), 0);
+        pending.remove(&5);
+        assert_eq!(settle_acknowledged(&mut pending, &mut credits).len(), 9);
+        assert!(pending.is_empty() && credits.is_empty());
+        // A share validated late is credited by a later batch.
+        let (mut pending, mut credits) = (shares(15), VecDeque::new());
+        assert_eq!(settle(&mut pending, &mut credits, (10, 9)), 0);
+        assert_eq!(settle(&mut pending, &mut credits, (15, 6)), 15);
+        assert!(credits.is_empty());
+        // A surplus count is drift and never covers later shares.
+        let (mut pending, mut credits) = (shares(4), VecDeque::new());
+        assert_eq!(settle(&mut pending, &mut credits, (2, 5)), 2);
+        assert_eq!(pending.keys().copied().collect::<Vec<_>>(), [3, 4]);
+        assert!(credits.is_empty());
+    }
+    struct Slow(Arc<AtomicBool>);
+    impl Node for Slow {
+        fn request(&self, request: Value) -> std::result::Result<Value, ()> {
+            thread::sleep(Duration::from_millis(200));
+            self.0.store(true, Ordering::SeqCst);
+            Ok(request)
+        }
+    }
+    #[tokio::test]
+    async fn node_calls_do_not_block_the_runtime() {
+        let (client, worker) = NodeClient::spawn(Arc::new(Slow(Arc::default()))).unwrap();
+        let started = Instant::now();
+        let other = async {
+            sleep(Duration::from_millis(20)).await;
+            started.elapsed()
+        };
+        let (response, other) = futures_util::future::join(client.request(json!({"op": "x"})), other).await;
+        assert_eq!(response.unwrap()["op"], "x");
+        assert!(other < Duration::from_millis(150), "{other:?}");
+        drop(client);
+        worker.join().unwrap();
+    }
+    #[test]
+    fn worker_finishes_in_flight_call_before_join() {
+        let done = Arc::new(AtomicBool::new(false));
+        let (client, worker) = NodeClient::spawn(Arc::new(Slow(done.clone()))).unwrap();
+        tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap().block_on(async {
+            assert!(timeout(Duration::from_millis(20), client.request(json!({}))).await.is_err());
+        });
+        drop(client);
+        worker.join().unwrap();
+        assert!(done.load(Ordering::SeqCst));
     }
     #[test]
     fn local_rejection_counts_and_answers_once() {
