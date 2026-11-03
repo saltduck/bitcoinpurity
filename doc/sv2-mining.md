@@ -204,6 +204,10 @@ have not changed. New blocks/reorgs and invalid work are handled immediately,
 and target changes retain their existing immediate processing. Same-parent
 refreshes preserve valid previous jobs (`clean_jobs=false`); a new parent retires
 old work. Every new job still requires pool acknowledgement before publication.
+Miners stay connected across new blocks: they keep the previous job until the
+acknowledged replacement arrives with `clean_jobs=true`. Brief node catch-up
+windows also keep current work; if no local template is available for 30
+seconds, work is withdrawn and miners are disconnected.
 
 The interval controls normal template refresh, not a guaranteed miner delivery
 latency during pool delays or outages. The 30-second default leaves margin below

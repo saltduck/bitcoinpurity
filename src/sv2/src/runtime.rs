@@ -43,6 +43,9 @@ use tokio::{
 pub trait Node: Send + Sync {
     fn request(&self, request: Value) -> std::result::Result<Value, ()>;
 }
+// Header-ahead windows and tip races are brief; keep miners on current work
+// unless no local template appears within this bound.
+const TRANSIENT_TEMPLATE_GRACE: Duration = Duration::from_secs(30);
 fn default_clients() -> usize {
     32
 }
@@ -513,6 +516,7 @@ async fn session(
     let mut pending: BTreeMap<u32, Pending> = BTreeMap::new();
     let mut sequence = 0u32;
     let mut force = false;
+    let mut unavailable_since: Option<Instant> = None;
     loop {
         tokio::select! {
             _ = tick.tick() => {
@@ -526,15 +530,14 @@ async fn session(
                         }
                         shared.update(|s| s.stage = "local-template".into());
                         let value = request_node(node,query)?;
+                        if value["ok"] == true {unavailable_since=None;}
                         if value["unchanged"]==true {shared.update(|s| s.stage="mining".into());continue;}
                         if value["ok"] == true {
                             let mut template:Template = serde_json::from_value(value).map_err(|_|protocol_error())?;
                             if phase == 0 {
+                                // A new parent keeps miners on the old job until the replacement
+                                // is confirmed and published with clean_jobs.
                                 if !force && history.back().is_some_and(|j|j.template.id==template.id) {shared.update(|s| s.stage="mining".into());continue;}
-                                if history.back().is_some_and(|j|j.template.previous_block_hash != template.previous_block_hash) {
-                                    let _ = jobs.send(None);
-                                    shared.update(|s|s.running=false);
-                                }
                             } else {
                                 template.add_coinbase_tags(&cfg.pool_tag, &cfg.miner_tag)?;
                                 let job = Job::prepare(template,&outputs,prefix.clone(),open.extranonce_size as usize,open.channel_id,generation,target)?;
@@ -552,8 +555,14 @@ async fn session(
                                 proposed = Some(job); phase=3;deadline=Instant::now();continue;
                             }
                         } else {
-                            if !matches!(value["error"].as_str(),Some("not-ready"|"initial-sync"|"catching-up"|"tip-changed")) {return Err(protocol_error());}
-                            force=true;let _ = jobs.send(None); shared.update(|s|{s.running=false;s.status="waiting-for-local-template".into();});continue;
+                            let error=value["error"].as_str();
+                            if !matches!(error,Some("not-ready"|"initial-sync"|"catching-up"|"tip-changed")) {return Err(protocol_error());}
+                            force=true;
+                            let since=*unavailable_since.get_or_insert_with(Instant::now);
+                            if matches!(error,Some("not-ready"|"initial-sync")) || since.elapsed()>=TRANSIENT_TEMPLATE_GRACE {
+                                let _ = jobs.send(None); shared.update(|s|{s.running=false;s.status="waiting-for-local-template".into();});
+                            }
+                            continue;
                         }
                     }
                     req = req.checked_add(1).ok_or_else(protocol_error)?;

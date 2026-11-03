@@ -69,6 +69,10 @@ class Sv2Test(BitcoinTestFramework):
         notify = next(m for m in reversed(seen) if m.get("method") == "mining.notify")
         return client, subscribed["result"], notify["params"]
 
+    def parent(self, job):
+        prev = bytes.fromhex(job[1])
+        return b"".join(prev[i:i + 4][::-1] for i in range(0, 32, 4))[::-1].hex()
+
     def solve(self, subscribed, job, block, start=0):
         extra = "00" * subscribed[2]
         coinbase = bytes.fromhex(job[2] + subscribed[1] + extra + job[3])
@@ -220,6 +224,14 @@ class Sv2Test(BitcoinTestFramework):
             assert_equal(node.getbestblockhash(), replacement)
             self.wait_until(lambda: node.getsv2info()["running"] and
                             node.getsv2info()["previous_block_hash"] == replacement)
+            self.log.info("Connected miners stay subscribed and receive a clean job for the new parent")
+            while True:
+                update = old_client.receive()
+                if update.get("method") == "mining.notify" and self.parent(update["params"]) == replacement:
+                    assert_equal(update["params"][8], True)
+                    break
+            old_client.send(71, "mining.submit", stale_share)
+            assert_equal(old_client.receive_id(71)[0]["result"], False)
             old_client.close()
             fresh, _, _ = self.miner()
             accepted_before = node.getsv2info()["accepted_shares"]
