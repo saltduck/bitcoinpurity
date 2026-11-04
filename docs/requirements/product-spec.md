@@ -1,5 +1,25 @@
 # Bitcoin Purity Product Specification
 
+## Signed chain decisions (proposed, not implemented)
+
+- Status: requirement only; no code. See [TASK-032](../tasks/TASK-032.md),
+  [architecture](../architecture/chain-decisions.md) and
+  [contract](../api/chain-decisions.md).
+- Purpose: resolve parking-induced splits between public chains (audit H-2)
+  by threshold-signed decisions naming a block whose chain is correct. Not a
+  consensus rule; decisions only choose among fully validated chains.
+- Messages are domain-separated, network-bound, monotonic by `sequence`,
+  expiring, and signed by a threshold (proposed 3-of-5) of dedicated offline
+  keys separate from every other project key.
+- Applying unparks the chosen ancestry and parks conflicting branches. Blocks
+  at or below the activation height and rewinds above a limit (proposed 1000)
+  are never applied automatically. Invalid targets are rejected with a warning.
+- `-chaindecisions=apply|confirm|off`, proposed default `confirm`; manual
+  `submitchaindecision` / `applychaindecision` RPCs and GUI import first, HTTPS
+  mirrors and P2P relay later.
+- Selection rules and incident reports are published; key holders verify
+  independently before signing.
+
 ## October 2026 security backports
 
 Apply Core #36665 (receive-only select exception monitoring), #36667
