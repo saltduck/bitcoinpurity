@@ -1,5 +1,49 @@
 # Embedded DATUM Solo Mining
 
+## Catch-up-aware deep-reorg parking (audit H-1)
+
+Parking must protect only history this node accepted while it agreed with the
+network. Blocks connected while the node was catching up (after every start,
+during IBD) must not shield an attacker's short extension and park the honest,
+longer chain.
+
+- Persist `BLOCK_PARK_PROTECTED` on a block when it is connected to the active
+  chain outside catch-up; clear it when connected during catch-up. Missing
+  flags (upgrade, crash before flush, reindex) mean unprotected, which degrades
+  to ordinary most-work selection rather than locking a chain.
+- Catch-up starts on every start and ends once per run, never re-entered:
+  not in IBD, at least `-parkcatchuppeers` (default 3, minimum 1) qualifying
+  peers report our tip as their best known block, and no qualifying peer
+  reports a non-failed, non-parked block with more work than our tip.
+  Qualifying peers are automatic full-relay, block-relay-only and manual
+  outbound peers, excluding demoted stale-consensus peers. Time and tip age
+  are not used.
+- During catch-up outside IBD, request headers (at most every 5 seconds) from
+  each qualifying peer that has not reported our tip, so agreement can be
+  observed on a quiet chain. Skip peers whose chain-sync eviction timer runs so
+  existing outbound eviction keeps its getheaders slot.
+- Park when the number of protected active blocks above the fork exceeds
+  `parkreorgdepth`. Keep default 3, no automatic unparking, manual
+  `parkblock`/`unparkblock`/`invalidateblock` semantics and persisted flags.
+  Blocks protected before a restart remain protected during the next catch-up.
+- Raise a node warning (RPC warnings, GUI, `-alertnotify`) while a parked
+  branch with more work than the active tip exists; re-evaluate at startup and
+  after `unparkblock`, `invalidateblock` and `reconsiderblock`.
+- `getblockchaininfo` adds boolean `parkcatchup`.
+- Consensus, P2P messages and disk formats are unchanged; the new status bit
+  uses existing nStatus serialization.
+
+## Verified-only Purity peer preference (audit M-2)
+
+- The first 20 automatic outbound draws prefer bit-25 records only in the
+  tried table, where services were confirmed by a past handshake, and select
+  them through the usual tried bucket/position walk. New-table (gossip-only)
+  bit-25 claims receive no preference. Without matching tried records, use
+  normal selection immediately. Feelers (`new_only`) are unchanged.
+
+Add failing regression tests first (H-1 lagging-node race, synced parking with
+warning, restart protection, peer-agreement exit, AddrMan gossip-only claims).
+
 ## Bitcoin Core October 2026 security backports
 
 Backport Bitcoin Core #36665, #36667 and #36669, adapting to this branch's
@@ -378,8 +422,8 @@ precedence chain.
   validation category, including height and both hashes. Preserve the rejection
   reason and peer handling. A conflicting activation block already stored in
   the local block index must still produce an ERROR and prevent startup.
-- Automatic outbound selection prefers known bit-25 records in the existing
-  AddrMan for the first 20 attempts. If there are no matching records, use normal
+- Automatic outbound selection prefers known bit-25 tried-table records (see
+  verified-only preference) for the first 20 attempts. If there are no matching records, use normal
   selection immediately; after 20 ineligible draws, return to normal selection.
   Existing network diversity, services, recent-attempt and port checks apply.
 - Missing bit 25 never independently causes rejection or punishment. Manual

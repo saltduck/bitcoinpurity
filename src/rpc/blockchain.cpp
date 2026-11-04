@@ -1813,6 +1813,7 @@ RPCHelpMan getblockchaininfo()
                 {RPCResult::Type::NUM_TIME, "mediantime", "The median block time expressed in " + UNIX_EPOCH_TIME},
                 {RPCResult::Type::NUM, "verificationprogress", "estimate of verification progress [0..1]"},
                 {RPCResult::Type::BOOL, "initialblockdownload", "(debug information) estimate of whether this node is in Initial Block Download mode"},
+                {RPCResult::Type::BOOL, "parkcatchup", "whether the node is still catching up after start; blocks connected meanwhile are not protected by deep-reorg parking"},
                 {RPCResult::Type::STR_HEX, "chainwork", "total amount of work in active chain, in hexadecimal"},
                 {RPCResult::Type::NUM, "size_on_disk", "the estimated size of the block and undo files on disk"},
                 {RPCResult::Type::BOOL, "pruned", "if the blocks are subject to pruning"},
@@ -1874,6 +1875,7 @@ RPCHelpMan getblockchaininfo()
     obj.pushKV("mediantime", tip.GetMedianTimePast());
     obj.pushKV("verificationprogress", chainman.GuessVerificationProgress(&tip));
     obj.pushKV("initialblockdownload", chainman.IsInitialBlockDownload());
+    obj.pushKV("parkcatchup", chainman.InParkCatchup());
     obj.pushKV("chainwork", tip.nChainWork.GetHex());
     obj.pushKV("size_on_disk", chainman.m_blockman.CalculateCurrentUsage());
     obj.pushKV("pruned", chainman.m_blockman.IsPruneMode());
@@ -2190,6 +2192,7 @@ void InvalidateBlock(ChainstateManager& chainman, const uint256 block_hash) {
     if (state.IsValid()) {
         chainman.ActiveChainstate().ActivateBestChain(state);
     }
+    WITH_LOCK(chainman.GetMutex(), chainman.UpdateParkedChainWarning());
 
     if (!state.IsValid()) {
         throw JSONRPCError(RPC_DATABASE_ERROR, state.ToString());
@@ -2234,6 +2237,7 @@ void ReconsiderBlock(ChainstateManager& chainman, uint256 block_hash) {
 
     BlockValidationState state;
     chainman.ActiveChainstate().ActivateBestChain(state);
+    WITH_LOCK(chainman.GetMutex(), chainman.UpdateParkedChainWarning());
 
     if (!state.IsValid()) {
         throw JSONRPCError(RPC_DATABASE_ERROR, state.ToString());
@@ -2292,6 +2296,7 @@ static RPCHelpMan parkblock()
     }
     BlockValidationState state;
     chainman.ActiveChainstate().ParkBlock(state, pblockindex);
+    WITH_LOCK(chainman.GetMutex(), chainman.UpdateParkedChainWarning());
     if (!state.IsValid()) {
         throw JSONRPCError(RPC_MISC_ERROR, state.ToString());
     }
@@ -2327,6 +2332,7 @@ static RPCHelpMan unparkblock()
     }
     BlockValidationState state;
     chainman.ActiveChainstate().ActivateBestChain(state, nullptr);
+    WITH_LOCK(chainman.GetMutex(), chainman.UpdateParkedChainWarning());
     if (!state.IsValid()) {
         throw JSONRPCError(RPC_DATABASE_ERROR, state.ToString());
     }

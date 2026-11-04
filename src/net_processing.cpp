@@ -69,6 +69,8 @@ static constexpr auto HEADERS_DOWNLOAD_TIMEOUT_BASE = 15min;
 static constexpr auto HEADERS_DOWNLOAD_TIMEOUT_PER_HEADER = 1ms;
 /** How long to wait for a peer to respond to a getheaders request */
 static constexpr auto HEADERS_RESPONSE_TIME{2min};
+/** Minimum interval between catch-up tip confirmation requests to one peer. */
+static constexpr auto PARK_CATCHUP_QUERY_INTERVAL{5s};
 /** Protect at least this many outbound peers from disconnection due to slow/
  * behind headers chain.
  */
@@ -467,6 +469,12 @@ struct CNodeState {
     ChainSyncTimeoutState m_chain_sync;
     bool m_signet_verification_requested{false};
     std::optional<std::chrono::seconds> m_signet_verification_started;
+
+    //! Outbound/manual peer, not demoted for stale consensus, whose reported tip
+    //! counts toward ending deep-reorg parking catch-up.
+    bool m_park_catchup_peer{false};
+    //! Last headers request sent to confirm this peer's tip during catch-up.
+    std::chrono::seconds m_park_catchup_last_query{0s};
 
     //! Time of last new block announcement
     int64_t m_last_block_announcement{0};
@@ -982,6 +990,13 @@ private:
     bool NeedStaleOutboundPeers() const;
 
     /**
+     * End deep-reorg parking catch-up once enough qualifying peers report our
+     * tip as their best known block and none reports a valid, unparked block
+     * with more work. Blocks connected before that are not parking-protected.
+     */
+    void MaybeEndParkCatchup() EXCLUSIVE_LOCKS_REQUIRED(cs_main);
+
+    /**
      * To prevent fingerprinting attacks, only send blocks/headers outside of
      * the active chain if they are no more than a month older (both in time,
      * and in best equivalent proof of work) than the best header chain we know
@@ -1321,6 +1336,35 @@ bool PeerManagerImpl::NeedStaleOutboundPeers() const
     const int activation{m_chainparams.GetConsensus().nPurityActivationHeight};
     if (activation == std::numeric_limits<int>::max()) return true;
     return m_best_height.load() < activation - 1;
+}
+
+void PeerManagerImpl::MaybeEndParkCatchup()
+{
+    AssertLockHeld(cs_main);
+    if (!m_chainman.InParkCatchup() || m_chainman.IsInitialBlockDownload()) return;
+    const CChain& active{m_chainman.ActiveChain()};
+    const CBlockIndex* tip{active.Tip()};
+    if (!tip) return;
+    int agreeing{0};
+    for (const auto& [_, state] : m_node_states) {
+        if (!state.m_park_catchup_peer || !state.pindexBestKnownBlock) continue;
+        const CBlockIndex* best{state.pindexBestKnownBlock};
+        if (best == tip) {
+            ++agreeing;
+            continue;
+        }
+        if (best->nChainWork <= tip->nChainWork) continue;
+        bool excluded{false};
+        for (const CBlockIndex* walk{best}; walk && !active.Contains(walk); walk = walk->pprev) {
+            if (walk->nStatus & (BLOCK_FAILED_MASK | BLOCK_PARKED_MASK)) {
+                excluded = true;
+                break;
+            }
+        }
+        // A valid, unparked chain with more work: we are still catching up.
+        if (!excluded) return;
+    }
+    if (agreeing >= m_opts.park_catchup_peers) m_chainman.EndParkCatchup();
 }
 
 bool PeerManagerImpl::CanDirectFetch()
@@ -5720,6 +5764,25 @@ bool PeerManagerImpl::SendMessages(CNode* pto)
                     nSyncStarted++;
                 }
             }
+        }
+
+        // Deep-reorg parking catch-up: confirm each qualifying peer's tip. A peer
+        // that learned our latest blocks from us does not announce them back, so
+        // ask again (rate-limited) until it reports our tip. Leave peers whose
+        // chain-sync eviction timer is running to ConsiderEviction, which sends
+        // its own getheaders and must not lose that slot to this query.
+        state.m_park_catchup_peer = (pto->IsFullOutboundConn() || pto->IsBlockOnlyConn() || pto->IsManualConn()) &&
+                                    !pto->m_is_non_bip110_outbound;
+        if (m_chainman.InParkCatchup() && !m_chainman.IsInitialBlockDownload()) {
+            const CBlockIndex* tip{m_chainman.ActiveChain().Tip()};
+            const auto now{GetTime<std::chrono::seconds>()};
+            if (state.m_park_catchup_peer && CanServeBlocks(*peer) && state.pindexBestKnownBlock != tip &&
+                state.m_chain_sync.m_timeout == 0s &&
+                now - state.m_park_catchup_last_query >= PARK_CATCHUP_QUERY_INTERVAL &&
+                MaybeSendGetHeaders(*pto, GetLocator(tip->pprev ? tip->pprev : tip), *peer)) {
+                state.m_park_catchup_last_query = now;
+            }
+            MaybeEndParkCatchup();
         }
 
         //

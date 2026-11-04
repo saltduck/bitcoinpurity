@@ -48,6 +48,10 @@
 
 - [TASK-029: Core #36665, #36667 and #36669 security backports](TASK-029.md)
 
+- [TASK-030: Catch-up-aware deep-reorg parking](TASK-030.md)
+
+- [TASK-031: Verified-only Purity peer preference](TASK-031.md)
+
 ## Purity Signet
 
 - [TASK-PS-000: Baseline and requirement amendments](TASK-PS-000.md)

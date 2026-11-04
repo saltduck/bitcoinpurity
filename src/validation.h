@@ -1127,6 +1127,8 @@ public:
     /** Best header we've seen so far (used for getheaders queries' starting points). */
     CBlockIndex* m_best_header GUARDED_BY(::cs_main){nullptr};
 
+    std::atomic_bool m_park_catchup{true};
+
     //! The total number of bytes available for us to use across all in-memory
     //! coins caches. This will be split somehow across chainstates.
     size_t m_total_coinstip_cache{0};
@@ -1409,6 +1411,15 @@ public:
     //! best header is no longer valid / guaranteed to be the most-work
     //! header in our block-index not known to be invalid, recalculate it.
     void RecalculateBestHeader() EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
+
+    //! Local parking policy: blocks connected while this is true are not
+    //! BLOCK_PARK_PROTECTED. Starts true on every run; PeerManager ends it once.
+    bool InParkCatchup() const { return m_park_catchup.load(); }
+    void EndParkCatchup();
+    //! Raise the parked-chain warning for a parked block with more work than the tip.
+    void SetParkedChainWarning(const CBlockIndex& block) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
+    //! Set or clear the parked-chain warning after scanning the block index.
+    void UpdateParkedChainWarning() EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
 
     bool m_script_check_queue_enabled{true};
 
