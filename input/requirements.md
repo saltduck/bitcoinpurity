@@ -1,5 +1,49 @@
 # Embedded DATUM Solo Mining
 
+## Signed chain decisions for parked splits (audit H-2) — proposed, not implemented
+
+Deep-reorg parking can leave synced nodes permanently split when two public
+chains diverge by more than `parkreorgdepth` blocks. Resolve such splits with
+signed chain decisions from independent key holders, without weakening parking
+against privately mined deep reorgs and without changing consensus.
+
+- A decision names one block (`block_height`, `block_hash`) and means "the
+  chain containing this block is correct". Fields: `domain`
+  (`bitcoinpurity-chain-decision-v1`), `network`, monotonic `sequence`,
+  `created_at`, `expires_at`, block height/hash, `reason_url`, `signatures`.
+- Signatures: threshold (proposed 3-of-5) over the domain-separated hash of the
+  canonical JSON without `signatures`; distinct public keys embedded in the
+  release. Keys are dedicated, hardware-held, offline, held by independent
+  people, and never shared with package, update, broadcast or CI signing.
+  Rotation requires a release.
+- A node applies a decision only if domain, network, threshold, distinct keys,
+  `sequence` greater than the persisted last applied value and unexpired time
+  all check out, and the block and all ancestors are fully validated. Missing
+  blocks: store the decision as pending and request headers/blocks. Invalid
+  block: reject the decision and raise a warning; a decision never makes a
+  consensus-invalid block acceptable.
+- Applying: unpark the chosen ancestry, park (not invalidate) conflicting
+  branches at their fork roots, run normal `ActivateBestChain`, persist
+  `sequence`, clear the parked-chain warning and log sequence, height, hash
+  and reason.
+- Hard limits: the chosen block must be above the Purity activation height;
+  a decision rewinding more than a configured maximum (proposed 1000 blocks)
+  is not applied automatically and raises a warning instead.
+- `-chaindecisions=apply|confirm|off`. `confirm` verifies and warns, and the
+  operator applies with `applychaindecision`. Proposed default: `confirm`.
+- Delivery phase 1: manual `submitchaindecision <json>` RPC and GUI import.
+  Phase 2: periodic HTTPS fetch from several mirrors. Phase 3 (optional): P2P
+  relay. Verification never depends on the transport.
+- Operations: publish selection rules before use (prefer the most-work chain
+  that was publicly visible throughout; never select a privately mined
+  double-spend chain), monitor with independent nodes and `-alertnotify`,
+  have each key holder verify the chain independently before signing, publish
+  every decision with an incident report, and correct mistakes with a newer
+  decision. Rehearse on signet/regtest quarterly.
+- Open decisions before implementation: threshold and key holders, default
+  mode (and any `apply` default for miners), rewind limit, and whether phase 2
+  ships with phase 1.
+
 ## Bitcoin Core October 2026 security backports
 
 Backport Bitcoin Core #36665, #36667 and #36669, adapting to this branch's

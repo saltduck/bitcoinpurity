@@ -5,6 +5,8 @@
 - [Embedded DATUM RPC and configuration contract](api/datum.md)
 - [Migration report](migration-report.md)
 - [Task index](tasks/README.md)
+- [Signed chain decisions architecture (proposed)](architecture/chain-decisions.md)
+- [Signed chain decisions contract (proposed)](api/chain-decisions.md)
 - [Core October 2026 security backport architecture](architecture/core-security-backports.md)
 - [Core October 2026 security compatibility contract](api/core-security-backports.md)
 - [Purity Signet deployment guide](purity-signet-deployment.md)
