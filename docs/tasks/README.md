@@ -48,6 +48,8 @@
 
 - [TASK-029: Core #36665, #36667 and #36669 security backports](TASK-029.md)
 
+- [TASK-033: DATUM public exposure and payout script hardening](TASK-033.md)
+
 ## Purity Signet
 
 - [TASK-PS-000: Baseline and requirement amendments](TASK-PS-000.md)

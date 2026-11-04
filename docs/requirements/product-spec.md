@@ -167,9 +167,17 @@ port, independently of the node's P2P `upnp` setting. It uses miniupnpc when
 an SSDP/IGD service is available and falls back to PCP/NAT-PMP, matching the
 node's existing port-mapping behavior. It requires a build with UPnP support
 and a non-loopback IPv4 DATUM listen address (or `0.0.0.0`). It does not
-enable Stratum authentication;
-public deployments should set `datumauth=1` and configure a strong unique
-password.
+enable Stratum authentication, but startup fails unless `datumauth=1` is set;
+public deployments should configure a strong unique password.
+
+With `datumauth=0`, Stratum accepts connections only from loopback, private and
+link-local source addresses (including IPv4-mapped IPv6 forms), whatever the
+listen address. Failed authentication is tracked per IPv4 address and per IPv6
+/64 in a 1024-entry table that never evicts a source in active cooldown; while
+every entry is in cooldown, authentication from new sources is refused. The
+payout address must produce an output script that RDTS accepts in a coinbase
+(at most 34 bytes) and must not be an unknown witness version; startup and hot
+reload reject other addresses.
 
 While DATUM is running, the `setdatumdiff` RPC or the Qt share-difficulty field
 can hot-reload the fixed Stratum share difficulty (1 through 2147483647), and

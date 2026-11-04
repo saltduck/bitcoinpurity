@@ -285,13 +285,13 @@ When `datum=1`, support these settings:
 | --- | --- | --- |
 | `datumlisten` | `127.0.0.1` | Public binding requires explicit operator action. |
 | `datumport` | `23334` | Valid TCP port only. |
-| `datumupnp` | `0` | Explicitly maps only the DATUM TCP port through UPnP, with PCP/NAT-PMP fallback, and requires UPnP build support plus a non-loopback IPv4 listen address. |
-| `datumauth` | `0` | Missing Stratum credentials are fatal only when authentication is enabled. |
+| `datumupnp` | `0` | Explicitly maps only the DATUM TCP port through UPnP, with PCP/NAT-PMP fallback, and requires UPnP build support, `datumauth=1`, and a non-loopback IPv4 listen address. |
+| `datumauth` | `0` | Missing Stratum credentials are fatal only when authentication is enabled. When disabled, only loopback, private and link-local source addresses may connect. |
 | `datumuser` | empty | Exact user or `user.worker` is accepted. |
 | `datumpassword` | empty | Must match; never logged. |
 | `datummaxclients` | `32` | Strict global connection bound. |
 | `datummaxperip` | `4` | Strict per-IP connection bound. |
-| `datumaddress` | empty | Required valid Purity payout address. |
+| `datumaddress` | empty | Required valid Purity payout address whose output script is accepted by RDTS coinbase rules. |
 | `datumdiff` | `262144` | Positive fixed initial/share difficulty; never changes consensus target. |
 | `datumcoinbasetag` | `Bitcoin Purity` | Optional operator-controlled coinbase tag. |
 | `datumrpcuser` | empty | Explicit localhost RPC credential, with safe `rpcuser` fallback. |
@@ -320,17 +320,26 @@ precedence chain.
 - When `datumauth=1`, unauthenticated clients receive no usable mining job and
   submit is rejected before expensive share validation or template work.
 - UPnP mapping is opt-in through `datumupnp=1`; it never implicitly enables
-  Stratum authentication. Public deployments should enable `datumauth=1` with
-  a strong unique password.
+  Stratum authentication, and startup fails unless `datumauth=1` is set. Public
+  deployments should use a strong unique password.
+- When `datumauth=0`, Stratum connections are accepted only from loopback,
+  private (IPv4 RFC 1918, IPv6 `fc00::/7`) and link-local source addresses,
+  including IPv4-mapped IPv6 forms, whatever `datumlisten` is.
 - Authentication must complete within 10 seconds by default.
 - A Stratum JSON line is bounded to 16 KiB.
-- Failed authentication is tracked per IP and causes disconnect/cooldown.
+- Failed authentication is tracked per IPv4 address and per IPv6 /64 and
+  causes disconnect/cooldown. The tracking table holds 1024 sources, never
+  evicts a source in active cooldown, and refuses authentication from new
+  sources while every entry is in cooldown.
 - Share submissions are rate-limited per client/IP without penalizing normal
   ASIC operation.
 - Threads, queues, input/output buffers, clients, per-IP clients, and share
   history are bounded.
 - Credentials and other secrets never appear in logs or status RPC output.
 - The configured payout address is validated with Purity address decoding.
+  Startup and hot reload reject destinations of an unknown witness version and
+  output scripts longer than the RDTS limit (34 bytes), so a coinbase is never
+  built that Purity consensus rejects or that pays an anyone-can-spend output.
 
 ## Lifecycle acceptance criteria
 

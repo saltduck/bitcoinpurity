@@ -11,13 +11,13 @@ the file).
 | `datum` | `0` | Boolean runtime gate. |
 | `datumlisten` | `127.0.0.1` | Numeric IPv4 or IPv6 listen address. |
 | `datumport` | `23334` | 1 through 65535. |
-| `datumupnp` | `0` | Boolean; maps only the DATUM TCP port through UPnP, with PCP/NAT-PMP fallback, and requires UPnP build support plus a non-loopback IPv4 listen address. |
-| `datumauth` | `0` | Boolean; credentials are required only when authentication is enabled. |
+| `datumupnp` | `0` | Boolean; maps only the DATUM TCP port through UPnP, with PCP/NAT-PMP fallback, and requires UPnP build support plus `datumauth=1` and a non-loopback IPv4 listen address. |
+| `datumauth` | `0` | Boolean; credentials are required only when authentication is enabled. When `0`, only loopback, private and link-local sources may connect. |
 | `datumuser` | empty | Required when authentication is enabled; at most 191 bytes with no control characters. |
 | `datumpassword` | empty | Required and sensitive when authentication is enabled. |
 | `datummaxclients` | `32` | Positive bounded implementation limit. |
 | `datummaxperip` | `4` | Positive and no greater than global maximum. |
-| `datumaddress` | empty | Required and valid for the active Purity network. |
+| `datumaddress` | empty | Required and valid for the active Purity network; the output script must be at most 34 bytes (RDTS) and not an unknown witness version. |
 | `datumdiff` | `262144` | Positive integer share difficulty. |
 | `datumcoinbasetag` | `Bitcoin Purity` | Must fit the baseline coinbase-tag limit. |
 | `datumrpcuser` | empty | Sensitive; may fall back to configured `rpcuser`. |
@@ -99,8 +99,17 @@ The password must match. Before authorization, a client may perform only the
 minimum negotiation needed to authenticate and receives no usable job.
 
 When `datumauth=0` (the default), Stratum clients are authorized without
-credentials. Port mapping does not change this setting; public deployments
-should explicitly enable authentication.
+credentials, and connections are accepted only from loopback (`127.0.0.0/8`,
+`::1`), private (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `fc00::/7`)
+and link-local (`169.254.0.0/16`, `fe80::/10`) source addresses, including
+IPv4-mapped IPv6 forms. Other sources are disconnected immediately and logged.
+`datumupnp=1` requires `datumauth=1`.
+
+Failed authentication is counted per IPv4 address or IPv6 /64. Five failures
+within 60 seconds start a 60-second cooldown during which the source's
+connections are closed and authorization is refused. The tracking table holds
+1024 sources and never evicts one in active cooldown; while all entries are in
+cooldown, new sources cannot authenticate.
 
 `datumupnp=1` first tries the miniupnpc SSDP/IGD path. If the router does not
 advertise an IGD but supports the same PCP/NAT-PMP port-mapping protocols used
