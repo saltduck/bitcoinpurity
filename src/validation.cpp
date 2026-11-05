@@ -1458,7 +1458,7 @@ unsigned int PolicyScriptVerifyFlags(const ignore_rejects_type& ignore_rejects)
         return STANDARD_SCRIPT_VERIFY_FLAGS;
     }
     if (ignore_rejects.count("non-mandatory-script-verify-flag")) {
-        return MANDATORY_SCRIPT_VERIFY_FLAGS | REDUCED_DATA_MANDATORY_VERIFY_FLAGS;
+        return MANDATORY_SCRIPT_VERIFY_FLAGS | REDUCED_DATA_MANDATORY_VERIFY_FLAGS | SCRIPT_VERIFY_STRICT_MULTISIG_PUBKEYS;
     }
 
     unsigned int flags = STANDARD_SCRIPT_VERIFY_FLAGS;
@@ -1507,7 +1507,7 @@ unsigned int PolicyScriptVerifyFlags(const ignore_rejects_type& ignore_rejects)
     if (ignore_rejects.count("non-mandatory-script-verify-flag-const_scriptcode")) {
         flags &= ~SCRIPT_VERIFY_CONST_SCRIPTCODE;
     }
-    flags |= MANDATORY_SCRIPT_VERIFY_FLAGS | REDUCED_DATA_MANDATORY_VERIFY_FLAGS;  // for safety
+    flags |= MANDATORY_SCRIPT_VERIFY_FLAGS | REDUCED_DATA_MANDATORY_VERIFY_FLAGS | SCRIPT_VERIFY_STRICT_MULTISIG_PUBKEYS;  // for safety
     return flags;
 }
 
@@ -2708,6 +2708,11 @@ static unsigned int GetBlockScriptFlags(const CBlockIndex& block_index, const Ch
         flags |= REDUCED_DATA_MANDATORY_VERIFY_FLAGS;
     }
 
+    // ConnectBlock relaxes this per input for UTXOs created below nStrictMultisigUtxoHeight.
+    if (block_index.nHeight >= consensusparams.nStrictMultisigEnforcementHeight) {
+        flags |= SCRIPT_VERIFY_STRICT_MULTISIG_PUBKEYS;
+    }
+
     return flags;
 }
 
@@ -2980,6 +2985,7 @@ bool Chainstate::ConnectBlock(const CBlock& block, BlockValidationState& state, 
     const bool reduced_data_active{DeploymentActiveAt(*pindex, m_chainman, Consensus::DEPLOYMENT_REDUCED_DATA)};
     const int reduced_data_start_height = GetReducedDataGrandfatherHeight(
         pindex->pprev, params.GetConsensus(), m_chainman.m_versionbitscache);
+    const int strict_multisig_utxo_height{params.GetConsensus().nStrictMultisigUtxoHeight};
 
     const CheckTxInputsRules chk_input_rules{reduced_data_active ? CheckTxInputsRules::OutputSizeLimit : CheckTxInputsRules::None};
 
@@ -3034,9 +3040,16 @@ bool Chainstate::ConnectBlock(const CBlock& block, BlockValidationState& state, 
             flags_per_input.clear();
             for (size_t j = 0; j < tx.vin.size(); j++) {
                 prevheights[j] = view.AccessCoin(tx.vin[j].prevout).nHeight;
+                unsigned int exempt_flags{0};
                 if (prevheights[j] < reduced_data_start_height) {
+                    exempt_flags |= REDUCED_DATA_MANDATORY_VERIFY_FLAGS;
+                }
+                if ((flags & SCRIPT_VERIFY_STRICT_MULTISIG_PUBKEYS) && prevheights[j] < strict_multisig_utxo_height) {
+                    exempt_flags |= SCRIPT_VERIFY_STRICT_MULTISIG_PUBKEYS;
+                }
+                if (exempt_flags) {
                     flags_per_input.resize(tx.vin.size(), flags);
-                    flags_per_input[j] = flags & ~REDUCED_DATA_MANDATORY_VERIFY_FLAGS;
+                    flags_per_input[j] = flags & ~exempt_flags;
                 }
             }
 
