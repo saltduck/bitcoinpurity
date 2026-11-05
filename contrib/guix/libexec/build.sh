@@ -268,6 +268,7 @@ mkdir -p "$DISTSRC"
           --toolchain "${BASEPREFIX}/${HOST}/toolchain.cmake" \
           -DWITH_CCACHE=OFF \
           ${CONFIGFLAGS} \
+	  -DBUILD_DATUM=OFF \
           -DBUILD_BENCH=OFF \
           -DBUILD_CLI=OFF \
           -DBUILD_DAEMON=OFF \
