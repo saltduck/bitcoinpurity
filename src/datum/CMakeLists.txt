@@ -15,14 +15,10 @@ if(WIN32)
     ws2_32
   )
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
-  find_library(COREFOUNDATION_FRAMEWORK CoreFoundation REQUIRED)
-  find_library(SYSTEMCONFIGURATION_FRAMEWORK SystemConfiguration REQUIRED)
-  find_library(CORESERVICES_FRAMEWORK CoreServices REQUIRED)
-
-  target_link_libraries(datum_curl INTERFACE
-    "${COREFOUNDATION_FRAMEWORK}"
-    "${SYSTEMCONFIGURATION_FRAMEWORK}"
-    "${CORESERVICES_FRAMEWORK}"
+  target_link_options(datum_curl INTERFACE
+    "SHELL:-framework CoreFoundation"
+    "SHELL:-framework SystemConfiguration"
+    "SHELL:-framework CoreServices"
   )
 endif()
 
