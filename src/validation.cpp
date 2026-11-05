@@ -4751,7 +4751,12 @@ static bool ContextualCheckBlockHeader(const CBlockHeader& block, BlockValidatio
         const auto& checkpoint_data = chainman.GetParams().Checkpoints();
         const CBlockIndex* pcheckpoint = blockman.GetLastCheckpoint(checkpoint_data);
         if (pcheckpoint && nHeight < pcheckpoint->nHeight) {
-            LogPrintf("ERROR: %s: forked chain older than last checkpoint (height %d)\n", __func__, nHeight);
+            if (nHeight < consensusParams.nPurityActivationHeight) {
+                // Legacy-chain peers fork before the Purity activation block.
+                LogDebug(BCLog::VALIDATION, "%s: forked chain older than last checkpoint (height %d)\n", __func__, nHeight);
+            } else {
+                LogPrintf("ERROR: %s: forked chain older than last checkpoint (height %d)\n", __func__, nHeight);
+            }
             return state.Invalid(BlockValidationResult::BLOCK_CHECKPOINT, "bad-fork-prior-to-checkpoint");
         }
 
