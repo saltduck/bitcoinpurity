@@ -98,7 +98,7 @@ uint64_t stratum_latest_empty_sent_count = 0;
 pthread_rwlock_t need_coinbaser_rwlocks[MAX_STRATUM_JOBS];
 bool need_coinbaser_rwlocks_init_done = false;
 
-#define DATUM_SECURITY_IP_SLOTS 128
+#define DATUM_SECURITY_IP_SLOTS 1024
 #define DATUM_AUTH_FAILURE_LIMIT 5
 #define DATUM_AUTH_WINDOW_MS 60000
 #define DATUM_AUTH_COOLDOWN_MS 60000
@@ -120,32 +120,47 @@ typedef struct {
 static T_DATUM_SECURITY_IP datum_security_ips[DATUM_SECURITY_IP_SLOTS];
 static pthread_mutex_t datum_security_lock = PTHREAD_MUTEX_INITIALIZER;
 
+// IPv6 sources are tracked per /64 so one allocation cannot rotate addresses.
+static void datum_security_ip_key(const char *ip, char key[DATUM_MAX_IP_LEN + 1])
+{
+	static const unsigned char v4_mapped[12] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xff};
+	unsigned char addr[16];
+	if (inet_pton(AF_INET6, ip, addr) == 1 && memcmp(addr, v4_mapped, sizeof(v4_mapped)) != 0) {
+		char prefix[INET6_ADDRSTRLEN];
+		memset(addr + 8, 0, 8);
+		inet_ntop(AF_INET6, addr, prefix, sizeof(prefix));
+		snprintf(key, DATUM_MAX_IP_LEN + 1, "%s/64", prefix);
+		return;
+	}
+	snprintf(key, DATUM_MAX_IP_LEN + 1, "%s", ip);
+}
+
+// Returns NULL when every slot holds a source in active cooldown; such
+// entries are never evicted so cooldowns cannot be flushed.
 static T_DATUM_SECURITY_IP *datum_security_ip_locked(const char *ip, const uint64_t now)
 {
-	T_DATUM_SECURITY_IP *oldest = &datum_security_ips[0];
+	char key[DATUM_MAX_IP_LEN + 1];
+	datum_security_ip_key(ip, key);
+	T_DATUM_SECURITY_IP *evict = NULL;
 	for (size_t i = 0; i < DATUM_SECURITY_IP_SLOTS; ++i) {
 		T_DATUM_SECURITY_IP *entry = &datum_security_ips[i];
-		if (entry->ip[0] && !strcmp(entry->ip, ip)) {
+		if (entry->ip[0] && !strcmp(entry->ip, key)) {
 			entry->last_seen_tsms = now;
 			return entry;
 		}
 		if (!entry->ip[0]) {
-			strncpy(entry->ip, ip, DATUM_MAX_IP_LEN);
-			entry->ip[DATUM_MAX_IP_LEN] = 0;
-			entry->last_seen_tsms = now;
-			entry->submit_tokens = DATUM_SUBMIT_IP_BURST;
-			entry->submit_tokens_tsms = now;
-			return entry;
+			evict = entry;
+			break;
 		}
-		if (entry->last_seen_tsms < oldest->last_seen_tsms) oldest = entry;
+		if (entry->cooldown_until_tsms <= now && (!evict || entry->last_seen_tsms < evict->last_seen_tsms)) evict = entry;
 	}
-	memset(oldest, 0, sizeof(*oldest));
-	strncpy(oldest->ip, ip, DATUM_MAX_IP_LEN);
-	oldest->ip[DATUM_MAX_IP_LEN] = 0;
-	oldest->last_seen_tsms = now;
-	oldest->submit_tokens = DATUM_SUBMIT_IP_BURST;
-	oldest->submit_tokens_tsms = now;
-	return oldest;
+	if (!evict) return NULL;
+	memset(evict, 0, sizeof(*evict));
+	memcpy(evict->ip, key, sizeof(key));
+	evict->last_seen_tsms = now;
+	evict->submit_tokens = DATUM_SUBMIT_IP_BURST;
+	evict->submit_tokens_tsms = now;
+	return evict;
 }
 
 static bool datum_security_ip_in_cooldown(const char *ip)
@@ -153,7 +168,7 @@ static bool datum_security_ip_in_cooldown(const char *ip)
 	const uint64_t now = current_time_millis();
 	pthread_mutex_lock(&datum_security_lock);
 	T_DATUM_SECURITY_IP *entry = datum_security_ip_locked(ip, now);
-	const bool cooldown = entry->cooldown_until_tsms > now;
+	const bool cooldown = !entry || entry->cooldown_until_tsms > now;
 	pthread_mutex_unlock(&datum_security_lock);
 	return cooldown;
 }
@@ -163,11 +178,13 @@ static void datum_security_auth_failure(const char *ip)
 	const uint64_t now = current_time_millis();
 	pthread_mutex_lock(&datum_security_lock);
 	T_DATUM_SECURITY_IP *entry = datum_security_ip_locked(ip, now);
-	if (!entry->auth_window_tsms || now - entry->auth_window_tsms >= DATUM_AUTH_WINDOW_MS) {
-		entry->auth_window_tsms = now;
-		entry->auth_failures = 0;
+	if (entry) {
+		if (!entry->auth_window_tsms || now - entry->auth_window_tsms >= DATUM_AUTH_WINDOW_MS) {
+			entry->auth_window_tsms = now;
+			entry->auth_failures = 0;
+		}
+		if (++entry->auth_failures >= DATUM_AUTH_FAILURE_LIMIT) entry->cooldown_until_tsms = now + DATUM_AUTH_COOLDOWN_MS;
 	}
-	if (++entry->auth_failures >= DATUM_AUTH_FAILURE_LIMIT) entry->cooldown_until_tsms = now + DATUM_AUTH_COOLDOWN_MS;
 	pthread_mutex_unlock(&datum_security_lock);
 }
 
@@ -183,12 +200,15 @@ static bool datum_security_consume_submit(T_DATUM_CLIENT_DATA *c)
 
 	pthread_mutex_lock(&datum_security_lock);
 	T_DATUM_SECURITY_IP *entry = datum_security_ip_locked(c->rem_host, now);
-	const uint64_t ip_elapsed = now - entry->submit_tokens_tsms;
-	entry->submit_tokens += ((double)ip_elapsed * DATUM_SUBMIT_IP_RATE) / 1000.0;
-	if (entry->submit_tokens > DATUM_SUBMIT_IP_BURST) entry->submit_tokens = DATUM_SUBMIT_IP_BURST;
-	entry->submit_tokens_tsms = now;
-	const bool allowed = entry->submit_tokens >= 1.0;
-	if (allowed) entry->submit_tokens -= 1.0;
+	bool allowed = true;
+	if (entry) {
+		const uint64_t ip_elapsed = now - entry->submit_tokens_tsms;
+		entry->submit_tokens += ((double)ip_elapsed * DATUM_SUBMIT_IP_RATE) / 1000.0;
+		if (entry->submit_tokens > DATUM_SUBMIT_IP_BURST) entry->submit_tokens = DATUM_SUBMIT_IP_BURST;
+		entry->submit_tokens_tsms = now;
+		allowed = entry->submit_tokens >= 1.0;
+		if (allowed) entry->submit_tokens -= 1.0;
+	}
 	pthread_mutex_unlock(&datum_security_lock);
 	if (!allowed) return false;
 	m->submit_tokens -= 1.0;

@@ -89,6 +89,24 @@ int get_remote_ip(datum_socket_t fd, char *ip, size_t max_len) {
 	return 0;
 }
 
+static bool datum_ipv4_is_local_source(const unsigned char *a)
+{
+	return a[0] == 127 || a[0] == 10 || (a[0] == 172 && (a[1] & 0xf0) == 16) ||
+		(a[0] == 192 && a[1] == 168) || (a[0] == 169 && a[1] == 254);
+}
+
+// Loopback, private and link-local sources, including IPv4-mapped IPv6.
+static bool datum_ip_is_local_source(const char *ip)
+{
+	static const unsigned char v4_mapped[12] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xff};
+	static const unsigned char loopback[16] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1};
+	unsigned char a[16];
+	if (inet_pton(AF_INET, ip, a) == 1) return datum_ipv4_is_local_source(a);
+	if (inet_pton(AF_INET6, ip, a) != 1) return false;
+	if (!memcmp(a, v4_mapped, sizeof(v4_mapped))) return datum_ipv4_is_local_source(a + 12);
+	return !memcmp(a, loopback, sizeof(loopback)) || (a[0] & 0xfe) == 0xfc || (a[0] == 0xfe && (a[1] & 0xc0) == 0x80);
+}
+
 void *datum_threadpool_thread(void *arg) {
 	T_DATUM_THREAD_DATA *my = (T_DATUM_THREAD_DATA *)arg;
 	int i, nfds, n, cidx, j;
@@ -379,6 +397,10 @@ int assign_to_thread(T_DATUM_SOCKET_APP *app, datum_socket_t fd) {
 	int i,j,ret,tc=0;
 	char remote_ip[DATUM_MAX_IP_LEN + 1];
 	if (get_remote_ip(fd, remote_ip, DATUM_MAX_IP_LEN) != 0) return 0;
+	if (!datum_config.stratum_v1_auth_required && !datum_ip_is_local_source(remote_ip)) {
+		DLOG_WARN("Rejecting Stratum connection from non-local %s while authentication is disabled", remote_ip);
+		return 0;
+	}
 	int per_ip = 0;
 	for (i = 0; i < app->max_threads; ++i) {
 		for (j = 0; j < app->max_clients_thread; ++j) {

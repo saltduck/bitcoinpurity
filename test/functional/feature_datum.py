@@ -8,6 +8,7 @@ import json
 import socket
 
 from test_framework.address import ADDRESS_BCRT1_UNSPENDABLE
+from test_framework.segwit_addr import encode_segwit_address
 from test_framework.test_framework import BitcoinTestFramework, SkipTest
 from test_framework.test_node import ErrorMatch
 from test_framework.util import assert_equal, assert_raises_rpc_error, p2p_port
@@ -99,8 +100,13 @@ class DatumTest(BitcoinTestFramework):
         self.assert_bad_config(base + ["-datumrpcuser=only-user"], "-datumrpcuser and -datumrpcpassword must be configured together")
         self.assert_bad_config(base + [f"-datumuser={'u' * 192}"], "-datumuser must be at most 191 bytes")
         self.assert_bad_config(base + [f"-datumcoinbasetag={'t' * 64}"], "-datumcoinbasetag must be at most 63 bytes")
-        self.assert_bad_config(base + ["-datumupnp=1"], "-datumupnp=1 requires")
+        self.assert_bad_config(base + ["-datumupnp=1"], "-datumupnp=1 requires -datumauth=1")
         self.assert_bad_config([arg for arg in base if not arg.startswith("-datumaddress=")], "-datumaddress is missing or invalid")
+        no_address = [arg for arg in base if not arg.startswith("-datumaddress=")]
+        for witprog in [bytes(40), bytes(2)]:
+            # Unknown witness versions are anyone-can-spend; 42-byte scripts also violate RDTS in a coinbase.
+            unknown_witness = encode_segwit_address("bcrt", 2, witprog)
+            self.assert_bad_config(no_address + [f"-datumaddress={unknown_witness}"], "-datumaddress produces a payout script that Purity coinbase rules reject")
         self.assert_bad_config([arg for arg in base if not arg.startswith("-datumpassword=")] + ["-datumauth=1"], "authentication requires -datumuser and -datumpassword")
 
         self.log.info("Authentication is disabled by default")

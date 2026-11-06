@@ -10,6 +10,7 @@
 #include <common/args.h>
 #include <common/netif.h>
 #include <common/pcp.h>
+#include <consensus/consensus.h>
 #include <key_io.h>
 #include <logging.h>
 #include <netbase.h>
@@ -48,6 +49,7 @@ extern "C" {
 #include <string_view>
 #include <thread>
 #include <utility>
+#include <variant>
 
 namespace mining {
 namespace {
@@ -57,6 +59,12 @@ constexpr int64_t DEFAULT_DATUM_MAX_CLIENTS{32};
 constexpr int64_t DEFAULT_DATUM_MAX_PER_IP{4};
 constexpr int64_t DEFAULT_DATUM_AUTH_TIMEOUT{10};
 constexpr int MAX_DATUM_DIFFICULTY{2147483647};
+
+bool IsAllowedPayoutDestination(const CTxDestination& destination)
+{
+    const size_t script_size{GetScriptForDestination(destination).size()};
+    return !std::holds_alternative<WitnessUnknown>(destination) && script_size > 0 && script_size <= MAX_OUTPUT_SCRIPT_SIZE;
+}
 constexpr bool DEFAULT_DATUM_AUTH{false};
 constexpr bool DEFAULT_DATUM_UPNP{false};
 
@@ -408,6 +416,10 @@ bool ValidateDatumOptions(const ArgsManager& args, bilingual_str& error)
     if (!error.empty()) return false;
 
     const bool datum_upnp{args.GetBoolArg("-datumupnp", DEFAULT_DATUM_UPNP)};
+    if (datum_upnp && !args.GetBoolArg("-datumauth", DEFAULT_DATUM_AUTH)) {
+        error = Untranslated("-datumupnp=1 requires -datumauth=1");
+        return false;
+    }
 #ifndef USE_UPNP
     if (datum_upnp) {
         error = Untranslated("-datumupnp=1 requires a build with UPnP support");
@@ -438,6 +450,10 @@ bool ValidateDatumOptions(const ArgsManager& args, bilingual_str& error)
         error = Untranslated("-datumaddress is missing or invalid for the active Purity network");
         return false;
     }
+    if (!IsAllowedPayoutDestination(DecodeDestination(address))) {
+        error = Untranslated("-datumaddress produces a payout script that Purity coinbase rules reject");
+        return false;
+    }
     if (args.GetArg("-datumcoinbasetag", std::string{DEFAULT_DATUM_COINBASE_TAG}).size() > 63) {
         error = Untranslated("-datumcoinbasetag must be at most 63 bytes");
         return false;
@@ -466,10 +482,6 @@ bool StartDatum(node::NodeContext& node, bilingual_str& error)
 
     const std::string address{args.GetArg("-datumaddress", "")};
     const CScript payout_script{GetScriptForDestination(DecodeDestination(address))};
-    if (payout_script.empty() || payout_script.size() > 64) {
-        error = Untranslated("-datumaddress produced an unsupported payout script");
-        return false;
-    }
 
     const int64_t rpc_port{args.GetIntArg("-rpcport", BaseParams().RPCPort())};
     const std::string rpc_url{args.GetArg("-datumrpcurl", strprintf("http://127.0.0.1:%d", rpc_port))};
@@ -523,9 +535,6 @@ bool StartDatum(node::NodeContext& node, bilingual_str& error)
     }
     g_datum_validation = std::make_unique<DatumValidationInterface>();
     Assert(node.validation_signals)->RegisterValidationInterface(g_datum_validation.get());
-    if (datum_upnp && !config.auth_required) {
-        LogWarning("[datum] UPnP mapping is enabled while Stratum authentication is disabled; the DATUM port is public");
-    }
     if (datum_upnp) StartDatumUpnp(config.listen_port);
     LogInfo("[datum] subsystem started; Stratum configured on %s:%u", listen, config.listen_port);
     return true;
@@ -764,11 +773,12 @@ bool SetDatumPayoutAndCoinbase(const std::string& address, const std::string& co
         error = "coinbase tag must be at most 63 bytes";
         return false;
     }
-    const CScript payout_script{GetScriptForDestination(DecodeDestination(address))};
-    if (payout_script.empty() || payout_script.size() > 64) {
-        error = "payout address produced an unsupported payout script";
+    const CTxDestination destination{DecodeDestination(address)};
+    if (!IsAllowedPayoutDestination(destination)) {
+        error = "payout address produces a payout script that Purity coinbase rules reject";
         return false;
     }
+    const CScript payout_script{GetScriptForDestination(destination)};
     std::array<char, 256> c_error{};
     if (datum_embedded_update_payout_and_coinbase(
             reinterpret_cast<const unsigned char*>(payout_script.data()), payout_script.size(),

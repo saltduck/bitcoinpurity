@@ -52,6 +52,8 @@
   (includes the default `./guix-build-<version>/output` artifact directory and
   identical upload-staging copies).
 
+- [TASK-033: DATUM public exposure and payout script hardening](TASK-033.md)
+
 ## Purity Signet
 
 - [TASK-PS-000: Baseline and requirement amendments](TASK-PS-000.md)
