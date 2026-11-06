@@ -1,6 +1,7 @@
 # TASK-026: Replace mainnet fixed seeds with selected Purity nodes
 
 Status: implemented and locally verified; no commit or deployment.
+A later change removed three endpoints after they advertised `NODE_NETWORK_LIMITED` without `NODE_NETWORK`. See the 2026-10-29 section in `docs/migration-report.md`. The text below records the original eleven-endpoint replacement.
 
 Replace the complete mainnet fixed-seed array and its `nodes_main.txt` source
 with the user's 11 endpoints. Preserve ports 5890 and 8334 and both IPv6
