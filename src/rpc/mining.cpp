@@ -175,7 +175,7 @@ static UniValue generateBlocks(ChainstateManager& chainman, Mining& miner, const
     CheckSignetMiningReady(chainman);
     UniValue blockHashes(UniValue::VARR);
     while (nGenerate > 0 && !chainman.m_interrupt) {
-        std::unique_ptr<BlockTemplate> block_template(miner.createNewBlock({ .coinbase_output_script = coinbase_output_script }));
+        std::unique_ptr<BlockTemplate> block_template(miner.createNewBlockLegacy({ .coinbase_output_script = coinbase_output_script }));
         CHECK_NONFATAL(block_template);
 
         std::shared_ptr<const CBlock> block_out;
@@ -387,7 +387,7 @@ static RPCHelpMan generateblock()
     {
         LOCK(chainman.GetMutex());
         {
-            std::unique_ptr<BlockTemplate> block_template{miner.createNewBlock({.use_mempool = false, .coinbase_output_script = coinbase_output_script})};
+            std::unique_ptr<BlockTemplate> block_template{miner.createNewBlockLegacy({.use_mempool = false, .coinbase_output_script = coinbase_output_script})};
             CHECK_NONFATAL(block_template);
 
             block = block_template->getBlock();
@@ -628,7 +628,7 @@ static std::string gbt_vb_name(const Consensus::DeploymentPos pos) {
     return s;
 }
 
-static UniValue TemplateToJSON(const Consensus::Params&, const ChainstateManager&, const BlockTemplate*, const CBlockIndex*, const std::set<std::string>& setClientRules, unsigned int nTransactionsUpdatedLast);
+static UniValue TemplateToJSON(const Consensus::Params&, const ChainstateManager&, BlockTemplate*, const CBlockIndex*, const std::set<std::string>& setClientRules, unsigned int nTransactionsUpdatedLast);
 
 static RPCHelpMan getblocktemplate()
 {
@@ -935,7 +935,7 @@ static RPCHelpMan getblocktemplate()
         time_start = GetTime();
 
         // Create new block
-        block_template = miner.createNewBlock();
+        block_template = miner.createNewBlockLegacy();
         CHECK_NONFATAL(block_template);
 
 
@@ -949,7 +949,7 @@ static RPCHelpMan getblocktemplate()
     };
 }
 
-static UniValue TemplateToJSON(const Consensus::Params& consensusParams, const ChainstateManager& chainman, const BlockTemplate* block_template, const CBlockIndex* const pindexPrev, const std::set<std::string>& setClientRules, const unsigned int nTransactionsUpdatedLast) {
+static UniValue TemplateToJSON(const Consensus::Params& consensusParams, const ChainstateManager& chainman, BlockTemplate* block_template, const CBlockIndex* const pindexPrev, const std::set<std::string>& setClientRules, const unsigned int nTransactionsUpdatedLast) {
     CHECK_NONFATAL(block_template);
     const CBlock& block = block_template->getBlock();
 
@@ -988,8 +988,8 @@ static UniValue TemplateToJSON(const Consensus::Params& consensusParams, const C
         entry.pushKV("depends", std::move(deps));
 
         int index_in_template = i - 1;
-        entry.pushKV("fee", tx_fees.at(index_in_template));
-        int64_t nTxSigOps{tx_sigops.at(index_in_template)};
+        entry.pushKV("fee", tx_fees.at(index_in_template - 1));
+        int64_t nTxSigOps{tx_sigops.at(index_in_template - 1)};
         if (fPreSegWit) {
             CHECK_NONFATAL(nTxSigOps % WITNESS_SCALE_FACTOR == 0);
             nTxSigOps /= WITNESS_SCALE_FACTOR;

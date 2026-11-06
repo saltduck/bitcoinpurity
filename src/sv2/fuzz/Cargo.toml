@@ -1,0 +1,24 @@
+[package]
+name = "purity-sv2-fuzz"
+version = "0.0.0"
+edition = "2021"
+publish = false
+[package.metadata]
+cargo-fuzz = true
+[dependencies]
+libfuzzer-sys = "0.4"
+purity-sv2 = { path = ".." }
+[[bin]]
+name = "frame"
+path = "fuzz_targets/frame.rs"
+test = false
+doc = false
+bench = false
+[[bin]]
+name = "ffi_config"
+path = "fuzz_targets/ffi_config.rs"
+test = false
+doc = false
+bench = false
+[workspace]
+members = ["."]

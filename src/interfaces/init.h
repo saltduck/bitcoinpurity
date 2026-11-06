@@ -8,6 +8,7 @@
 #include <interfaces/chain.h>
 #include <interfaces/echo.h>
 #include <interfaces/mining.h>
+#include <interfaces/rpc.h>
 #include <interfaces/node.h>
 #include <interfaces/wallet.h>
 
@@ -34,6 +35,8 @@ public:
     virtual std::unique_ptr<Node> makeNode() { return nullptr; }
     virtual std::unique_ptr<Chain> makeChain() { return nullptr; }
     virtual std::unique_ptr<Mining> makeMining() { return nullptr; }
+    virtual void makeMiningOld2() { throw std::runtime_error("Old makeMining (@2) not supported. Please update your client!"); }
+    virtual std::unique_ptr<Rpc> makeRpc() { return nullptr; }
     virtual std::unique_ptr<WalletLoader> makeWalletLoader(Chain& chain) { return nullptr; }
     virtual std::unique_ptr<Echo> makeEcho() { return nullptr; }
     virtual Ipc* ipc() { return nullptr; }

@@ -123,10 +123,19 @@ decltype(auto) CustomReadField(TypeList<UniValue>, Priority<1>, InvokeContext& i
 {
     return read_dest.update([&](auto& value) {
         auto data = input.get();
-        value.read(std::string_view{data.begin(), data.size()});
+        if (!value.read(std::string_view{data.begin(), data.size()})) {
+            throw std::runtime_error("invalid JSON received over IPC");
+        }
     });
 }
 
+// List(Data) cannot distinguish absent and empty entries; an empty transaction
+// encoding is the Core IPC representation for a missing mempool transaction.
+template <typename Input>
+bool CustomHasField(TypeList<CTransaction>, InvokeContext& invoke_context, const Input& input)
+{
+    return input.get().size() > 0;
+}
 } // namespace mp
 
 #endif // BITCOIN_IPC_CAPNP_COMMON_TYPES_H

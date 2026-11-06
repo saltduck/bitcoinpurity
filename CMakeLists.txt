@@ -45,6 +45,8 @@ set(UPSTREAM_CORE_CONSENSUS_MINOR 4)
 # This option must be known before project() so vcpkg can resolve the optional
 # manifest feature before the first language is enabled.
 option(BUILD_DATUM "Build embedded DATUM/Stratum mining support." ON)
+option(BUILD_SV2 "Build embedded Stratum V2 pooled mining support." ON)
+set(ENABLE_SV2 ${BUILD_SV2})
 if(BUILD_DATUM)
   list(APPEND VCPKG_MANIFEST_FEATURES datum)
   list(REMOVE_DUPLICATES VCPKG_MANIFEST_FEATURES)
@@ -248,7 +250,7 @@ cmake_dependent_option(WITH_DBUS "Enable DBus support." ON "NOT CMAKE_SYSTEM_NAM
 
 cmake_dependent_option(WITH_TASKBAR_PROGRESS "Enable GUI taskbar progress." ON "CMAKE_SYSTEM_NAME STREQUAL \"Windows\" AND BUILD_GUI" OFF)
 
-set(WITH_MULTIPROCESS OFF)
+option(WITH_MULTIPROCESS "Build optional multiprocess bitcoin-node and bitcoin-gui executables (requires libmultiprocess)." OFF)
 if(WITH_MULTIPROCESS)
   find_package(Libmultiprocess REQUIRED COMPONENTS Lib)
   find_package(LibmultiprocessNative REQUIRED COMPONENTS Bin
@@ -812,6 +814,7 @@ if(BUILD_DAEMON AND WITH_MULTIPROCESS)
 else()
   set(bitcoin_daemon_status OFF)
 endif()
+message("  bitcoin-node (multiprocess) ......... ${bitcoin_daemon_status}")
 if(BUILD_GUI)
   if("${WITH_QT_VERSION}" STREQUAL "6")
     set(bitcoin_qt_status "ON (Qt 6)")
@@ -827,6 +830,7 @@ if(BUILD_GUI AND WITH_MULTIPROCESS)
 else()
   set(bitcoin_gui_status OFF)
 endif()
+message("  bitcoin-gui (GUI, multiprocess) ..... ${bitcoin_gui_status}")
 message("  bitcoin-cli ......................... ${BUILD_CLI}")
 message("  libbitcoinconsensus ................. ${BUILD_BITCOINCONSENSUS_LIB}")
 message("  bitcoin-tx .......................... ${BUILD_TX}")

@@ -303,10 +303,10 @@ void BitcoinGUI::createActions()
     addressBookAction->setShortcut(QKeySequence(QStringLiteral("Alt+5")));
     tabGroup->addAction(addressBookAction);
 
-#ifdef ENABLE_DATUM
+#if defined(ENABLE_DATUM) || defined(ENABLE_SV2)
     miningAction = new QAction(platformStyle->SingleColorIcon(":/icons/tx_mined"), tr("&Mining"), this);
     miningAction->setObjectName(QStringLiteral("miningAction"));
-    miningAction->setStatusTip(tr("Show the embedded DATUM mining dashboard"));
+    miningAction->setStatusTip(tr("Show the active mining dashboard"));
     miningAction->setToolTip(miningAction->statusTip());
     miningAction->setCheckable(true);
     miningAction->setShortcut(QKeySequence(QStringLiteral("Alt+6")));
@@ -334,7 +334,7 @@ void BitcoinGUI::createActions()
     connect(historyAction, &QAction::triggered, this, &BitcoinGUI::gotoHistoryPage);
     connect(addressBookAction, &QAction::triggered, [this]{ showNormalIfMinimized(); });
     connect(addressBookAction, &QAction::triggered, this, &BitcoinGUI::gotoAddressBookPage);
-#ifdef ENABLE_DATUM
+#if defined(ENABLE_DATUM) || defined(ENABLE_SV2)
     connect(miningAction, &QAction::triggered, [this]{ showNormalIfMinimized(); });
     connect(miningAction, &QAction::triggered, this, &BitcoinGUI::gotoMiningPage);
 #endif
@@ -700,7 +700,7 @@ void BitcoinGUI::createToolBars()
         toolbar->addAction(receiveCoinsAction);
         toolbar->addAction(historyAction);
         toolbar->addAction(addressBookAction);
-#ifdef ENABLE_DATUM
+#if defined(ENABLE_DATUM) || defined(ENABLE_SV2)
         toolbar->addAction(miningAction);
 #endif
         overviewAction->setChecked(true);
@@ -1213,7 +1213,7 @@ void BitcoinGUI::gotoAddressBookPage()
     if (walletFrame) walletFrame->gotoAddressBookPage();
 }
 
-#ifdef ENABLE_DATUM
+#if defined(ENABLE_DATUM) || defined(ENABLE_SV2)
 void BitcoinGUI::gotoMiningPage()
 {
     miningAction->setChecked(true);
@@ -1540,7 +1540,7 @@ void BitcoinGUI::changeEvent(QEvent *e)
         receiveCoinsAction->setIcon(platformStyle->SingleColorIcon(QStringLiteral(":/icons/receiving_addresses")));
         historyAction->setIcon(platformStyle->SingleColorIcon(QStringLiteral(":/icons/history")));
         addressBookAction->setIcon(platformStyle->SingleColorIcon(QStringLiteral(":/icons/address-book")));
-#ifdef ENABLE_DATUM
+#if defined(ENABLE_DATUM) || defined(ENABLE_SV2)
         miningAction->setIcon(platformStyle->SingleColorIcon(QStringLiteral(":/icons/tx_mined")));
 #endif
         m_action_pairing->setIcon(platformStyle->SingleColorIcon(QStringLiteral(":/icons/connect_1")));

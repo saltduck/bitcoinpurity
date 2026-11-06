@@ -17,7 +17,7 @@ $(package)_cxxflags += -fdebug-prefix-map=$($(package)_extract_dir)=/usr -fmacro
 endef
 
 define $(package)_config_cmds
-  $($(package)_cmake) .
+  $($(package)_cmake) src/ipc/libmultiprocess
 endef
 
 define $(package)_build_cmds

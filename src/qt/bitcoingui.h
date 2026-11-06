@@ -153,7 +153,7 @@ private:
     QAction* m_load_psbt_clipboard_action = nullptr;
     QAction* aboutAction = nullptr;
     QAction* receiveCoinsAction = nullptr;
-#ifdef ENABLE_DATUM
+#if defined(ENABLE_DATUM) || defined(ENABLE_SV2)
     QAction* miningAction{nullptr};
 #endif
     QAction* optionsAction = nullptr;
@@ -310,7 +310,7 @@ public Q_SLOTS:
     void gotoSendCoinsPage(QString addr = "");
     /** Switch to the embedded address book page */
     void gotoAddressBookPage();
-#ifdef ENABLE_DATUM
+#if defined(ENABLE_DATUM) || defined(ENABLE_SV2)
     /** Switch to the embedded DATUM mining dashboard */
     void gotoMiningPage();
 #endif

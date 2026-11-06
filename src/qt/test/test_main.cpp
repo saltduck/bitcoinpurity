@@ -16,7 +16,7 @@
 #include <test/util/setup_common.h>
 #include <util/chaintype.h>
 
-#ifdef ENABLE_DATUM
+#if defined(ENABLE_DATUM) || defined(ENABLE_SV2)
 #include <qt/test/miningpagetests.h>
 #endif
 
@@ -96,7 +96,7 @@ int main(int argc, char* argv[])
         RPCNestedTests test3(app.node());
         num_test_failures += QTest::qExec(&test3);
 
-#ifdef ENABLE_DATUM
+#if defined(ENABLE_DATUM) || defined(ENABLE_SV2)
         MiningPageTests mining_page_tests;
         num_test_failures += QTest::qExec(&mining_page_tests);
 #endif

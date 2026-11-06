@@ -243,8 +243,10 @@ add_library(bitcoinqt STATIC EXCLUDE_FROM_ALL
   blockview.h
   clientmodel.cpp
   clientmodel.h
-  $<$<BOOL:${BUILD_DATUM}>:miningpage.cpp>
-  $<$<BOOL:${BUILD_DATUM}>:miningpage.h>
+  $<$<OR:$<BOOL:${BUILD_DATUM}>,$<BOOL:${BUILD_SV2}>>:miningpage.cpp>
+  $<$<OR:$<BOOL:${BUILD_DATUM}>,$<BOOL:${BUILD_SV2}>>:miningpage.h>
+  $<$<BOOL:${BUILD_SV2}>:sv2settings.cpp>
+  $<$<BOOL:${BUILD_SV2}>:sv2settings.h>
   $<$<BOOL:${BUILD_DATUM}>:datumcoinbasetag.cpp>
   $<$<BOOL:${BUILD_DATUM}>:datumcoinbasetag.h>
   csvmodelwriter.cpp
