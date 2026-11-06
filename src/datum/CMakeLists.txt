@@ -6,8 +6,20 @@ find_package(CURL REQUIRED)
 
 add_library(datum_curl INTERFACE)
 target_link_libraries(datum_curl INTERFACE CURL::libcurl)
+
 if(WIN32)
-  target_link_libraries(datum_curl INTERFACE bcrypt advapi32 crypt32 ws2_32)
+  target_link_libraries(datum_curl INTERFACE
+    bcrypt
+    advapi32
+    crypt32
+    ws2_32
+  )
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+  target_link_options(datum_curl INTERFACE
+    "SHELL:-framework CoreFoundation"
+    "SHELL:-framework SystemConfiguration"
+    "SHELL:-framework CoreServices"
+  )
 endif()
 
 find_path(DATUM_JANSSON_INCLUDE_DIR NAMES jansson.h REQUIRED)

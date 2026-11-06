@@ -1,5 +1,22 @@
 # Embedded DATUM Migration Report
 
+## Guix release manifest artifacts (TASK-030)
+
+The old release generator recognizes only `bitcoin-purity-` and cannot extract
+versions from the Guix `bitcoinpurity-` assets published in v1.1.2. Accept both
+prefixes, macOS unsigned application ZIPs and Windows pgpverifiable ZIPs. Use
+ZIPs for macOS/Windows and tarballs for Linux; filter auxiliary artifacts before
+duplicate checks and prefer final codesigned ZIPs when available. Publishers
+can point `--artifacts-dir` at the nested Guix output tree or a release asset
+directory. If omitted, it defaults to `./guix-build-<version>/output` in the
+current working directory, with the leading `v` removed from `--version`;
+existing explicit paths continue to work.
+Recursive scanning may find both original outputs and copies in a nested
+`release-upload-<version>` directory. Same-name copies are merged only after
+matching byte sizes and SHA256 digests; conflicting artifacts still fail.
+The output schema, client platform IDs and signing process require
+no migration. This task does not change the release workflow or publish files.
+
 ## Core October 2026 security backports (TASK-029)
 
 All three vulnerable code patterns are present in the baseline. Adapt Core
@@ -454,7 +471,7 @@ Existing two-entry files keep fixed-pair behavior. Local regression evidence
 and remaining checks are recorded in TASK-PS-011; no deployment is part of this
 change.
 
-## Embedded SV2 (TASK-030 through TASK-035)
+## Embedded SV2 (TASK-048 and TASK-031 through TASK-035)
 
 Add an opt-in pooled backend, preserving DATUM Solo and IPC field numbers.
 No consensus/database migration, reindex or rescan. Rebuild with pinned Rust and

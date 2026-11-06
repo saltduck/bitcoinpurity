@@ -48,12 +48,28 @@ Passwords must not enter settings.json; status must not expose miner identities
 or credentials. Add getsv2info and Qt mode, configuration and backend status.
 Configuration changes require restart.
 
-Use TDD and reviewable commits under TASK-030 through TASK-035. Acceptance
+Use TDD and reviewable commits under TASK-048 and TASK-031 through TASK-035. Acceptance
 requires an independent local test pool/JDS, actual external V1 proof of work,
 upstream share acknowledgement and block propagation to a second regtest node.
 Cover faults, reorgs, shutdown, protocol/FFI fuzzing and three-platform ON/OFF
 builds. Real pool interoperability and production deployment are separate gates.
 No native downstream SV2, backup pool or Signet signer integration is included.
+
+## Guix release manifest artifacts
+
+Adapt `contrib/official-packages/generate-releases-manifest.py` to Guix names
+as published in v1.1.2, retaining legacy `bitcoin-purity-` archive names.
+Select Linux binary tarballs, macOS application ZIPs (including `-unsigned.zip`)
+and Windows ZIPs (including `-pgpverifiable.zip`). Prefer the final codesigned
+ZIP when both variants exist. Exclude installers, macOS CLI tarballs, source,
+debug and codesigning archives. Merge equally preferred copies only when their
+filenames, byte sizes and SHA256 digests match; reject conflicting artifacts.
+Keep version filtering, platform IDs, SHA256, sizes and unsigned schema 1 output.
+Add CLI regression tests before implementation. Publishing and workflow
+changes are outside this task.
+`--artifacts-dir` defaults to `./guix-build-<version>/output` relative to the
+current working directory, using `--version` without the leading `v`;
+an explicit path overrides it.
 
 
 ## Bitcoin Core October 2026 security backports

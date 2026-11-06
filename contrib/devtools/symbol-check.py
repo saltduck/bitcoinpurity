@@ -130,6 +130,7 @@ MACHO_ALLOWED_LIBRARIES = {
 # bitcoind and bitcoin-qt
 'libc++.1.dylib', # C++ Standard Library
 'libSystem.B.dylib', # libc, libm, libpthread, libinfo
+'SystemConfiguration', # network and system configuration
 # bitcoin-qt only
 'AppKit', # user interface
 'ApplicationServices', # common application tasks.

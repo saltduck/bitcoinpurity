@@ -48,6 +48,10 @@
 
 - [TASK-029: Core #36665, #36667 and #36669 security backports](TASK-029.md)
 
+- [TASK-030: Guix release manifest artifacts](TASK-030.md)
+  (includes the default `./guix-build-<version>/output` artifact directory and
+  identical upload-staging copies).
+
 ## Purity Signet
 
 - [TASK-PS-000: Baseline and requirement amendments](TASK-PS-000.md)
@@ -73,7 +77,7 @@
 
 ## Embedded Stratum V2
 
-- [TASK-030: Requirements, provenance and contracts](TASK-030.md)
+- [TASK-048: Requirements, provenance and contracts](TASK-048.md)
 - [TASK-031: Mining template and validation bridge](TASK-031.md) — implemented; unit and sanitizer checks pass.
 - [TASK-032: Rust protocol gateway and lifecycle](TASK-032.md) — implemented; local pool/JDS acceptance passes.
 - [TASK-033: Independent pool and V1 end-to-end acceptance](TASK-033.md) — Linux/macOS local chain passes.
