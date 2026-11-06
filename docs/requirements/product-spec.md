@@ -23,6 +23,22 @@
   table (handshake-confirmed services), via the normal bucket walk; gossip-only
   claims are not preferred.
 
+## Guix release manifest artifacts
+
+The release manifest generator accepts Guix `bitcoinpurity-` and legacy
+`bitcoin-purity-` names. For each supported platform it selects a Linux binary
+tarball, macOS application ZIP or Windows ZIP. macOS `-unsigned.zip` and
+Windows `-pgpverifiable.zip` are accepted; final codesigned ZIPs take priority
+when present. Source/debug/codesigning archives, installers and macOS CLI
+tarballs are excluded. Equally preferred copies with matching filenames, byte
+sizes and SHA256 digests are merged; conflicting artifacts fail. Version filtering,
+platform IDs and unsigned schema 1 fields retain their existing contract.
+The artifact directory defaults to `./guix-build-<version>/output` in the current
+working directory, with the leading `v` removed from `--version`;
+`--artifacts-dir` can override it.
+See [TASK-030](../tasks/TASK-030.md) and the
+[CLI contract](../api/official-packages.md#software-release-manifest-generator).
+
 ## October 2026 security backports
 
 Apply Core #36665 (receive-only select exception monitoring), #36667

@@ -1,4 +1,4 @@
-# TASK-031: Verified-only Purity peer preference (audit M-2)
+# TASK-036: Verified-only Purity peer preference (audit M-2)
 
 Implement the [requirements](../../input/requirements.md) section
 "Verified-only Purity peer preference" and its

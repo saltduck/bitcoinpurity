@@ -44,6 +44,22 @@ longer chain.
 Add failing regression tests first (H-1 lagging-node race, synced parking with
 warning, restart protection, peer-agreement exit, AddrMan gossip-only claims).
 
+## Guix release manifest artifacts
+
+Adapt `contrib/official-packages/generate-releases-manifest.py` to Guix names
+as published in v1.1.2, retaining legacy `bitcoin-purity-` archive names.
+Select Linux binary tarballs, macOS application ZIPs (including `-unsigned.zip`)
+and Windows ZIPs (including `-pgpverifiable.zip`). Prefer the final codesigned
+ZIP when both variants exist. Exclude installers, macOS CLI tarballs, source,
+debug and codesigning archives. Merge equally preferred copies only when their
+filenames, byte sizes and SHA256 digests match; reject conflicting artifacts.
+Keep version filtering, platform IDs, SHA256, sizes and unsigned schema 1 output.
+Add CLI regression tests before implementation. Publishing and workflow
+changes are outside this task.
+`--artifacts-dir` defaults to `./guix-build-<version>/output` relative to the
+current working directory, using `--version` without the leading `v`;
+an explicit path overrides it.
+
 ## Bitcoin Core October 2026 security backports
 
 Backport Bitcoin Core #36665, #36667 and #36669, adapting to this branch's
