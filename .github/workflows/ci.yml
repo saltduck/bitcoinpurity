@@ -127,12 +127,11 @@ jobs:
       BASE_ROOT_DIR: ${{ github.workspace }}
 
     steps:
-      - &CHECKOUT
-        name: Checkout
+      - name: Checkout
         uses: actions/checkout@v6
         with:
           # Ensure the latest merged pull request state is used, even on re-runs.
-          ref: &CHECKOUT_REF_TMPL ${{ github.event_name == 'pull_request' && github.ref || '' }}
+          ref: ${{ github.event_name == 'pull_request' && github.ref || '' }}
 
       - name: Clang version
         run: |
@@ -200,7 +199,11 @@ jobs:
             job-name: 'Win64 native fuzz, VS 2022'
 
     steps:
-      - *CHECKOUT
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          # Ensure the latest merged pull request state is used, even on re-runs.
+          ref: ${{ github.event_name == 'pull_request' && github.ref || '' }}
 
       - name: Set up VS Developer Prompt
         shell: pwsh -Command "$PSVersionTable; $PSNativeCommandUseErrorActionPreference = $true; $ErrorActionPreference = 'Stop'; & '{0}'"
@@ -380,7 +383,11 @@ jobs:
             file-env: './ci/test/00_setup_env_native_msan.sh'
 
     steps:
-      - *CHECKOUT
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          # Ensure the latest merged pull request state is used, even on re-runs.
+          ref: ${{ github.event_name == 'pull_request' && github.ref || '' }}
 
       - name: Configure environment
         uses: ./.github/actions/configure-environment
@@ -422,7 +429,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
         with:
-          ref: *CHECKOUT_REF_TMPL
+          ref: ${{ github.event_name == 'pull_request' && github.ref || '' }}
           fetch-depth: 0
 
       - name: Configure Docker
