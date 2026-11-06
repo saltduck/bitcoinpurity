@@ -25,7 +25,7 @@ jobs:
   datum-stage1:
     name: 'DATUM ON/OFF build and functional test'
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    -minutes: 45
     steps:
       - uses: actions/checkout@v6
       - name: Install dependencies
@@ -66,7 +66,7 @@ jobs:
     needs: runners
     runs-on: ${{ needs.runners.outputs.provider == 'warp' && 'warp-ubuntu-latest-x64-8x' || 'ubuntu-latest' }}
     if: github.event_name == 'pull_request' && github.event.pull_request.commits != 1
-    timeout-minutes: 360  # Use maximum time, see https://docs.github.com/en/actions/writing-workflows/workflow-syntax-for-github-actions#jobsjob_idtimeout-minutes. Assuming a worst case time of 1 hour per commit, this leads to a --max-count=6 below.
+    -minutes: 360  # Use maximum time, see https://docs.github.com/en/actions/writing-workflows/workflow-syntax-for-github-actions#jobsjob_id-minutes. Assuming a worst case time of 1 hour per commit, this leads to a --max-count=6 below.
     env:
       MAX_COUNT: 6
     steps:
@@ -127,7 +127,7 @@ jobs:
     # in Github repository settings.
     if: ${{ vars.SKIP_BRANCH_PUSH != 'true' || github.event_name == 'pull_request' }}
 
-    timeout-minutes: 120
+    -minutes: 120
 
     strategy:
       fail-fast: false
@@ -204,7 +204,7 @@ jobs:
 
     env:
       PYTHONUTF8: 1
-      TEST_RUNNER_TIMEOUT_FACTOR: 40
+      TEST_RUNNER__FACTOR: 40
 
     strategy:
       fail-fast: false
@@ -293,7 +293,7 @@ jobs:
           BITCOINWALLET: '${{ github.workspace }}\build\bin\Release\bitcoin-wallet.exe'
           TEST_RUNNER_EXTRA: ${{ github.event_name != 'pull_request' && '--extended' || '' }}
         shell: cmd
-        run: py -3 test\functional\test_runner.py --jobs %NUMBER_OF_PROCESSORS% --ci --quiet --tmpdirprefix=%RUNNER_TEMP% --combinedlogslen=99999999 --timeout-factor=%TEST_RUNNER_TIMEOUT_FACTOR% %TEST_RUNNER_EXTRA%
+        run: py -3 test\functional\test_runner.py --jobs %NUMBER_OF_PROCESSORS% --ci --quiet --tmpdirprefix=%RUNNER_TEMP% --combinedlogslen=99999999 ---factor=%TEST_RUNNER__FACTOR% %TEST_RUNNER_EXTRA%
 
       - name: Clone corpora
         if: matrix.job-type == 'fuzz'
@@ -317,7 +317,7 @@ jobs:
     needs: runners
     runs-on: ${{ needs.runners.outputs.provider == 'warp' && matrix.warp-runner || matrix.fallback-runner }}
     if: ${{ vars.SKIP_BRANCH_PUSH != 'true' || github.event_name == 'pull_request' }}
-    timeout-minutes: ${{ matrix.timeout-minutes }}
+    timeout-minutes: 240
 
     env:
       DANGER_CI_ON_HOST_FOLDERS: 1
