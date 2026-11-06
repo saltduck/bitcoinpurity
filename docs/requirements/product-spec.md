@@ -225,6 +225,17 @@ verification criteria, and non-goals are normative in
   AddrMan persistence, deterministic preference/fallback, legacy handshakes
   and advertised-bit activation-hash mismatches.
 
+## Headers presync ASERT difficulty check
+
+Low-work headers sync (presync and redownload) validates post-activation
+`nBits` exactly against ASERT, as full header validation does, so a peer cannot
+flood it with minimum-difficulty headers. The ASERT anchor comes from the local
+block index or from the headers received in the same phase. On ASERT networks
+headers more than 2 hours in the future abort the sync, so timestamps cannot
+be used to lower the difficulty. Pre-activation headers keep the inherited
+4x-per-retarget bound; testnet and regtest are unchanged. Consensus is
+unchanged.
+
 ## Validation and signed-manifest corrections
 
 - Active-chain manual parking/rewind is deferred. `parkblock` rejects active

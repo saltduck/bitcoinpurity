@@ -57,3 +57,26 @@ reading semantic fields. No dependency parser or general JSON-RPC changes.
 
 Update download redirect approval uses the same artifact URI predicate as
 manifest parsing, with an additional final-URL check before verification.
+
+## Headers presync ASERT difficulty check
+
+`PermittedDifficultyTransition` accepted any `nBits` from the Purity activation
+height, so presync accepted `powLimit` headers costing about 2^32 hashes each.
+`HeadersSyncState` now keeps, per phase, the ASERT anchor `nBits` and the
+anchor-parent time: from `m_chain_start->GetAncestor(nAsertAnchorHeight)` when
+the sync starts at or above the anchor, otherwise captured from the received
+header at the anchor height and its predecessor. From the activation height the
+required bits are `CalculateASERT` (or `CalculateSignetASERT`) of the anchor
+target, the previous header's time minus the anchor-parent time, and the
+previous height minus the anchor height; `CheckDifficultyBits` then applies the
+same activation-height rule as full validation.
+
+ASERT difficulty falls with timestamp age, so the check alone would still let a
+peer lower difficulty with far-future timestamps. Presync and redownload
+therefore reject headers more than `MAX_FUTURE_BLOCK_TIME` ahead of
+`NodeClock::now()`, which full validation also rejects (`time-too-new`). With
+times capped near now, keeping difficulty low requires timestamps to keep
+advancing, so the cheap prefix of a fork is bounded by its real elapsed time.
+Networks with `fPowAllowMinDifficultyBlocks` or `fPowNoRetargeting` keep the
+previous behavior.
+

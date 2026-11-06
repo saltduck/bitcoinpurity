@@ -45,3 +45,9 @@ Remote signed manifest schemas are unchanged, but any duplicate object key
 at any depth is invalid before signature verification or semantic use. Release
 artifact URLs additionally enforce the official GitHub download namespace and
 check all redirects. See `doc/software-updates.md` for the exact URI policy.
+
+Low-work headers sync on mainnet and Purity Signet aborts (without
+misbehavior scoring) on a post-activation header whose `nBits` differs from the
+ASERT value, or on a header more than 2 hours in the future. Messages, RPCs and
+consensus rules are unchanged.
+
