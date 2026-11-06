@@ -95,16 +95,40 @@ BOOST_AUTO_TEST_CASE(addrman_purity_preference_and_fallback)
     BOOST_REQUIRE(addrman.Add({ordinary}, source));
     BOOST_CHECK(addrman.Select(false, {}, NODE_PURITY_ASERT).first == ordinary);
     BOOST_REQUIRE(addrman.Add({purity}, source));
-    BOOST_CHECK(addrman.Select(false, {}, NODE_PURITY_ASERT).first == purity);
-    BOOST_CHECK(addrman.Select(true, {NET_IPV4}, NODE_PURITY_ASERT).first == purity);
+    // A gossip-only (new table) claim is not preferred.
+    bool selected_ordinary{false};
+    for (int i = 0; i < 100; ++i) selected_ordinary |= addrman.Select(false, {}, NODE_PURITY_ASERT).first == ordinary;
+    BOOST_CHECK(selected_ordinary);
     BOOST_CHECK(!addrman.Select(false, {NET_IPV6}, NODE_PURITY_ASERT).first.IsValid());
     BOOST_REQUIRE(addrman.Good(purity));
-    BOOST_CHECK(addrman.Select(false, {}, NODE_PURITY_ASERT).first == purity);
+    // A tried record's services were confirmed by a handshake and are preferred.
+    for (int i = 0; i < 100; ++i) BOOST_CHECK(addrman.Select(false, {}, NODE_PURITY_ASERT).first == purity);
     BOOST_CHECK(addrman.Select(true, {}, NODE_PURITY_ASERT).first == ordinary);
     addrman.Attempt(purity, false, ordinary.nTime);
     BOOST_CHECK(addrman.Select(false, {}, NODE_PURITY_ASERT).second == ordinary.nTime);
     addrman.SetServices(purity, ordinary.nServices);
     BOOST_CHECK(!(addrman.Select(false, {}, NODE_PURITY_ASERT).first.nServices & NODE_PURITY_ASERT));
+}
+
+BOOST_AUTO_TEST_CASE(addrman_purity_gossip_claims_not_preferred)
+{
+    AddrMan addrman{EMPTY_NETGROUPMAN, DETERMINISTIC, GetCheckRatio(m_node)};
+    const ServiceFlags ordinary_services{ServiceFlags(NODE_NETWORK | NODE_WITNESS)};
+    CAddress verified{ResolveService("250.1.1.1", 8333), ordinary_services};
+    verified.nTime = Now<NodeSeconds>();
+    const auto source = ResolveIP("252.2.2.2");
+    BOOST_REQUIRE(addrman.Add({verified}, source));
+    BOOST_REQUIRE(addrman.Good(verified));
+    std::vector<CAddress> claims;
+    for (int i = 1; i <= 50; ++i) {
+        CAddress claim{ResolveService(strprintf("251.%d.1.1", i), 8333), ServiceFlags(ordinary_services | NODE_PURITY_ASERT)};
+        claim.nTime = verified.nTime;
+        claims.push_back(claim);
+    }
+    BOOST_REQUIRE(addrman.Add(claims, source));
+    int verified_hits{0};
+    for (int i = 0; i < 200; ++i) verified_hits += addrman.Select(false, {}, NODE_PURITY_ASERT).first == verified;
+    BOOST_CHECK_GT(verified_hits, 0);
 }
 
 BOOST_AUTO_TEST_CASE(addrman_simple)

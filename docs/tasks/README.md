@@ -52,6 +52,10 @@
   (includes the default `./guix-build-<version>/output` artifact directory and
   identical upload-staging copies).
 
+- [TASK-035: Catch-up-aware deep-reorg parking](TASK-035.md)
+
+- [TASK-036: Verified-only Purity peer preference](TASK-036.md)
+
 ## Purity Signet
 
 - [TASK-PS-000: Baseline and requirement amendments](TASK-PS-000.md)

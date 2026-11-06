@@ -716,43 +716,28 @@ std::pair<CAddress, NodeSeconds> AddrManImpl::Select_(bool new_only, const std::
 
     if (vRandom.empty()) return {};
 
-    if (preferred_services != NODE_NONE) {
-        // Look in the existing tables so even sparse service hints get priority.
-        // No matches fall through to the unchanged bucket-based selection.
-        std::vector<const AddrInfo*> preferred_new;
-        std::vector<const AddrInfo*> preferred_tried;
-        for (const auto id : vRandom) {
-            const AddrInfo& info{mapInfo.at(id)};
-            if ((info.nServices & preferred_services) != preferred_services ||
-                (!networks.empty() && !networks.contains(info.GetNetwork()))) continue;
-            if (info.fInTried) {
-                if (!new_only) preferred_tried.push_back(&info);
-            } else if (info.nRefCount > 0) {
-                preferred_new.push_back(&info);
-            }
-        }
-        if (!preferred_new.empty() || !preferred_tried.empty()) {
-            // Retain the new/tried 50% split and penalize recent/failed attempts.
-            const bool search_tried{preferred_new.empty() ||
-                                    (!preferred_tried.empty() && insecure_rand.randbool())};
-            const auto& candidates{search_tried ? preferred_tried : preferred_new};
-            double chance_factor{1.0};
-            while (true) {
-                const AddrInfo& info{*candidates[insecure_rand.randrange(candidates.size())]};
-                const double multiplicity{search_tried ? 1.0 : double(info.nRefCount) / ADDRMAN_NEW_BUCKETS_PER_ADDRESS};
-                if (insecure_rand.randbits<30>() < chance_factor * info.GetChance() * multiplicity * (1 << 30)) {
-                    LogDebug(BCLog::ADDRMAN, "Selected service-preferred %s from %s\n", info.ToStringAddrPort(), search_tried ? "tried" : "new");
-                    return {info, info.m_last_try};
-                }
-                chance_factor *= 1.2;
-            }
-        }
-    }
-
     size_t new_count = nNew;
     size_t tried_count = nTried;
 
-    if (!networks.empty()) {
+    // Prefer only tried records: their services were confirmed by a handshake,
+    // while new-table services are unauthenticated gossip. The usual bucket walk
+    // below keeps bucket dilution; without a matching tried record, select normally.
+    ServiceFlags required_services{NODE_NONE};
+    if (preferred_services != NODE_NONE && !new_only) {
+        size_t preferred_tried{0};
+        for (const auto id : vRandom) {
+            const AddrInfo& info{mapInfo.at(id)};
+            if (info.fInTried && (info.nServices & preferred_services) == preferred_services &&
+                (networks.empty() || networks.contains(info.GetNetwork()))) ++preferred_tried;
+        }
+        if (preferred_tried > 0) {
+            required_services = preferred_services;
+            new_count = 0;
+            tried_count = preferred_tried;
+        }
+    }
+
+    if (required_services == NODE_NONE && !networks.empty()) {
         new_count = 0;
         tried_count = 0;
         for (auto& network : networks) {
@@ -797,9 +782,11 @@ std::pair<CAddress, NodeSeconds> AddrManImpl::Select_(bool new_only, const std::
             position = (initial_position + i) % ADDRMAN_BUCKET_SIZE;
             node_id = GetEntry(search_tried, bucket, position);
             if (node_id != -1) {
-                if (!networks.empty()) {
+                if (!networks.empty() || required_services != NODE_NONE) {
                     const auto it{mapInfo.find(node_id)};
-                    if (Assume(it != mapInfo.end()) && networks.contains(it->second.GetNetwork())) break;
+                    if (Assume(it != mapInfo.end()) &&
+                        (networks.empty() || networks.contains(it->second.GetNetwork())) &&
+                        (it->second.nServices & required_services) == required_services) break;
                 } else {
                     break;
                 }
