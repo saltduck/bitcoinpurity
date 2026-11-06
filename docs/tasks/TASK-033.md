@@ -5,7 +5,7 @@
 
 Implements the DATUM security criteria in [requirements](../../input/requirements.md)
 added for audit findings M-3 and M-4. Numbered 033 because TASK-030/031/032 are
-used on other branches.
+used on master or other branches.
 
 ## Contract
 
