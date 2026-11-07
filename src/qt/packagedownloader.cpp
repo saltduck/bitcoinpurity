@@ -1014,12 +1014,6 @@ private:
         return false;
     }
 
-    bool downloadMetaMatches() const
-    {
-        const auto identity = readDownloadMetaIdentity();
-        return identity && metaIdentityMatchesPackage(*identity);
-    }
-
     void saveDownloadMeta()
     {
         UniValue meta(UniValue::VOBJ);
