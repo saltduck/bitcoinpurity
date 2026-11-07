@@ -2,7 +2,7 @@
 // Distributed under the MIT software license.
 #include <mining/datum_bridge.h>
 
-#include <bitcoin-build-config.h>
+#include <bitcoin-build-config.h> // IWYU pragma: keep
 #include <addresstype.h>
 #include <chainparams.h>
 #include <chainparamsbase.h>
@@ -93,6 +93,7 @@ uint64_t NowMillis()
     return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 }
 
+#ifdef USE_UPNP
 void SetDatumMapping(bool active, std::string protocol = {}, std::string external = {}, uint32_t lifetime = 0, std::string error = {})
 {
     std::lock_guard lock{g_datum_mapping_mutex};
@@ -103,6 +104,7 @@ void SetDatumMapping(bool active, std::string protocol = {}, std::string externa
     g_datum_mapping.updated_ms = NowMillis();
     g_datum_mapping.error = std::move(error);
 }
+#endif // USE_UPNP
 
 class DatumValidationInterface final : public CValidationInterface
 {

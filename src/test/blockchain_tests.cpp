@@ -145,8 +145,8 @@ BOOST_FIXTURE_TEST_CASE(invalidate_block, TestChain100Setup)
         LOCK(cs_main);
         BOOST_CHECK(chainstate.m_chain.Tip() == target->pprev);
         for (const auto& [block, status] : original) {
-            const uint32_t failure = block->nHeight > target->nHeight ? BLOCK_FAILED_CHILD :
-                block == target ? BLOCK_FAILED_VALID : 0;
+            const uint32_t failure = block->nHeight > target->nHeight ? uint32_t{BLOCK_FAILED_CHILD} :
+                block == target ? uint32_t{BLOCK_FAILED_VALID} : uint32_t{0};
             BOOST_CHECK_EQUAL(block->nStatus, status | failure);
         }
     }

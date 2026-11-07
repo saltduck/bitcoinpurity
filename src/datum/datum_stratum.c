@@ -312,6 +312,14 @@ void *datum_stratum_v1_socket_server(void *arg) {
 		ram_allocated += app->max_clients_thread * sizeof(T_DATUM_CLIENT_DATA);
 		ram_allocated += app->max_clients_thread * sizeof(datum_pollfd);
 		ram_allocated += app->max_clients_thread * sizeof(int);
+		// Initialize each thread lock exactly once, before the listener thread
+		// starts and before global_stratum_app is published to RPC readers.
+		ret = pthread_mutex_init(&app->datum_threads[i].thread_data_lock, NULL);
+		if (ret) {
+			DLOG_FATAL("Could not init mutex for thread data: %s", strerror(ret));
+			panic_from_thread(__LINE__);
+			return NULL;
+		}
 	}
 	
 	// allocate memory for our per-thread data

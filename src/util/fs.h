@@ -94,6 +94,10 @@ static inline bool exists(const std::filesystem::file_status& s)
 {
     return std::filesystem::exists(s);
 }
+static inline bool exists(const path& p, std::error_code& ec) noexcept
+{
+    return std::filesystem::exists(p, ec);
+}
 
 // Allow explicit quoted stream I/O.
 static inline auto quoted(const std::string& s)

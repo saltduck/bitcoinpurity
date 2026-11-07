@@ -15,7 +15,7 @@
 #include <string_view>
 
 class ArgsManager;
-class bilingual_str;
+struct bilingual_str;
 
 namespace node {
 

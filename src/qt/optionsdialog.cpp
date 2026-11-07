@@ -36,6 +36,7 @@
 #include <txmempool.h> // for maxmempoolMinimum
 #include <util/check.h>
 #include <util/strencodings.h>
+#include <util/string.h>
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -1402,15 +1403,15 @@ bool OptionsDialog::saveDatumSettings()
     std::map<std::string, std::string> updates{
         {"datum", enabled ? "1" : "0"},
         {"datumlisten", listen},
-        {"datumport", std::to_string(datumPort->value())},
+        {"datumport", util::ToString(datumPort->value())},
         {"datumupnp", datumUpnp->isChecked() ? "1" : "0"},
         {"datumauth", datumAuth->isChecked() ? "1" : "0"},
         {"datumuser", user},
         {"datumpassword", password},
-        {"datummaxclients", std::to_string(datumMaxClients->value())},
-        {"datummaxperip", std::to_string(datumMaxPerIp->value())},
+        {"datummaxclients", util::ToString(datumMaxClients->value())},
+        {"datummaxperip", util::ToString(datumMaxPerIp->value())},
         {"datumaddress", address},
-        {"datumdiff", std::to_string(requested_difficulty)},
+        {"datumdiff", util::ToString(requested_difficulty)},
         {"datumcoinbasetag", coinbase_tag},
     };
 

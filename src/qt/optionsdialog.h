@@ -5,6 +5,8 @@
 #ifndef BITCOIN_QT_OPTIONSDIALOG_H
 #define BITCOIN_QT_OPTIONSDIALOG_H
 
+#include <bitcoin-build-config.h> // IWYU pragma: keep
+
 #include <QDialog>
 #include <QScrollArea>
 #include <QValidator>

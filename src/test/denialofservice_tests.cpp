@@ -27,7 +27,6 @@
 #include <stdint.h>
 
 #include <boost/test/unit_test.hpp>
-#include <boost/test/data/test_case.hpp>
 
 static CService ip(uint32_t i)
 {
@@ -111,8 +110,13 @@ BOOST_AUTO_TEST_CASE(outbound_slow_chain_eviction)
     peerman.FinalizeNode(dummyNode1);
 }
 
-BOOST_DATA_TEST_CASE_F(RegTestingSetup, purity_incompatible_outbound_is_demoted,
-                      boost::unit_test::data::make({false, true}), is_signet)
+// Each variant needs a fresh node setup, so run it as two fixture test cases
+// instead of a Boost data test case.
+struct PurityIncompatibleOutboundSetup : RegTestingSetup {
+    void Run(bool is_signet);
+};
+
+void PurityIncompatibleOutboundSetup::Run(bool is_signet)
 {
     LOCK(NetEventsInterface::g_msgproc_mutex);
 
@@ -211,6 +215,16 @@ BOOST_DATA_TEST_CASE_F(RegTestingSetup, purity_incompatible_outbound_is_demoted,
 
     peerman->FinalizeNode(*node);
     connman->ClearTestNodes();
+}
+
+BOOST_FIXTURE_TEST_CASE(purity_incompatible_outbound_is_demoted, PurityIncompatibleOutboundSetup)
+{
+    Run(/*is_signet=*/false);
+}
+
+BOOST_FIXTURE_TEST_CASE(purity_incompatible_outbound_is_demoted_signet, PurityIncompatibleOutboundSetup)
+{
+    Run(/*is_signet=*/true);
 }
 
 BOOST_FIXTURE_TEST_CASE(purity_stale_outbound_not_connected_after_prefix, RegTestingSetup)

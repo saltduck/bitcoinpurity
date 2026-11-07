@@ -14,18 +14,6 @@ runs:
         driver-opts: |
           network=host
 
-    # This is required to allow buildkit to access the actions cache
-    - name: Expose actions cache variables
-      uses: actions/github-script@v8
-      with:
-        script: |
-          Object.keys(process.env).forEach(function (key) {
-            if (key.startsWith('ACTIONS_')) {
-              core.info(`Exporting ${key}`);
-              core.exportVariable(key, process.env[key]);
-            }
-          });
-
     - name: Construct docker build cache args
       shell: bash
       run: |
@@ -37,11 +25,18 @@ runs:
 
         url_args=""
 
-        # Always optimistically --cache‑from in case a cache blob exists
-        args=(--cache-from "type=gha${url_args:+,${url_args}},scope=${CONTAINER_NAME}")
+        args=()
+
+        # Only use the gha cache backend when the runtime already provides its
+        # token. Runtime cache tokens are not re-exported to the environment,
+        # because Buildkite's GitHub Actions compatibility rejects that.
+        if [[ -n "${ACTIONS_RUNTIME_TOKEN:-}" ]]; then
+          # Optimistically --cache-from in case a cache blob exists
+          args+=(--cache-from "type=gha${url_args:+,${url_args}},scope=${CONTAINER_NAME}")
+        fi
 
         # Only add --cache-to when using the Cirrus cache provider and pushing to the default branch.
-        if [[ ${{ inputs.use-warp }} == 'true' && ${{ github.event_name }} == "push" && ${{ github.ref_name }} == ${{ github.event.repository.default_branch }} ]]; then
+        if [[ -n "${ACTIONS_RUNTIME_TOKEN:-}" && ${{ inputs.use-warp }} == 'true' && ${{ github.event_name }} == "push" && ${{ github.ref_name }} == ${{ github.event.repository.default_branch }} ]]; then
           args+=(--cache-to "type=gha${url_args:+,${url_args}},mode=max,ignore-error=true,scope=${CONTAINER_NAME}")
         fi
 

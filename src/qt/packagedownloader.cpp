@@ -2,8 +2,6 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include <bitcoin-build-config.h> // IWYU pragma: keep
-
 #include <qt/packagedownloader.h>
 
 #include <qt/guiutil.h>
@@ -37,7 +35,6 @@
 
 #include <algorithm>
 #include <array>
-#include <cctype>
 #include <fstream>
 #include <functional>
 #include <optional>
@@ -195,7 +192,7 @@ bool PathEndsWithIgnoreCase(const fs::path& path, std::string_view suffix)
     const std::string name = fs::PathToString(path.filename());
     if (name.size() < suffix.size()) return false;
     return std::equal(suffix.rbegin(), suffix.rend(), name.rbegin(), [](char a, char b) {
-        return std::tolower(static_cast<unsigned char>(a)) == std::tolower(static_cast<unsigned char>(b));
+        return ToLower(a) == ToLower(b);
     });
 }
 
@@ -1012,12 +1009,6 @@ private:
             return m_total_bytes == m_package.archive_size_bytes || m_total_bytes == 0;
         }
         return false;
-    }
-
-    bool downloadMetaMatches() const
-    {
-        const auto identity = readDownloadMetaIdentity();
-        return identity && metaIdentityMatchesPackage(*identity);
     }
 
     void saveDownloadMeta()

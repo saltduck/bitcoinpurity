@@ -53,6 +53,14 @@
 #define __builtin_bswap32 _byteswap_ulong
 #define __builtin_bswap64 _byteswap_uint64
 #define strdup _strdup
+#include <intrin.h>
+static __inline int datum_msvc_clzll(unsigned long long x)
+{
+	unsigned long index;
+	_BitScanReverse64(&index, x);
+	return 63 - (int)index;
+}
+#define __builtin_clzll datum_msvc_clzll
 #endif
 
 // For SV1

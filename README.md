@@ -42,7 +42,7 @@ Short-term consensus (see [doc/purity-consensus.md](doc/purity-consensus.md)):
 How to run Bitcoin Purity?
 --------------------------
 
-See [doc/INSTALL.md](doc/INSTALL.md)
+See [INSTALL.md](INSTALL.md)
 
 License
 -------

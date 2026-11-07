@@ -61,7 +61,7 @@ ValidationResult ValidateStart(Intro& intro, Response response = Response::CANCE
     });
     timer.start(0);
     // The asynchronous free-space checker may have updated this during the last dialog.
-    intro.setStatus(/*ST_OK=*/0, QString{}, 1ULL << 50);
+    intro.setStatus(/*status=*/0, QString{}, 1ULL << 50); // 0 == Intro::ST_OK
     result.accepted = static_cast<QWizard&>(intro).validateCurrentPage();
     return result;
 }
@@ -71,7 +71,7 @@ void OpenStoragePage(Intro& intro)
     // Starting on page 2 avoids fetching a remote package manifest.
     intro.setStartId(2);
     intro.restart();
-    intro.setStatus(/*ST_OK=*/0, QString{}, 1ULL << 50);
+    intro.setStatus(/*status=*/0, QString{}, 1ULL << 50); // 0 == Intro::ST_OK
 }
 } // namespace
 
@@ -204,7 +204,7 @@ void IntroTests::officialPackageWarning()
     buttons.at(1)->setChecked(true);
     intro.next();
     QCOMPARE(intro.currentId(), 2);
-    intro.setStatus(/*ST_OK=*/0, QString{}, 1ULL << 50);
+    intro.setStatus(/*status=*/0, QString{}, 1ULL << 50); // 0 == Intro::ST_OK
     QVERIFY(intro.selectedPackage());
     for (const auto response : {Response::CANCEL, Response::CONTINUE}) {
         const auto result = ValidateStart(intro, response);
