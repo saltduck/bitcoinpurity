@@ -145,6 +145,11 @@ jobs:
       - name: Install Homebrew packages
         env:
           HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK: 1
+          # Do not refresh formulae or upgrade preinstalled packages: on runner
+          # images where this macOS version is a Homebrew Tier 3 platform, that
+          # forces long source builds (llvm, rust, dotnet) that time out or fail.
+          HOMEBREW_NO_AUTO_UPDATE: 1
+          HOMEBREW_NO_INSTALL_UPGRADE: 1
         run: |
           # A workaround for "The `brew link` step did not complete successfully" error.
           brew install --quiet python@3 || brew link --overwrite python@3
@@ -223,16 +228,23 @@ jobs:
 
       - name: Install vcpkg if missing
         run: |
-          if ($env:VCPKG_INSTALLATION_ROOT -and (Test-Path "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe")) {
-            Write-Host "Using preinstalled vcpkg at $env:VCPKG_INSTALLATION_ROOT"
-            exit 0
+          $root = $env:VCPKG_INSTALLATION_ROOT
+          if (-not $root -and (Test-Path C:/vcpkg)) { $root = 'C:/vcpkg' }
+          if (-not $root) {
+            # Full clone: vcpkg.json pins a builtin-baseline commit.
+            git clone https://github.com/microsoft/vcpkg C:/vcpkg
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            $root = 'C:/vcpkg'
+          } elseif ((Test-Path "$root/.git") -and ((git -C $root rev-parse --is-shallow-repository) -eq 'true')) {
+            git -C $root fetch --unshallow
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }
-          # Full clone: vcpkg.json pins a builtin-baseline commit.
-          git clone https://github.com/microsoft/vcpkg C:/vcpkg
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          & C:/vcpkg/bootstrap-vcpkg.bat -disableMetrics
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          "VCPKG_INSTALLATION_ROOT=C:/vcpkg" >> $env:GITHUB_ENV
+          if (-not (Test-Path "$root/vcpkg.exe")) {
+            & "$root/bootstrap-vcpkg.bat" -disableMetrics
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+          Write-Host "Using vcpkg at $root"
+          "VCPKG_INSTALLATION_ROOT=$root" >> $env:GITHUB_ENV
 
       - name: Using vcpkg with MSBuild
         shell: bash
@@ -417,7 +429,15 @@ jobs:
         if: ${{ env.CONTAINER_NAME == 'ci_native_asan' }}
         # In the image build step, no external environment variables are available,
         # so any settings will need to be written to the settings env file:
-        run: sed -i "s|\${INSTALL_BCC_TRACING_TOOLS}|true|g" ./ci/test/00_setup_env_native_asan.sh
+        # The tracing tools need linux-headers for the host kernel; skip them
+        # when the runner's kernel has no matching Ubuntu headers package.
+        run: |
+          sudo apt-get update -qq
+          if apt-cache show "linux-headers-$(uname --kernel-release)" >/dev/null 2>&1; then
+            sed -i "s|\${INSTALL_BCC_TRACING_TOOLS}|true|g" ./ci/test/00_setup_env_native_asan.sh
+          else
+            echo "::warning title=bpfcc::No linux-headers package for kernel $(uname --kernel-release); USDT tracing tools are not installed"
+          fi
 
       - name: Set mmap_rnd_bits
         if: ${{ env.CONTAINER_NAME == 'ci_native_tsan' || env.CONTAINER_NAME == 'ci_native_msan' }}
@@ -447,6 +467,18 @@ jobs:
         uses: ./.github/actions/configure-docker
         with:
           use-warp: 'false'
+
+      - name: Create pull request merge commit
+        if: github.event_name == 'pull_request'
+        # The lint script requires HEAD to be the pull request merge commit
+        # (refs/pull/N/merge). Create it locally when the checkout is the PR head.
+        run: |
+          if [ "$(git rev-list -1 HEAD)" != "$(git rev-list -1 --merges HEAD)" ]; then
+            head_sha="$(git rev-parse HEAD)"
+            git fetch --no-tags "${{ github.server_url }}/${{ github.repository }}.git" "${{ github.base_ref }}"
+            git checkout --quiet --detach FETCH_HEAD
+            git -c user.name=ci -c user.email=ci@ci.ci merge --no-ff --no-edit "$head_sha"
+          fi
 
       - name: CI script
         run: |
