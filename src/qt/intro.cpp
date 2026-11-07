@@ -227,7 +227,7 @@ bool NeedsSyncSetup(const fs::path& base_datadir)
 {
     const fs::path settings_path = NetworkSettingsPath(base_datadir);
     std::error_code ec;
-    if (!std::filesystem::exists(settings_path, ec) || ec) {
+    if (!fs::exists(settings_path, ec) || ec) {
         return true;
     }
     std::map<std::string, common::SettingsValue> values;
@@ -286,7 +286,7 @@ bool SavedDataDirIsUsable(const fs::path& datadir)
     }
     blocks /= "blocks";
     std::error_code ec;
-    if (!std::filesystem::exists(blocks, ec) || ec) {
+    if (!fs::exists(blocks, ec) || ec) {
         return true;
     }
     return IsUsableDirectory(blocks);
@@ -310,7 +310,7 @@ void FreespaceChecker::check()
     fs::path parentDirOld = fs::path();
     while (parentDir.has_parent_path()) {
         std::error_code ec;
-        if (std::filesystem::exists(parentDir, ec) && !ec) {
+        if (fs::exists(parentDir, ec) && !ec) {
             break;
         }
         parentDir = parentDir.parent_path();
@@ -508,7 +508,7 @@ IntroStoragePage::IntroStoragePage(Intro* wizard)
     m_prune = new QCheckBox(Intro::tr("Limit block chain storage to"), m_p2p_page);
     m_prune->setToolTip(Intro::tr("Reverting this setting requires re-downloading the entire blockchain. It is faster to download the full chain first and prune it later. Disables some advanced features."));
     m_prune_mib = new QSpinBox(m_p2p_page);
-    m_prune_mib->setSuffix(Intro::tr(" MiB"));
+    m_prune_mib->setSuffix(QStringLiteral(" ") + Intro::tr("MiB"));
     m_prune_suffix = new QLabel(m_p2p_page);
     prune_layout->addWidget(m_prune);
     prune_layout->addWidget(m_prune_mib);

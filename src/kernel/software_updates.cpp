@@ -13,7 +13,6 @@
 #include <univalue.h>
 
 #include <algorithm>
-#include <cctype>
 #include <charconv>
 #include <limits>
 #include <optional>
@@ -52,9 +51,7 @@ std::optional<CPubKey> EmbeddedSigningPubKey()
 
 std::string ToLowerAscii(std::string_view input)
 {
-    std::string out(input);
-    std::transform(out.begin(), out.end(), out.begin(), [](unsigned char c) { return std::tolower(c); });
-    return out;
+    return ToLower(input);
 }
 
 
@@ -103,7 +100,7 @@ std::optional<ParsedSoftwareVersion> ParseSoftwareVersionString(std::string_view
     if (dash != std::string_view::npos && dash > 0) {
         const auto suffix = input.substr(dash + 1);
         const bool build_metadata = !suffix.empty() &&
-            std::all_of(suffix.begin(), suffix.end(), [](unsigned char c) { return std::isalnum(c); });
+            std::all_of(suffix.begin(), suffix.end(), [](char c) { return IsDigit(c) || (ToLower(c) >= 'a' && ToLower(c) <= 'z'); });
         if (build_metadata) {
             input = input.substr(0, dash);
         }
@@ -114,7 +111,7 @@ std::optional<ParsedSoftwareVersion> ParseSoftwareVersionString(std::string_view
     if (rc_pos != std::string_view::npos) {
         size_t rc_start = rc_pos + 2;
         size_t rc_end = rc_start;
-        while (rc_end < input.size() && std::isdigit(static_cast<unsigned char>(input[rc_end]))) {
+        while (rc_end < input.size() && IsDigit(input[rc_end])) {
             ++rc_end;
         }
         if (rc_end == rc_start || !ParseUnsignedComponent(input.substr(rc_start, rc_end - rc_start), rc_number) || rc_number < 1) {

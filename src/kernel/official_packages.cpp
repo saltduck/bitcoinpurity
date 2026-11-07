@@ -14,7 +14,6 @@
 #include <univalue.h>
 
 #include <algorithm>
-#include <cctype>
 #include <fstream>
 #include <functional>
 #include <limits>
@@ -51,9 +50,7 @@ std::optional<CPubKey> EmbeddedSigningPubKey()
 
 std::string ToLowerAscii(std::string_view input)
 {
-    std::string out(input);
-    std::transform(out.begin(), out.end(), out.begin(), [](unsigned char c) { return std::tolower(c); });
-    return out;
+    return ToLower(input);
 }
 
 bool IsAllowedDownloadHost(std::string_view host)
@@ -391,7 +388,8 @@ bool IsZipArchiveEntryPathSafe(std::string_view entry_path)
 {
     if (entry_path.empty()) return false;
     if (entry_path[0] == '/' || entry_path[0] == '\\') return false;
-    if (entry_path.size() >= 2 && std::isalpha(static_cast<unsigned char>(entry_path[0])) && entry_path[1] == ':') {
+    const char drive{ToLower(entry_path[0])};
+    if (entry_path.size() >= 2 && drive >= 'a' && drive <= 'z' && entry_path[1] == ':') {
         return false;
     }
 

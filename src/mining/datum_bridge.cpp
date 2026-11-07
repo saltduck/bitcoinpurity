@@ -2,7 +2,7 @@
 // Distributed under the MIT software license.
 #include <mining/datum_bridge.h>
 
-#include <bitcoin-build-config.h>
+#include <bitcoin-build-config.h> // IWYU pragma: keep
 #include <addresstype.h>
 #include <chainparams.h>
 #include <chainparamsbase.h>

@@ -4,17 +4,17 @@
 
 #include <node/datadir_confirm.h>
 
-#include <bitcoin-build-config.h>
+#include <bitcoin-build-config.h> // IWYU pragma: keep
 #include <chainparamsbase.h>
 #include <common/args.h>
 #include <logging.h>
 #include <util/fs.h>
+#include <util/strencodings.h>
 #include <util/string.h>
 #include <univalue.h>
 #include <util/translation.h>
 
 #include <algorithm>
-#include <cctype>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -41,13 +41,13 @@ enum class DirState {
 DirState InspectDirectory(const fs::path& path)
 {
     std::error_code ec;
-    const bool exists{std::filesystem::exists(path, ec)};
+    const bool exists{fs::exists(path, ec)};
     if (ec) return DirState::Unreadable;
     if (!exists) return DirState::Missing;
-    const bool is_directory{std::filesystem::is_directory(path, ec)};
+    const bool is_directory{fs::is_directory(path, ec)};
     if (ec) return DirState::Unreadable;
     if (!is_directory) return DirState::NotDirectory;
-    const bool empty{std::filesystem::is_empty(path, ec)};
+    const bool empty{fs::is_empty(path, ec)};
     if (ec) return DirState::Unreadable;
     return empty ? DirState::Empty : DirState::NonEmpty;
 }
@@ -199,8 +199,7 @@ MarkerRead ReadMarker(ArgsManager& args, const fs::path& net_dir)
 
 bool IsSystemdInvocationId(std::string_view id)
 {
-    if (id.size() != 32) return false;
-    return std::all_of(id.begin(), id.end(), [](unsigned char c) { return std::isxdigit(c) != 0; });
+    return id.size() == 32 && IsHex(id);
 }
 
 bool IsLaunchdManagedProcess(long ppid, long sid, const char* xpc_service_name)
