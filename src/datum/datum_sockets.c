@@ -338,7 +338,11 @@ void *datum_threadpool_thread(void *arg) {
 }
 
 void clean_thread_data(T_DATUM_THREAD_DATA *d, T_DATUM_SOCKET_APP *app) {
-	int i,ret;
+	int i;
+	
+	// thread_data_lock is initialized once by the app owner; RPC stats readers
+	// may hold it concurrently, so reset the thread state under the lock.
+	pthread_mutex_lock(&d->thread_data_lock);
 	
 	// clean up clients, just in case
 	for(i=0;i<app->max_clients_thread;i++) {
@@ -355,16 +359,10 @@ void clean_thread_data(T_DATUM_THREAD_DATA *d, T_DATUM_SOCKET_APP *app) {
 	
 	memset(d->pollfds, 0, sizeof(datum_pollfd) * app->max_clients_thread);
 	
-	// init the mutex
-	ret = pthread_mutex_init(&d->thread_data_lock, NULL);
-	if (ret) {
-		DLOG_FATAL("Could not init mutex for thread data: %s", strerror(ret));
-		panic_from_thread(__LINE__);
-		return;
-	}
-	
 	// fix the app pointer
 	d->app = app;
+	
+	pthread_mutex_unlock(&d->thread_data_lock);
 }
 
 int assign_to_thread(T_DATUM_SOCKET_APP *app, datum_socket_t fd) {
@@ -652,7 +650,7 @@ bool datum_sockets_setup_listening_sockets(const char * const purpose, const cha
 }
 
 void *datum_gateway_listener_thread(void *arg) {
-	int i, ret;
+	int i;
 	bool rejecting_now = false;
 	uint64_t last_reject_msg_tsms = 0, curtime_tsms = 0;
 	uint64_t reject_count = 0;
@@ -671,16 +669,9 @@ void *datum_gateway_listener_thread(void *arg) {
 	
 	DLOG_DEBUG("Setting up app '%s' on address %s port %d. (T:%d/TC:%d/C:%d)", app->name, datum_config.stratum_v1_listen_addr[0] ? datum_config.stratum_v1_listen_addr : "(any)", app->listen_port, app->max_threads, app->max_clients_thread, app->max_clients);
 	
-	// we assume the caller sets up the thread data in some way
-	// don't clobber those pointers
+	// we assume the caller sets up the thread data in some way, including
+	// initializing thread_data_lock; don't clobber those pointers
 	for(i=0;i<app->max_threads;i++) {
-		ret = pthread_mutex_init(&app->datum_threads[i].thread_data_lock, NULL);
-		if (ret) {
-			DLOG_FATAL("Could not init mutex for thread data: %s", strerror(ret));
-			panic_from_thread(__LINE__);
-			return NULL;
-		}
-		
 		// set app data pointer
 		app->datum_threads[i].app = app;
 		app->datum_threads[i].thread_id = i;
