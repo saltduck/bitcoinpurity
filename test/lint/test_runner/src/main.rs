@@ -486,6 +486,7 @@ fn get_pathspecs_exclude_whitespace() -> Vec<String> {
             "src/univalue/include/univalue_escapes.h",
             "src/univalue/test/object.cpp",
             "test/lint/git-subtree-check.sh",
+            ".github/workflows/release.yml", // release workflow is maintained separately
         ]
         .iter()
         .map(|s| format!(":(exclude){}", s)),
