@@ -449,6 +449,18 @@ jobs:
         # Prevents crashes due to high ASLR entropy
         run: sudo sysctl -w vm.mmap_rnd_bits=28
 
+      - name: Enable 32-bit ARM emulation
+        if: ${{ env.CONTAINER_NAME == 'ci_arm_linux' }}
+        # Some arm64 hosts (e.g. Neoverse V1/N2) cannot execute AArch32 binaries.
+        # Register qemu-arm with the fix-binary flag so armhf test binaries run
+        # under user-mode emulation inside the CI container.
+        run: |
+          if [ ! -e /proc/sys/fs/binfmt_misc/qemu-arm ]; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq qemu-user-static binfmt-support
+          fi
+          cat /proc/sys/fs/binfmt_misc/qemu-arm
+
       - name: CI script
         run: ./ci/test_run_all.sh
 
