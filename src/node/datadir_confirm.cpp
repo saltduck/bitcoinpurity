@@ -58,7 +58,7 @@ bool SettingsAreScoped(const fs::path& net_dir, const fs::path& settings_path)
     const fs::path settings{fs::absolute(settings_path).lexically_normal()};
     const fs::path relative{settings.lexically_relative(base)};
     if (relative.empty()) return false;
-    for (const fs::path& part : relative) {
+    for (const auto& part : relative) {
         if (part == "..") return false;
     }
     return true;
