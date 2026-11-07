@@ -64,6 +64,10 @@ target_include_directories(datum_solo PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_definitions(datum_solo PRIVATE
   DATUM_EMBEDDED=1
   $<$<PLATFORM_ID:Windows>:CURL_STATICLIB>
+  # The datum sources use POSIX/BSD APIs such as pthread_rwlock_t and usleep.
+  # depends builds compile C with a strict -std=c11, under which glibc hides
+  # them unless a feature-test macro is defined.
+  $<$<NOT:$<PLATFORM_ID:Windows>>:_GNU_SOURCE>
 )
 target_link_libraries(datum_solo
   PUBLIC
