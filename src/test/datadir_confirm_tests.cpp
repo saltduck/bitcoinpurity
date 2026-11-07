@@ -161,13 +161,13 @@ BOOST_AUTO_TEST_CASE(non_empty_directory_requires_explicit_confirmation)
     BOOST_CHECK(declined.error->message.original.find("not been confirmed") != std::string::npos);
     BOOST_CHECK(!declined.persist_status);
 
-    for (const std::string& answer : {"n", "", "nope", "yes", "EOF"}) {
+    for (const char* answer : {"n", "", "nope", "yes", "EOF"}) {
         const auto result{node::ConfirmDataDirFirstUse(args, Io(true, answer))};
         BOOST_CHECK_MESSAGE(result.error, answer);
         BOOST_CHECK(result.error->message.original.find("not accepted") != std::string::npos);
         BOOST_CHECK(!result.persist_status);
     }
-    for (const std::string& answer : {"y", "Y", " y "}) {
+    for (const char* answer : {"y", "Y", " y "}) {
         const auto result{node::ConfirmDataDirFirstUse(args, Io(true, answer))};
         BOOST_CHECK(!result.error);
         BOOST_CHECK_EQUAL(result.persist_status.value_or(""), "approved");
