@@ -205,7 +205,7 @@ fn get_subtrees() -> Vec<&'static str> {
         "src/crypto/ctaes",
         //"src/leveldb", No longer a subtree in this release branch, due to direct cherry-picks
         "src/minisketch",
-        "src/secp256k1",
+        //"src/secp256k1", No longer a pure subtree, due to direct cherry-picks; see get_vendored_dirs()
     ]
 }
 
@@ -215,6 +215,7 @@ fn get_vendored_dirs() -> Vec<&'static str> {
     vec![
         "src/datum",   // OCEAN-xyz/datum_gateway, see src/datum/NOTICE.md
         "src/qt/quirc", // dlbeer/quirc, see src/qt/quirc/LICENSE
+        "src/secp256k1", // subtree with cherry-picked upstream fixes, not subtree-checked
     ]
 }
 
