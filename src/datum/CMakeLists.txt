@@ -69,6 +69,15 @@ target_compile_definitions(datum_solo PRIVATE
   # them unless a feature-test macro is defined.
   $<$<NOT:$<PLATFORM_ID:Windows>>:_GNU_SOURCE>
 )
+if(MSVC)
+  # The datum sources use C11 <stdatomic.h>, which MSVC only provides behind
+  # /experimental:c11atomics, and __VA_OPT__, which needs the conforming
+  # preprocessor.
+  target_compile_options(datum_solo PRIVATE
+    $<$<COMPILE_LANGUAGE:C>:/experimental:c11atomics>
+    $<$<COMPILE_LANGUAGE:C>:/Zc:preprocessor>
+  )
+endif()
 target_link_libraries(datum_solo
   PUBLIC
     datum_curl
