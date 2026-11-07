@@ -435,7 +435,8 @@ void *datum_stratum_v1_socket_server(void *arg) {
 	}
 	pthread_join(pthread_datum_stratum_socket_server, NULL);
 	for (i = 0; i < app->max_threads; ++i) {
-		if (app->datum_threads[i].is_active) pthread_join(app->datum_threads[i].pthread, NULL);
+		// The listener thread was joined above, so pthread_started is stable here.
+		if (app->datum_threads[i].pthread_started) pthread_join(app->datum_threads[i].pthread, NULL);
 	}
 	pthread_mutex_lock(&stratum_app_lock);
 	global_stratum_app = NULL;

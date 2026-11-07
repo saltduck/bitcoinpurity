@@ -421,6 +421,7 @@ int assign_to_thread(T_DATUM_SOCKET_APP *app, datum_socket_t fd) {
 			DLOG_ERROR("Could not start new thread for TID %d", tid);
 			return 0;
 		}
+		app->datum_threads[tid].pthread_started = true;
 		app->datum_active_threads++;
 	} else {
 		// active threads are maxed already.  find one with the fewest clients
