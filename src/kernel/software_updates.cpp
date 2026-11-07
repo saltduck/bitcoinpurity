@@ -291,7 +291,7 @@ std::optional<SoftwareReleaseInfo> ParseSoftwareReleaseManifest(
     }
     release.urgency = *parsed_urgency;
 
-    const UniValue artifacts = latest.find_value("artifacts");
+    const UniValue& artifacts = latest.find_value("artifacts");
     if (!artifacts.isArray()) {
         LogPrintf("Software updates: missing artifacts array in %s\n", source_label);
         return std::nullopt;

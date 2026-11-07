@@ -68,7 +68,7 @@ std::optional<fs::path> ScopedSettingsPath(ArgsManager& args, const fs::path& ne
 {
     const fs::path settings{args.GetPathArg("-settings", BITCOIN_SETTINGS_FILENAME)};
     if (settings.empty() || net_dir.empty()) return std::nullopt;
-    const fs::path path{fsbridge::AbsPathJoin(fs::absolute(net_dir), settings)};
+    fs::path path{fsbridge::AbsPathJoin(fs::absolute(net_dir), settings)};
     if (!SettingsAreScoped(net_dir, path)) return std::nullopt;
     return path;
 }

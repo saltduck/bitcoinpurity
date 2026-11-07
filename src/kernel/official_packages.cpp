@@ -184,21 +184,21 @@ std::vector<std::string> OfficialPackagesConfigFilenames(ChainType chain)
     names.push_back("official-packages-" + ChainTypeToString(chain) + ".json");
     switch (chain) {
     case ChainType::MAIN:
-        names.push_back("official-packages-mainnet.json");
+        names.emplace_back("official-packages-mainnet.json");
         break;
     case ChainType::TESTNET:
-        names.push_back("official-packages-testnet.json");
+        names.emplace_back("official-packages-testnet.json");
         break;
     default:
         break;
     }
-    names.push_back("official-packages.json");
+    names.emplace_back("official-packages.json");
     return names;
 }
 
 std::optional<fs::path> ResolveExplicitOfficialPackagesPath(const ArgsManager& args)
 {
-    const fs::path arg_path = fs::PathFromString(args.GetArg("-officialpackages", ""));
+    fs::path arg_path = fs::PathFromString(args.GetArg("-officialpackages", ""));
     if (arg_path.empty()) return std::nullopt;
     if (arg_path.is_absolute() && fs::exists(arg_path)) {
         return arg_path;
@@ -206,7 +206,7 @@ std::optional<fs::path> ResolveExplicitOfficialPackagesPath(const ArgsManager& a
     if (fs::exists(arg_path)) {
         return fs::absolute(arg_path);
     }
-    const fs::path datadir_path = AbsPathForConfigVal(args, arg_path, /*net_specific=*/false);
+    fs::path datadir_path = AbsPathForConfigVal(args, arg_path, /*net_specific=*/false);
     if (fs::exists(datadir_path)) {
         return datadir_path;
     }
@@ -216,7 +216,7 @@ std::optional<fs::path> ResolveExplicitOfficialPackagesPath(const ArgsManager& a
 std::optional<fs::path> FindDatadirOfficialPackagesPath(const ArgsManager& args, ChainType chain)
 {
     for (const auto& filename : OfficialPackagesConfigFilenames(chain)) {
-        const fs::path datadir_path = AbsPathForConfigVal(args, fs::PathFromString(filename), /*net_specific=*/false);
+        fs::path datadir_path = AbsPathForConfigVal(args, fs::PathFromString(filename), /*net_specific=*/false);
         if (fs::exists(datadir_path)) return datadir_path;
     }
     return std::nullopt;
@@ -286,7 +286,7 @@ bool IsOfficialSnapshotTrusted(
     return true;
 }
 
-bool JsonHasDuplicateKeys(const UniValue& value)
+bool JsonHasDuplicateKeys(const UniValue& value) // NOLINT(misc-no-recursion)
 {
     if (value.isObject()) {
         std::set<std::string> keys;
@@ -304,7 +304,7 @@ bool JsonHasDuplicateKeys(const UniValue& value)
 
 namespace {
 
-void CanonicalizeJsonValue(UniValue& value)
+void CanonicalizeJsonValue(UniValue& value) // NOLINT(misc-no-recursion)
 {
     if (value.isObject()) {
         std::map<std::string, UniValue> fields;

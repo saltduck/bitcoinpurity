@@ -93,7 +93,7 @@ std::optional<std::string> FetchOfficialPackagesJson(const QUrl& url, QString& e
         return std::nullopt;
     }
 
-    const std::string contents = reply->readAll().toStdString();
+    std::string contents = reply->readAll().toStdString();
     reply->deleteLater();
     QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
     if (contents.empty()) {
