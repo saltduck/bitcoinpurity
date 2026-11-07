@@ -209,10 +209,19 @@ fn get_subtrees() -> Vec<&'static str> {
     ]
 }
 
-/// Return the pathspecs to exclude all subtrees
+/// Return vendored upstream source paths that are not git subtrees, but are
+/// excluded from lints like subtrees are.
+fn get_vendored_dirs() -> Vec<&'static str> {
+    vec![
+        "src/datum", // OCEAN-xyz/datum_gateway, see src/datum/NOTICE.md
+    ]
+}
+
+/// Return the pathspecs to exclude all subtrees and vendored directories
 fn get_pathspecs_exclude_subtrees() -> Vec<String> {
     get_subtrees()
         .iter()
+        .chain(get_vendored_dirs().iter())
         .map(|s| format!(":(exclude){}", s))
         .collect()
 }
@@ -644,6 +653,7 @@ fn lint_doc() -> LintResult {
 fn lint_markdown() -> LintResult {
     let bin_name = "mlc";
     let mut md_ignore_paths = get_subtrees();
+    md_ignore_paths.extend(get_vendored_dirs());
     md_ignore_paths.push("./doc/README_doxygen.md");
     let md_ignore_path_str = md_ignore_paths.join(",");
 
