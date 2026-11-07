@@ -55,6 +55,7 @@ REGEXP_EXTERNAL_DEPENDENCIES_EXCLUSIONS = [
     "src/secp256k1/",
     "src/minisketch/",
     "src/datum/",
+    "src/qt/quirc/",
     "src/tinyformat.h",
 ]
 

@@ -213,7 +213,8 @@ fn get_subtrees() -> Vec<&'static str> {
 /// excluded from lints like subtrees are.
 fn get_vendored_dirs() -> Vec<&'static str> {
     vec![
-        "src/datum", // OCEAN-xyz/datum_gateway, see src/datum/NOTICE.md
+        "src/datum",   // OCEAN-xyz/datum_gateway, see src/datum/NOTICE.md
+        "src/qt/quirc", // dlbeer/quirc, see src/qt/quirc/LICENSE
     ]
 }
 
