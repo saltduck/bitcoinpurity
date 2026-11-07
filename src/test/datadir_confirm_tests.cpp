@@ -72,17 +72,6 @@ node::DataDirPromptIo Io(bool terminal, std::string response = "", bool systemd 
     return io;
 }
 
-fs::path NetDir(const fs::path& base, ChainType chain)
-{
-    SelectBaseParams(chain);
-    switch (chain) {
-    case ChainType::TESTNET: return base / "testnet3";
-    case ChainType::REGTEST: return base / "regtest";
-    case ChainType::MAIN: return base;
-    default: return base;
-    }
-}
-
 } // namespace
 
 BOOST_FIXTURE_TEST_SUITE(datadir_confirm_tests, BasicTestingSetup)
