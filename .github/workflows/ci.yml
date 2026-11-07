@@ -51,12 +51,10 @@ jobs:
     env:
       MAX_COUNT: 6
     steps:
-      - name: Determine fetch depth
-        run: echo "FETCH_DEPTH=$((${{ github.event.pull_request.commits }} + 2))" >> "$GITHUB_ENV"
       - uses: actions/checkout@v6
         with:
           ref: ${{ github.event.pull_request.head.sha }}
-          fetch-depth: ${{ env.FETCH_DEPTH }}
+          fetch-depth: 0
       - name: Determine commit range
         run: |
           # Checkout HEAD~ and find the test base commit
@@ -129,9 +127,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
-        with:
-          # Ensure the latest merged pull request state is used, even on re-runs.
-          ref: ${{ github.event_name == 'pull_request' && github.ref || '' }}
 
       - name: Clang version
         run: |
@@ -201,9 +196,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
-        with:
-          # Ensure the latest merged pull request state is used, even on re-runs.
-          ref: ${{ github.event_name == 'pull_request' && github.ref || '' }}
 
       - name: Set up VS Developer Prompt
         shell: pwsh -Command "$PSVersionTable; $PSNativeCommandUseErrorActionPreference = $true; $ErrorActionPreference = 'Stop'; & '{0}'"
@@ -276,8 +268,12 @@ jobs:
           BITCOINUTIL: '${{ github.workspace }}\build\bin\Release\bitcoin-util.exe'
           BITCOINWALLET: '${{ github.workspace }}\build\bin\Release\bitcoin-wallet.exe'
           TEST_RUNNER_EXTRA: ${{ github.event_name != 'pull_request' && '--extended' || '' }}
-        shell: cmd
-        run: py -3 test\functional\test_runner.py --jobs %NUMBER_OF_PROCESSORS% --ci --quiet --tmpdirprefix=%RUNNER_TEMP% --combinedlogslen=99999999 --timeout-factor=%TEST_RUNNER_TIMEOUT_FACTOR% %TEST_RUNNER_EXTRA%
+        shell: pwsh
+        run: |
+          $extra = @()
+          if ($env:TEST_RUNNER_EXTRA) { $extra += $env:TEST_RUNNER_EXTRA }
+          py -3 test\functional\test_runner.py --jobs $env:NUMBER_OF_PROCESSORS --ci --quiet "--tmpdirprefix=$env:RUNNER_TEMP" --combinedlogslen=99999999 "--timeout-factor=$env:TEST_RUNNER_TIMEOUT_FACTOR" @extra
+          exit $LASTEXITCODE
 
       - name: Clone corpora
         if: matrix.job-type == 'fuzz'
@@ -292,9 +288,10 @@ jobs:
         working-directory: build
         env:
           BITCOINFUZZ: '${{ github.workspace }}\build\bin\Release\fuzz.exe'
-        shell: cmd
+        shell: pwsh
         run: |
-          py -3 test\fuzz\test_runner.py --par %NUMBER_OF_PROCESSORS% --loglevel DEBUG %RUNNER_TEMP%\qa-assets\fuzz_corpora
+          py -3 test\fuzz\test_runner.py --par $env:NUMBER_OF_PROCESSORS --loglevel DEBUG "$env:RUNNER_TEMP\qa-assets\fuzz_corpora"
+          exit $LASTEXITCODE
 
   ci-matrix:
     name: ${{ matrix.name }}
@@ -385,9 +382,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
-        with:
-          # Ensure the latest merged pull request state is used, even on re-runs.
-          ref: ${{ github.event_name == 'pull_request' && github.ref || '' }}
 
       - name: Configure environment
         uses: ./.github/actions/configure-environment
@@ -429,7 +423,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
         with:
-          ref: ${{ github.event_name == 'pull_request' && github.ref || '' }}
           fetch-depth: 0
 
       - name: Configure Docker
