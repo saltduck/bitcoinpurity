@@ -273,8 +273,10 @@ jobs:
           key: ${{ github.job }}-vcpkg-binary-${{ hashFiles('cmake_version', 'msbuild_version', 'toolset_version', 'vcpkg.json') }}
 
       - name: Generate build system
+        # --clean-after-build drops each port's buildtrees and packages once it
+        # is installed, so building Qt from source fits on the runner's disk.
         run: |
-          cmake -B build --preset vs2022-static -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT\scripts\buildsystems\vcpkg.cmake" -D RDTS_CONSENT=RUNTIME_CHECK ${{ matrix.generate-options }}
+          cmake -B build --preset vs2022-static -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT\scripts\buildsystems\vcpkg.cmake" -DVCPKG_INSTALL_OPTIONS="--clean-after-build" -D RDTS_CONSENT=RUNTIME_CHECK ${{ matrix.generate-options }}
 
       - name: Save vcpkg binary cache
         uses: actions/cache/save@v5
