@@ -440,6 +440,16 @@ void *datum_stratum_v1_socket_server(void *arg) {
 	}
 	pthread_mutex_lock(&stratum_app_lock);
 	global_stratum_app = NULL;
+	for (i = 0; i < app->max_threads; ++i) {
+		// Each pool thread allocates its duplicate-share table in its init function.
+		T_DATUM_STRATUM_THREADPOOL_DATA *sdata = app->datum_threads[i].app_thread_data;
+		T_DATUM_STRATUM_DUPES *dupes = sdata ? sdata->dupes : NULL;
+		if (dupes) {
+			free(dupes->ptr);
+			free(dupes);
+			sdata->dupes = NULL;
+		}
+	}
 	free(app->datum_threads[0].client_data[0].app_client_data);
 	free(app->datum_threads[0].app_thread_data);
 	for (i = 0; i < app->max_threads; ++i) {
