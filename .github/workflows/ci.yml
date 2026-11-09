@@ -14,6 +14,7 @@ on:
   push:
     branches:
       - master
+      - saltduck-patch-2
 
 concurrency:
   group: ${{ github.event_name != 'pull_request' && github.run_id || github.ref }}
