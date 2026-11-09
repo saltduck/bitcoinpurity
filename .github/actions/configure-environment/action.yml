@@ -45,20 +45,31 @@ runs:
           echo "::notice title=Persistent cache::$CACHE_ROOT is not a writable directory on this runner; using per-job cache directories"
           exit 0
         fi
-        # ccache and built depends depend on the job's configuration, so keep
-        # them per container; sources and previous releases can be shared.
-        declare -A dirs=(
-          ["$CCACHE_DIR"]="$CACHE_ROOT/ccache/$CONTAINER_NAME"
-          ["$BASE_CACHE"]="$CACHE_ROOT/depends-built/$CONTAINER_NAME"
-          ["$SOURCES_PATH"]="$CACHE_ROOT/depends-sources"
-          ["$PREVIOUS_RELEASES_DIR"]="$CACHE_ROOT/previous-releases"
-        )
-        for link in "${!dirs[@]}"; do
-          mkdir -p "${dirs[$link]}" "$(dirname "$link")"
-          rm -rf "$link"
-          # The CI script bind-mounts these paths into the container; Docker
-          # resolves the symlink on the host.
-          ln -s "${dirs[$link]}" "$link"
-          echo "$link -> ${dirs[$link]}"
-        done
-        echo "CI_PERSISTENT_CACHE=true" >> "$GITHUB_ENV"
+        # Built depends packages contain absolute paths of the depends prefix
+        # (e.g. in their CMake config files), and ccache only hits when paths
+        # match, so the caches need the same root directory in every run. Use
+        # one root per container: the container name is unique per job
+        # configuration. This assumes a host runs one job of a given
+        # configuration at a time, which the fixed container name already
+        # requires.
+        root="$CACHE_ROOT/work/$CONTAINER_NAME"
+        # The build directory is kept too, so a run builds incrementally on top
+        # of the previous one with the same configuration. (The container
+        # writes it as root, so it can't be removed from here anyway.)
+        mkdir -p "$root/depends" "$CACHE_ROOT/depends-sources" "$CACHE_ROOT/previous-releases"
+        # Sources and previous releases don't depend on the path or the job, so
+        # share them. The CI script bind-mounts these paths into the container;
+        # Docker resolves the symlinks on the host.
+        ln -sfn "$CACHE_ROOT/depends-sources" "$root/depends/sources"
+        ln -sfn "$CACHE_ROOT/previous-releases" "$root/previous_releases"
+        {
+          echo "BASE_ROOT_DIR=$root"
+          echo "BASE_BUILD_DIR=$root/build"
+          echo "CCACHE_DIR=$root/ccache_dir"
+          echo "DEPENDS_DIR=$root/depends"
+          echo "BASE_CACHE=$root/depends/built"
+          echo "SOURCES_PATH=$root/depends/sources"
+          echo "PREVIOUS_RELEASES_DIR=$root/previous_releases"
+          echo "CI_PERSISTENT_CACHE=true"
+        } >> "$GITHUB_ENV"
+        echo "Using persistent root $root"
