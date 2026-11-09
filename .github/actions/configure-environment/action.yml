@@ -25,3 +25,40 @@ runs:
       run: |
         source $FILE_ENV
         echo "CONTAINER_NAME=$CONTAINER_NAME" >> "$GITHUB_ENV"
+
+    # runner.temp is a fresh directory for every job, and the cache actions
+    # only save on pushes to the default branch, so a self-hosted runner would
+    # otherwise start every job cold. When the repository variable
+    # CI_PERSISTENT_CACHE_DIR names a directory on the runner host, keep
+    # ccache, depends and previous releases there across jobs instead.
+    - name: Use persistent cache directories
+      if: ${{ runner.environment == 'self-hosted' && vars.CI_PERSISTENT_CACHE_DIR != '' }}
+      shell: bash
+      env:
+        CACHE_ROOT: ${{ vars.CI_PERSISTENT_CACHE_DIR }}
+      run: |
+        set -euo pipefail
+        # Only a host that opted in by creating the directory uses it; other
+        # self-hosted runners (e.g. hosted agents that report themselves as
+        # self-hosted) keep the default per-job directories.
+        if [ ! -d "$CACHE_ROOT" ] || [ ! -w "$CACHE_ROOT" ]; then
+          echo "::notice title=Persistent cache::$CACHE_ROOT is not a writable directory on this runner; using per-job cache directories"
+          exit 0
+        fi
+        # ccache and built depends depend on the job's configuration, so keep
+        # them per container; sources and previous releases can be shared.
+        declare -A dirs=(
+          ["$CCACHE_DIR"]="$CACHE_ROOT/ccache/$CONTAINER_NAME"
+          ["$BASE_CACHE"]="$CACHE_ROOT/depends-built/$CONTAINER_NAME"
+          ["$SOURCES_PATH"]="$CACHE_ROOT/depends-sources"
+          ["$PREVIOUS_RELEASES_DIR"]="$CACHE_ROOT/previous-releases"
+        )
+        for link in "${!dirs[@]}"; do
+          mkdir -p "${dirs[$link]}" "$(dirname "$link")"
+          rm -rf "$link"
+          # The CI script bind-mounts these paths into the container; Docker
+          # resolves the symlink on the host.
+          ln -s "${dirs[$link]}" "$link"
+          echo "$link -> ${dirs[$link]}"
+        done
+        echo "CI_PERSISTENT_CACHE=true" >> "$GITHUB_ENV"

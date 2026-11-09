@@ -430,6 +430,8 @@ jobs:
 
       - name: Restore caches
         id: restore-cache
+        # Persistent cache directories on a self-hosted runner replace the cache actions.
+        if: ${{ env.CI_PERSISTENT_CACHE != 'true' }}
         uses: ./.github/actions/restore-caches
 
       - name: Configure Docker
@@ -478,6 +480,7 @@ jobs:
         run: ./ci/test_run_all.sh
 
       - name: Save caches
+        if: ${{ env.CI_PERSISTENT_CACHE != 'true' }}
         uses: ./.github/actions/save-caches
 
   ci-matrix-heavy:
