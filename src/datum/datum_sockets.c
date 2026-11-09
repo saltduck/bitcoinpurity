@@ -365,6 +365,17 @@ void clean_thread_data(T_DATUM_THREAD_DATA *d, T_DATUM_SOCKET_APP *app) {
 	pthread_mutex_unlock(&d->thread_data_lock);
 }
 
+// A client that already closed its end can keep its slot until its pool thread
+// next polls it, which may lag behind a quick reconnect from the same host
+// (notably with WSAPoll on Windows). Peek without consuming data so such stale
+// slots do not count against the per-IP limit. Client sockets are non-blocking.
+static bool datum_client_peer_closed(datum_socket_t fd) {
+	char byte;
+	const int n = recv(fd, &byte, 1, MSG_PEEK | DATUM_MSG_DONTWAIT);
+	if (n == 0) return true;
+	return n < 0 && !datum_socket_would_block();
+}
+
 int assign_to_thread(T_DATUM_SOCKET_APP *app, datum_socket_t fd) {
 	// Only one thread will be calling this function for a particular "app"
 	// under the current design.  Safe to assume that multiple clients will
@@ -381,7 +392,8 @@ int assign_to_thread(T_DATUM_SOCKET_APP *app, datum_socket_t fd) {
 	for (i = 0; i < app->max_threads; ++i) {
 		for (j = 0; j < app->max_clients_thread; ++j) {
 			if (app->datum_threads[i].client_data[j].fd > 0 &&
-				!strcmp(app->datum_threads[i].client_data[j].rem_host, remote_ip)) ++per_ip;
+				!strcmp(app->datum_threads[i].client_data[j].rem_host, remote_ip) &&
+				!datum_client_peer_closed(app->datum_threads[i].client_data[j].fd)) ++per_ip;
 		}
 	}
 	if (per_ip >= datum_config.stratum_v1_max_clients_per_ip) {
