@@ -1417,7 +1417,15 @@ static void SyncCoinsTipAfterChainSync(const NodeContext& node)
     }
 
     LogDebug(BCLog::COINDB, "Finished syncing to tip, syncing chainstate to disk\n");
-    node.chainman->ActiveChainstate().CoinsTip().Sync();
+    // Go through FlushStateToDisk rather than syncing the coins cache directly:
+    // the coins database may refer to blocks that are only known to the block
+    // index once it has been written, so the block files and the block index
+    // must be on disk first. Otherwise a crash while the coins are being
+    // written leaves a chainstate that ReplayBlocks() cannot recover from.
+    BlockValidationState state;
+    if (!node.chainman->ActiveChainstate().FlushStateToDisk(state, FlushStateMode::FORCE_SYNC)) {
+        LogWarning("Failed to sync chainstate to disk (%s)", state.ToString());
+    }
 }
 
 bool AppInitInterfaces(NodeContext& node)
