@@ -8,6 +8,8 @@ on:
 
   # See: https://docs.github.com/en/actions/writing-workflows/choosing-when-your-workflow-runs/events-that-trigger-workflows#pull_request.
   pull_request:
+    # `labeled` lets adding the full-ci label start the heavy jobs.
+    types: [opened, synchronize, reopened, labeled]
     branches:
       - master
   # See: https://docs.github.com/en/actions/writing-workflows/choosing-when-your-workflow-runs/events-that-trigger-workflows#push.
@@ -18,6 +20,11 @@ on:
 
 concurrency:
   group: ${{ github.event_name != 'pull_request' && github.run_id || github.ref }}
+
+# Heavy jobs (sanitizers, fuzzing, previous releases, test each commit) run only
+# on manual workflow_dispatch runs, pushes to master, and pull requests labeled
+# full-ci. Ordinary pull requests and pushes to other branches run the rest.
+# The heavy jobs reuse the steps of their light counterparts via YAML anchors.
 
 env:
   CI_FAILFAST_TEST_LEAVE_DANGLING: 1  # GHA does not care about dangling processes and setting this variable avoids killing the CI script itself on error
@@ -49,7 +56,7 @@ jobs:
   test-each-commit:
     name: 'test each commit'
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request' && github.event.pull_request.commits != 1
+    if: github.event_name == 'pull_request' && github.event.pull_request.commits != 1 && contains(github.event.pull_request.labels.*.name, 'full-ci')
     timeout-minutes: 240  # Use maximum time, see https://docs.github.com/en/actions/writing-workflows/workflow-syntax-for-github-actions#jobsjob_idtimeout-minutes. Assuming a worst case time of 1 hour per commit, this leads to a --max-count=6 below.
     env:
       MAX_COUNT: 6
@@ -114,20 +121,17 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        job-type: [standard, fuzz]
+        job-type: [standard]
         include:
           - job-type: standard
             file-env: './ci/test/00_setup_env_mac_native.sh'
             job-name: 'macOS 14 native, arm64, no depends, sqlite only, gui'
-          - job-type: fuzz
-            file-env: './ci/test/00_setup_env_mac_native_fuzz.sh'
-            job-name: 'macOS 14 native, arm64, fuzz'
 
-    env:
+    env: &macos-native-env
       DANGER_RUN_CI_ON_HOST: 1
       BASE_ROOT_DIR: ${{ github.workspace }}
 
-    steps:
+    steps: &macos-native-steps
       - name: Checkout
         uses: actions/checkout@v6
 
@@ -187,6 +191,22 @@ jobs:
           # https://github.com/actions/cache/blob/main/tips-and-workarounds.md#update-a-cache
           key: ${{ github.job }}-${{ matrix.job-type }}-ccache-${{ github.run_id }}
 
+  macos-native-arm64-fuzz:
+    name: ${{ matrix.job-name }}
+    runs-on: macos-14
+    if: ${{ (vars.SKIP_BRANCH_PUSH != 'true' || github.event_name == 'pull_request') && (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref_name == 'master') || contains(github.event.pull_request.labels.*.name, 'full-ci')) }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        job-type: [fuzz]
+        include:
+          - job-type: fuzz
+            file-env: './ci/test/00_setup_env_mac_native_fuzz.sh'
+            job-name: 'macOS 14 native, arm64, fuzz'
+    env: *macos-native-env
+    steps: *macos-native-steps
+
   win64-native:
     name: ${{ matrix.job-name }}
     # Use latest image, but hardcode version to avoid silent upgrades (and breaks).
@@ -195,23 +215,20 @@ jobs:
 
     if: ${{ vars.SKIP_BRANCH_PUSH != 'true' || github.event_name == 'pull_request' }}
 
-    env:
+    env: &win64-native-env
       PYTHONUTF8: 1
       TEST_RUNNER_TIMEOUT_FACTOR: 40
 
     strategy:
       fail-fast: false
       matrix:
-        job-type: [standard, fuzz]
+        job-type: [standard]
         include:
           - job-type: standard
             generate-options: '-DBUILD_GUI=OFF -DWITH_BDB=ON -DWITH_MINIUPNPC=ON -DWITH_ZMQ=ON -DBUILD_BENCH=ON -DWERROR=ON'
             job-name: 'Win64 native, VS 2022'
-          - job-type: fuzz
-            generate-options: '-DVCPKG_MANIFEST_NO_DEFAULT_FEATURES=ON -DVCPKG_MANIFEST_FEATURES="sqlite" -DBUILD_GUI=OFF -DBUILD_FOR_FUZZING=ON -DWERROR=ON'
-            job-name: 'Win64 native fuzz, VS 2022'
 
-    steps:
+    steps: &win64-native-steps
       - name: Checkout
         uses: actions/checkout@v6
 
@@ -333,13 +350,28 @@ jobs:
           py -3 test\fuzz\test_runner.py --par $env:NUMBER_OF_PROCESSORS --loglevel DEBUG "$env:RUNNER_TEMP\qa-assets\fuzz_corpora"
           exit $LASTEXITCODE
 
+  win64-native-fuzz:
+    name: ${{ matrix.job-name }}
+    runs-on: windows-2022
+    if: ${{ (vars.SKIP_BRANCH_PUSH != 'true' || github.event_name == 'pull_request') && (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref_name == 'master') || contains(github.event.pull_request.labels.*.name, 'full-ci')) }}
+    env: *win64-native-env
+    strategy:
+      fail-fast: false
+      matrix:
+        job-type: [fuzz]
+        include:
+          - job-type: fuzz
+            generate-options: '-DVCPKG_MANIFEST_NO_DEFAULT_FEATURES=ON -DVCPKG_MANIFEST_FEATURES="sqlite" -DBUILD_GUI=OFF -DBUILD_FOR_FUZZING=ON -DWERROR=ON'
+            job-name: 'Win64 native fuzz, VS 2022'
+    steps: *win64-native-steps
+
   ci-matrix:
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.fallback-runner }}
     if: ${{ vars.SKIP_BRANCH_PUSH != 'true' || github.event_name == 'pull_request' }}
     timeout-minutes: 240
 
-    env:
+    env: &ci-matrix-env
       DANGER_CI_ON_HOST_FOLDERS: 1
       FILE_ENV: ${{ matrix.file-env }}
 
@@ -359,12 +391,6 @@ jobs:
             timeout-minutes: 120
             file-env: './ci/test/00_setup_env_win64.sh'
 
-          - name: 'ASan + LSan + UBSan + integer, no depends, USDT'
-            warp-runner: 'warp-ubuntu-2404-x64-8x' # has to match container in ci/test/00_setup_env_native_asan.sh for tracing tools
-            fallback-runner: 'ubuntu-latest'
-            timeout-minutes: 120
-            file-env: './ci/test/00_setup_env_native_asan.sh'
-
           - name: 'macOS-cross, gui, no tests'
             warp-runner: 'warp-ubuntu-latest-x64-4x'
             fallback-runner: 'ubuntu-latest'
@@ -383,18 +409,6 @@ jobs:
             timeout-minutes: 120
             file-env: './ci/test/00_setup_env_i686_multiprocess.sh'
 
-          - name: 'fuzzer,address,undefined,integer, no depends'
-            warp-runner: 'warp-ubuntu-latest-x64-16x'
-            fallback-runner: 'ubuntu-latest'
-            timeout-minutes: 240
-            file-env: './ci/test/00_setup_env_native_fuzz.sh'
-
-          - name: 'previous releases, depends DEBUG'
-            warp-runner: 'warp-ubuntu-latest-x64-8x'
-            fallback-runner: 'ubuntu-latest'
-            timeout-minutes: 120
-            file-env: './ci/test/00_setup_env_native_previous_releases.sh'
-
           - name: 'CentOS, depends, gui'
             warp-runner: 'warp-ubuntu-latest-x64-16x'
             fallback-runner: 'ubuntu-latest'
@@ -407,19 +421,7 @@ jobs:
             timeout-minutes: 120
             file-env: './ci/test/00_setup_env_native_tidy.sh'
 
-          - name: 'TSan, depends, no gui'
-            warp-runner: 'warp-ubuntu-latest-x64-8x'
-            fallback-runner: 'ubuntu-latest'
-            timeout-minutes: 120
-            file-env: './ci/test/00_setup_env_native_tsan.sh'
-
-          - name: 'MSan, depends'
-            warp-runner: 'warp-ubuntu-latest-x64-16x'
-            fallback-runner: 'ubuntu-latest'
-            timeout-minutes: 120
-            file-env: './ci/test/00_setup_env_native_msan.sh'
-
-    steps:
+    steps: &ci-matrix-steps
       - name: Checkout
         uses: actions/checkout@v6
 
@@ -477,6 +479,50 @@ jobs:
 
       - name: Save caches
         uses: ./.github/actions/save-caches
+
+  ci-matrix-heavy:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.fallback-runner }}
+    if: ${{ (vars.SKIP_BRANCH_PUSH != 'true' || github.event_name == 'pull_request') && (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref_name == 'master') || contains(github.event.pull_request.labels.*.name, 'full-ci')) }}
+    timeout-minutes: 240
+
+    env: *ci-matrix-env
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: 'ASan + LSan + UBSan + integer, no depends, USDT'
+            warp-runner: 'warp-ubuntu-2404-x64-8x' # has to match container in ci/test/00_setup_env_native_asan.sh for tracing tools
+            fallback-runner: 'ubuntu-latest'
+            timeout-minutes: 120
+            file-env: './ci/test/00_setup_env_native_asan.sh'
+
+          - name: 'fuzzer,address,undefined,integer, no depends'
+            warp-runner: 'warp-ubuntu-latest-x64-16x'
+            fallback-runner: 'ubuntu-latest'
+            timeout-minutes: 240
+            file-env: './ci/test/00_setup_env_native_fuzz.sh'
+
+          - name: 'previous releases, depends DEBUG'
+            warp-runner: 'warp-ubuntu-latest-x64-8x'
+            fallback-runner: 'ubuntu-latest'
+            timeout-minutes: 120
+            file-env: './ci/test/00_setup_env_native_previous_releases.sh'
+
+          - name: 'TSan, depends, no gui'
+            warp-runner: 'warp-ubuntu-latest-x64-8x'
+            fallback-runner: 'ubuntu-latest'
+            timeout-minutes: 120
+            file-env: './ci/test/00_setup_env_native_tsan.sh'
+
+          - name: 'MSan, depends'
+            warp-runner: 'warp-ubuntu-latest-x64-16x'
+            fallback-runner: 'ubuntu-latest'
+            timeout-minutes: 120
+            file-env: './ci/test/00_setup_env_native_msan.sh'
+
+    steps: *ci-matrix-steps
 
   lint:
     name: 'lint'
