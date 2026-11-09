@@ -17,3 +17,9 @@ failing on the previous sources:
 - the exact ASERT header is accepted, including the harder activation block;
 - a header more than 2 hours in the future is rejected;
 - redownload rejects a wrong-`nBits` header that presync never saw.
+
+Fuzz target `headers_sync_state_asert` starts from a synthetic mainnet index
+below the anchor, between anchor and activation, or after activation. It can
+give fuzzed headers the required nBits, and asserts that every header presync
+accepts or redownload releases has the nBits and time full validation requires.
+It crashes on the previous sources.
