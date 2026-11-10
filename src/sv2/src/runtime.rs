@@ -622,6 +622,9 @@ async fn session(
                                 template.add_coinbase_tags(&cfg.pool_tag, &cfg.miner_tag)?;
                                 let job = Job::prepare(template,&outputs,prefix.clone(),open.extranonce_size as usize,open.channel_id,generation,target)?;
                                 let check = node.request(job.node_request("validate",&vec![0;job.rollable_size],job.template.version,job.template.ntime,0)?).await?;
+                                // A block connected between assembly and validation makes the
+                                // template stale; fetch a new one instead of ending the session.
+                                if check["ok"] != true && check["error"] == "stale-template" {force=true;continue;}
                                 if check["ok"] != true {return Err(failure(format!("local-template-invalid: {}",error_code(check["error"].as_str().unwrap_or("validation-failed").as_bytes()))));}
                                 shared.update(|s| s.stage = "declare-mining-job".into());
                                 jds.send_owned(Any::JobDeclaration(Jd::DeclareMiningJob(DeclareMiningJobOwned {
