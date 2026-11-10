@@ -128,7 +128,7 @@ public:
      * @returns a block template
      */
     virtual std::unique_ptr<BlockTemplate> createNewBlockLegacy(const node::BlockCreateOptions& options = {}) { return createNewBlock(options, false); }
-    virtual std::unique_ptr<BlockTemplate> createNewBlock(const node::BlockCreateOptions& options = {}, bool cooldown = true);
+    virtual std::unique_ptr<BlockTemplate> createNewBlock(const node::BlockCreateOptions& options = {}, bool cooldown = true) = 0;
     virtual std::unique_ptr<BlockTemplate> createNewBlock2(const node::BlockCreateOptions& options) { return createNewBlock(options, false); }
 
     //! Mempool lookup. Results preserve input order, with nullptr for missing entries.

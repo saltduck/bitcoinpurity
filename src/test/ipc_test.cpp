@@ -211,6 +211,9 @@ void IpcSocketPairTest(node::NodeContext* node)
         BOOST_REQUIRE(local);
         BOOST_REQUIRE(remote);
         BOOST_CHECK(remote->getBlock().GetHash() == local->getBlock().GetHash());
+        const auto remote_complete = remote_mining->createNewBlock2(options);
+        BOOST_REQUIRE(remote_complete);
+        BOOST_CHECK(remote_complete->getBlock().GetHash() == remote->getBlock().GetHash());
         BOOST_CHECK(remote->getBlockHeader().GetHash() == local->getBlockHeader().GetHash());
         BOOST_CHECK(remote->getTxFees() == local->getTxFees());
         BOOST_CHECK(remote->getTxSigops() == local->getTxSigops());

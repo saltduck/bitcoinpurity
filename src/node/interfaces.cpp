@@ -1116,6 +1116,8 @@ public:
         return getTip();
     }
 
+    std::unique_ptr<BlockTemplate> createNewBlock(const BlockCreateOptions& options, bool cooldown) override;
+
     std::unique_ptr<BlockTemplate> createNewBlockLegacy(const BlockCreateOptions& options) override
     {
         // Ensure m_tip_block is set so consumers of BlockTemplate can rely on that.
@@ -1229,13 +1231,13 @@ void Mining::interrupt()
 }
 } // namespace interfaces
 
-namespace interfaces {
-std::unique_ptr<BlockTemplate> Mining::createNewBlock(const node::BlockCreateOptions& options, bool cooldown)
+namespace node {
+std::unique_ptr<interfaces::BlockTemplate> MinerImpl::createNewBlock(const BlockCreateOptions& options, bool cooldown)
 {
     if (options.block_reserved_weight < MINIMUM_BLOCK_RESERVED_WEIGHT || options.block_reserved_weight > MAX_BLOCK_WEIGHT || options.coinbase_output_max_additional_sigops > MAX_BLOCK_SIGOPS_COST) {
         throw std::invalid_argument("Block template resource reservation out of range");
     }
-    if (!waitTipChanged(uint256::ZERO)) return {};
+    if (!waitTipChanged(uint256::ZERO, MillisecondsDouble::max())) return {};
     while (cooldown && isInitialBlockDownload()) {
         const auto tip = getTip();
         if (!tip || !waitTipChanged(tip->hash, MillisecondsDouble{1000}) || m_interrupted) return {};
@@ -1271,7 +1273,9 @@ std::unique_ptr<BlockTemplate> Mining::createNewBlock(const node::BlockCreateOpt
     merged.block_reserved_weight = std::max(merged.block_reserved_weight, options.block_reserved_weight);
     return createNewBlock2(merged);
 }
+} // namespace node
 
+namespace interfaces {
 bool Mining::checkBlock(const CBlock& input, const node::BlockCheckOptions& options, std::string& reason, std::string& debug)
 {
     auto& chainman = *CHECK_NONFATAL(CHECK_NONFATAL(context())->chainman);
