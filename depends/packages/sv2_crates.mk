@@ -133,9 +133,15 @@ $(package)_crate_hash=$(word 3,$(subst :, ,$(1)))
 $(package)_crate_file=crate-$(call $(package)_crate_name,$(1))-$(call $(package)_crate_version,$(1)).crate
 $(package)_extra_sources=$(foreach c,$($(package)_crates),$(call $(package)_crate_file,$(c)))
 
+# Iterate in the shell to keep the command below the per-argument size limit.
 define $(package)_fetch_cmds
-$(call fetch_file,$(package),$($(package)_download_path),$($(package)_download_file),$($(package)_file_name),$($(package)_sha256_hash)) && \
-$(foreach c,$($(package)_crates),$(call fetch_file,$(package),$($(package)_crates_path)/$(call $(package)_crate_name,$(c)),$(call $(package)_crate_name,$(c))-$(call $(package)_crate_version,$(c)).crate,$(call $(package)_crate_file,$(c)),$(call $(package)_crate_hash,$(c))) && ) true
+  $(call fetch_file,$(package),$($(package)_download_path),$($(package)_download_file),$($(package)_file_name),$($(package)_sha256_hash)) && \
+  for crate in $($(package)_crates); do \
+    name=$$$${crate%%:*}; version_hash=$$$${crate#*:}; \
+    version=$$$${version_hash%%:*}; checksum=$$$${version_hash#*:}; \
+    crate_file=crate-$$$$name-$$$$version.crate; \
+    $(call fetch_file,$(package),$($(package)_crates_path)/$$$$name,$$$$name-$$$$version.crate,$$$$crate_file,$$$$checksum) || exit 1; \
+  done
 endef
 
 # Lay the crates out as a cargo directory source. An empty "files" map is
