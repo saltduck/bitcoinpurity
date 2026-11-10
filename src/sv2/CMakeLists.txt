@@ -26,13 +26,77 @@ file(GLOB_RECURSE sv2_sources CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src
 set(sv2_cargo_env "CARGO_TARGET_DIR=${sv2_target_dir}")
 set(sv2_test_cargo_env "CARGO_TARGET_DIR=${sv2_target_dir}-test-pool")
 string(REPLACE "${sv2_target_dir}" "${sv2_target_dir}-test-pool" sv2_test_profile_dir "${sv2_profile_dir}")
+set(sv2_rustflags "$ENV{RUSTFLAGS}")
 if(MSVC AND NOT CMAKE_MSVC_RUNTIME_LIBRARY MATCHES "DLL")
-  list(APPEND sv2_cargo_env "RUSTFLAGS=$ENV{RUSTFLAGS} -C target-feature=+crt-static")
+  string(APPEND sv2_rustflags " -C target-feature=+crt-static")
   list(APPEND sv2_test_cargo_env "RUSTFLAGS=$ENV{RUSTFLAGS} -C target-feature=+crt-static")
 endif()
+list(APPEND sv2_cargo_env "RUSTC=${SV2_RUSTC}")
+if(SV2_RUST_TARGET)
+  # C code in build scripts (secp256k1-sys) must use the same cross compiler.
+  string(REPLACE "-" "_" sv2_target_env "${SV2_RUST_TARGET}")
+  set(sv2_target_cflags "${CMAKE_C_COMPILER_ARG1} ${CMAKE_C_FLAGS} ${CMAKE_C_FLAGS_RELEASE}")
+  if(CMAKE_C_COMPILER_ID MATCHES "Clang" AND CMAKE_C_COMPILER_TARGET)
+    string(PREPEND sv2_target_cflags "--target=${CMAKE_C_COMPILER_TARGET} ")
+  endif()
+  if(CMAKE_OSX_SYSROOT)
+    string(APPEND sv2_target_cflags " -isysroot ${CMAKE_OSX_SYSROOT}")
+  endif()
+  string(STRIP "${sv2_target_cflags}" sv2_target_cflags)
+  list(APPEND sv2_cargo_env
+    "CC_${sv2_target_env}=${CMAKE_C_COMPILER}"
+    "CFLAGS_${sv2_target_env}=${sv2_target_cflags}"
+    "AR_${sv2_target_env}=${CMAKE_AR}")
+endif()
+
+set(sv2_cargo_dir "${CMAKE_CURRENT_SOURCE_DIR}")
+set(sv2_cargo_mode --locked)
+set(sv2_cargo_prepare "")
+set(sv2_cargo_verify "")
+if(SV2_VENDOR_DIR)
+  # Offline build from the depends crate sources. Cargo rewrites the stratum
+  # entries of Cargo.lock as path sources, so build from a copy of the crate and
+  # check afterwards that every other locked version is unchanged.
+  set(sv2_cargo_dir "${CMAKE_CURRENT_BINARY_DIR}/crate")
+  set(sv2_cargo_home "${CMAKE_CURRENT_BINARY_DIR}/cargo-home")
+  file(MAKE_DIRECTORY "${sv2_cargo_dir}")
+  file(WRITE "${sv2_cargo_home}/config.toml"
+    "[source.crates-io]\n"
+    "replace-with = \"purity-vendored\"\n\n"
+    "[source.purity-vendored]\n"
+    "directory = \"${SV2_VENDOR_DIR}/vendor\"\n\n"
+    "[patch.\"https://github.com/stratum-mining/stratum\"]\n"
+    "stratum-core = { path = \"${SV2_VENDOR_DIR}/stratum/stratum-core\" }\n\n"
+    "[net]\n"
+    "offline = true\n")
+  if(SV2_BUILD_LINKER AND SV2_RUST_BUILD_TARGET)
+    file(APPEND "${sv2_cargo_home}/config.toml"
+      "\n[target.${SV2_RUST_BUILD_TARGET}]\n"
+      "linker = \"${SV2_BUILD_LINKER}\"\n")
+  endif()
+  list(APPEND sv2_cargo_env "CARGO_HOME=${sv2_cargo_home}")
+  # Keep build paths out of the archive so release builds are reproducible.
+  string(APPEND sv2_rustflags " --remap-path-prefix=${SV2_VENDOR_DIR}=/purity-sv2-vendor --remap-path-prefix=${sv2_cargo_dir}=/purity-sv2")
+  set(sv2_cargo_mode --offline)
+  set(sv2_cargo_prepare
+    COMMAND "${CMAKE_COMMAND}" -E rm -rf "${sv2_cargo_dir}/src"
+    COMMAND "${CMAKE_COMMAND}" -E make_directory "${sv2_cargo_dir}"
+    COMMAND "${CMAKE_COMMAND}" -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/src" "${sv2_cargo_dir}/src"
+    COMMAND "${CMAKE_COMMAND}" -E copy "${CMAKE_CURRENT_SOURCE_DIR}/Cargo.toml" "${CMAKE_CURRENT_SOURCE_DIR}/Cargo.lock" "${CMAKE_CURRENT_SOURCE_DIR}/rust-toolchain.toml" "${sv2_cargo_dir}/")
+  set(sv2_cargo_verify
+    COMMAND "${CMAKE_COMMAND}" "-DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/Cargo.lock" "-DACTUAL=${sv2_cargo_dir}/Cargo.lock" -P "${CMAKE_CURRENT_SOURCE_DIR}/check-vendored-lock.cmake")
+endif()
+
+string(STRIP "${sv2_rustflags}" sv2_rustflags)
+if(sv2_rustflags)
+  list(APPEND sv2_cargo_env "RUSTFLAGS=${sv2_rustflags}")
+endif()
+
 add_custom_command(OUTPUT "${sv2_archive}"
-  COMMAND "${CMAKE_COMMAND}" -E env ${sv2_cargo_env} "${SV2_CARGO}" build --locked --release --lib ${sv2_target_args}
-  WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+  ${sv2_cargo_prepare}
+  COMMAND "${CMAKE_COMMAND}" -E env ${sv2_cargo_env} "${SV2_CARGO}" build ${sv2_cargo_mode} --release --lib ${sv2_target_args}
+  ${sv2_cargo_verify}
+  WORKING_DIRECTORY "${sv2_cargo_dir}"
   DEPENDS ${sv2_sources} Cargo.toml Cargo.lock rust-toolchain.toml
   COMMENT "Building pinned embedded SV2 Rust library"
   VERBATIM)
@@ -43,8 +107,9 @@ add_dependencies(sv2_rust sv2_rust_build)
 if(WIN32)
   set_property(TARGET sv2_rust APPEND PROPERTY INTERFACE_LINK_LIBRARIES ws2_32 userenv bcrypt ntdll advapi32)
 elseif(APPLE)
-  find_library(SV2_SECURITY_FRAMEWORK Security REQUIRED)
-  set_property(TARGET sv2_rust APPEND PROPERTY INTERFACE_LINK_LIBRARIES "${SV2_SECURITY_FRAMEWORK}" resolv)
+  # Link the SDK framework by name: depends toolchains confine find_library()
+  # to the depends prefix, where no frameworks exist.
+  set_property(TARGET sv2_rust APPEND PROPERTY INTERFACE_LINK_LIBRARIES "-framework Security" resolv)
 else()
   set_property(TARGET sv2_rust APPEND PROPERTY INTERFACE_LINK_LIBRARIES ${CMAKE_DL_LIBS} Threads::Threads m)
 endif()
