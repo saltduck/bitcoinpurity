@@ -323,6 +323,14 @@ set_property(SOURCE macnotificationhandler.mm
   # Ignore warnings "'NSUserNotificationCenter' is deprecated: first deprecated in macOS 11.0".
   APPEND PROPERTY COMPILE_OPTIONS -Wno-deprecated-declarations
 )
+set_property(SOURCE packagedownloader.cpp softwareupdater.cpp
+  # Q_OBJECT classes local to these files get an unused trUtf8() under Qt 5.
+  APPEND PROPERTY COMPILE_OPTIONS $<$<CXX_COMPILER_ID:Clang,AppleClang>:-Wno-unused-member-function>
+)
+set_property(SOURCE quirc/decode.c quirc/identify.c quirc/quirc.c quirc/version_db.c
+  # Vendored third-party quirc sources.
+  APPEND PROPERTY COMPILE_OPTIONS -Wno-sign-compare
+)
 target_link_libraries(bitcoinqt
   PUBLIC
     "Qt${WITH_QT_VERSION}::Widgets"

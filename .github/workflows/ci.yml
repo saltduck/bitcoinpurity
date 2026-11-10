@@ -4,22 +4,30 @@
 
 name: CI
 on:
+  workflow_dispatch:
+
   # See: https://docs.github.com/en/actions/writing-workflows/choosing-when-your-workflow-runs/events-that-trigger-workflows#pull_request.
   pull_request:
+    # `labeled` lets adding the full-ci label start the heavy jobs.
+    types: [opened, synchronize, reopened, labeled]
+    branches:
+      - master
   # See: https://docs.github.com/en/actions/writing-workflows/choosing-when-your-workflow-runs/events-that-trigger-workflows#push.
   push:
     branches:
-      - '**'
-    tags-ignore:
-      - '**'
+      - master
+      - saltduck-patch-2
 
 concurrency:
   group: ${{ github.event_name != 'pull_request' && github.run_id || github.ref }}
-  cancel-in-progress: true
+
+# Heavy jobs (sanitizers, fuzzing, previous releases, test each commit) run only
+# on manual workflow_dispatch runs, pushes to master, and pull requests labeled
+# full-ci. Ordinary pull requests and pushes to other branches run the rest.
+# The heavy jobs reuse the steps of their light counterparts via YAML anchors.
 
 env:
   CI_FAILFAST_TEST_LEAVE_DANGLING: 1  # GHA does not care about dangling processes and setting this variable avoids killing the CI script itself on error
-  REPO_USE_WARP_RUNNERS: 'bitcoin/bitcoin' # Use warp runners for this repo, instead of falling back to the slow GHA runners
 
 jobs:
   datum-stage1:
@@ -45,37 +53,18 @@ jobs:
           cmake -S . -B build-datum-off -DBUILD_DATUM=OFF -DBUILD_SV2=OFF -DBUILD_TESTS=OFF -DBUILD_GUI=OFF -DENABLE_WALLET=OFF -DWITH_ZMQ=OFF -DWITH_USDT=OFF
           cmake --build build-datum-off --target bitcoind -j "$(nproc)"
 
-  runners:
-    name: 'determine runners'
-    runs-on: ubuntu-latest
-    outputs:
-      use-warp-runners: ${{ steps.runners.outputs.use-warp-runners }}
-    steps:
-      - id: runners
-        run: |
-          if [[ "${REPO_USE_WARP_RUNNERS}" == "${{ github.repository }}" ]]; then
-            echo "provider=warp" >> "$GITHUB_OUTPUT"
-            echo "::notice title=Runner Selection::Using Warp Runners"
-          else
-            echo "use-warp-runners=false" >> "$GITHUB_OUTPUT"
-            echo "::notice title=Runner Selection::Using GitHub-hosted runners"
-          fi
-
   test-each-commit:
     name: 'test each commit'
-    needs: runners
-    runs-on: ${{ needs.runners.outputs.provider == 'warp' && 'warp-ubuntu-latest-x64-8x' || 'ubuntu-latest' }}
-    if: github.event_name == 'pull_request' && github.event.pull_request.commits != 1
-    timeout-minutes: 360  # Use maximum time, see https://docs.github.com/en/actions/writing-workflows/workflow-syntax-for-github-actions#jobsjob_idtimeout-minutes. Assuming a worst case time of 1 hour per commit, this leads to a --max-count=6 below.
+    runs-on: ubuntu-latest-heavy
+    if: github.event_name == 'pull_request' && github.event.pull_request.commits != 1 && contains(github.event.pull_request.labels.*.name, 'full-ci')
+    timeout-minutes: 240  # Use maximum time, see https://docs.github.com/en/actions/writing-workflows/workflow-syntax-for-github-actions#jobsjob_idtimeout-minutes. Assuming a worst case time of 1 hour per commit, this leads to a --max-count=6 below.
     env:
       MAX_COUNT: 6
     steps:
-      - name: Determine fetch depth
-        run: echo "FETCH_DEPTH=$((${{ github.event.pull_request.commits }} + 2))" >> "$GITHUB_ENV"
       - uses: actions/checkout@v6
         with:
           ref: ${{ github.event.pull_request.head.sha }}
-          fetch-depth: ${{ env.FETCH_DEPTH }}
+          fetch-depth: 0
       - name: Determine commit range
         run: |
           # Checkout HEAD~ and find the test base commit
@@ -132,26 +121,19 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        job-type: [standard, fuzz]
+        job-type: [standard]
         include:
           - job-type: standard
             file-env: './ci/test/00_setup_env_mac_native.sh'
             job-name: 'macOS 14 native, arm64, no depends, sqlite only, gui'
-          - job-type: fuzz
-            file-env: './ci/test/00_setup_env_mac_native_fuzz.sh'
-            job-name: 'macOS 14 native, arm64, fuzz'
 
-    env:
+    env: &macos-native-env
       DANGER_RUN_CI_ON_HOST: 1
       BASE_ROOT_DIR: ${{ github.workspace }}
 
-    steps:
-      - &CHECKOUT
-        name: Checkout
+    steps: &macos-native-steps
+      - name: Checkout
         uses: actions/checkout@v6
-        with:
-          # Ensure the latest merged pull request state is used, even on re-runs.
-          ref: &CHECKOUT_REF_TMPL ${{ github.event_name == 'pull_request' && github.ref || '' }}
 
       - name: Clang version
         run: |
@@ -159,12 +141,27 @@ jobs:
           # doc/release-notes-empty-template.md and providing at least the
           # minimum clang version denoted in doc/dependencies.md.
           # See: https://developer.apple.com/documentation/xcode-release-notes/xcode-15-release-notes
-          sudo xcode-select --switch /Applications/Xcode_15.0.app
+          # Use Xcode 15 to stay close to the Xcode 15 SDK used by Guix release
+          # builds. Xcode 15.0 is not available on the Buildkite macOS 14
+          # agents, so pin Xcode 15.4.
+          xcode_app=/Applications/Xcode_15.4.app
+          if [ ! -d "$xcode_app" ]; then
+            echo "::error title=Xcode::$xcode_app is not installed"
+            ls -d /Applications/Xcode*.app || true
+            exit 1
+          fi
+          sudo xcode-select --switch "$xcode_app"
+          xcodebuild -version
           clang --version
 
       - name: Install Homebrew packages
         env:
           HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK: 1
+          # Do not refresh formulae or upgrade preinstalled packages: on runner
+          # images where this macOS version is a Homebrew Tier 3 platform, that
+          # forces long source builds (llvm, rust, dotnet) that time out or fail.
+          HOMEBREW_NO_AUTO_UPDATE: 1
+          HOMEBREW_NO_INSTALL_UPGRADE: 1
         run: |
           # A workaround for "The `brew link` step did not complete successfully" error.
           brew install --quiet python@3 || brew link --overwrite python@3
@@ -194,6 +191,22 @@ jobs:
           # https://github.com/actions/cache/blob/main/tips-and-workarounds.md#update-a-cache
           key: ${{ github.job }}-${{ matrix.job-type }}-ccache-${{ github.run_id }}
 
+  macos-native-arm64-fuzz:
+    name: ${{ matrix.job-name }}
+    runs-on: macos-14
+    if: ${{ (vars.SKIP_BRANCH_PUSH != 'true' || github.event_name == 'pull_request') && (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref_name == 'master') || contains(github.event.pull_request.labels.*.name, 'full-ci')) }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        job-type: [fuzz]
+        include:
+          - job-type: fuzz
+            file-env: './ci/test/00_setup_env_mac_native_fuzz.sh'
+            job-name: 'macOS 14 native, arm64, fuzz'
+    env: *macos-native-env
+    steps: *macos-native-steps
+
   win64-native:
     name: ${{ matrix.job-name }}
     # Use latest image, but hardcode version to avoid silent upgrades (and breaks).
@@ -202,24 +215,22 @@ jobs:
 
     if: ${{ vars.SKIP_BRANCH_PUSH != 'true' || github.event_name == 'pull_request' }}
 
-    env:
+    env: &win64-native-env
       PYTHONUTF8: 1
       TEST_RUNNER_TIMEOUT_FACTOR: 40
 
     strategy:
       fail-fast: false
       matrix:
-        job-type: [standard, fuzz]
+        job-type: [standard]
         include:
           - job-type: standard
             generate-options: '-DBUILD_GUI=OFF -DWITH_BDB=ON -DWITH_MINIUPNPC=ON -DWITH_ZMQ=ON -DBUILD_BENCH=ON -DWERROR=ON'
             job-name: 'Win64 native, VS 2022'
-          - job-type: fuzz
-            generate-options: '-DVCPKG_MANIFEST_NO_DEFAULT_FEATURES=ON -DVCPKG_MANIFEST_FEATURES="sqlite" -DBUILD_GUI=OFF -DBUILD_FOR_FUZZING=ON -DWERROR=ON'
-            job-name: 'Win64 native fuzz, VS 2022'
 
-    steps:
-      - *CHECKOUT
+    steps: &win64-native-steps
+      - name: Checkout
+        uses: actions/checkout@v6
 
       - name: Set up VS Developer Prompt
         shell: pwsh -Command "$PSVersionTable; $PSNativeCommandUseErrorActionPreference = $true; $ErrorActionPreference = 'Stop'; & '{0}'"
@@ -240,6 +251,26 @@ jobs:
           py -3 --version
           Write-Host "PowerShell version $($PSVersionTable.PSVersion.ToString())"
 
+      - name: Install vcpkg if missing
+        run: |
+          $root = $env:VCPKG_INSTALLATION_ROOT
+          if (-not $root -and (Test-Path C:/vcpkg)) { $root = 'C:/vcpkg' }
+          if (-not $root) {
+            # Full clone: vcpkg.json pins a builtin-baseline commit.
+            git clone https://github.com/microsoft/vcpkg C:/vcpkg
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            $root = 'C:/vcpkg'
+          } elseif ((Test-Path "$root/.git") -and ((git -C $root rev-parse --is-shallow-repository) -eq 'true')) {
+            git -C $root fetch --unshallow
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+          if (-not (Test-Path "$root/vcpkg.exe")) {
+            & "$root/bootstrap-vcpkg.bat" -disableMetrics
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+          Write-Host "Using vcpkg at $root"
+          "VCPKG_INSTALLATION_ROOT=$root" >> $env:GITHUB_ENV
+
       - name: Configure vcpkg compatibility
         shell: pwsh
         run: |
@@ -259,8 +290,10 @@ jobs:
           key: ${{ github.job }}-vcpkg-binary-${{ hashFiles('cmake_version', 'msbuild_version', 'toolset_version', 'vcpkg.json', 'depends/vcpkg-triplets/*.cmake') }}
 
       - name: Generate build system
+        # --clean-after-build drops each port's buildtrees and packages once it
+        # is installed, so building Qt from source fits on the runner's disk.
         run: |
-          cmake -B build --preset vs2022-static -DBUILD_SV2=OFF "-DVCPKG_OVERLAY_TRIPLETS=$env:GITHUB_WORKSPACE/depends/vcpkg-triplets" -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT\scripts\buildsystems\vcpkg.cmake" -D RDTS_CONSENT=RUNTIME_CHECK ${{ matrix.generate-options }}
+          cmake -B build --preset vs2022-static -DBUILD_SV2=OFF "-DVCPKG_OVERLAY_TRIPLETS=$env:GITHUB_WORKSPACE/depends/vcpkg-triplets" -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT\scripts\buildsystems\vcpkg.cmake" -DVCPKG_INSTALL_OPTIONS="--clean-after-build" -D RDTS_CONSENT=RUNTIME_CHECK ${{ matrix.generate-options }}
 
       - name: Save vcpkg binary cache
         uses: actions/cache/save@v5
@@ -289,8 +322,21 @@ jobs:
           BITCOINUTIL: '${{ github.workspace }}\build\bin\Release\bitcoin-util.exe'
           BITCOINWALLET: '${{ github.workspace }}\build\bin\Release\bitcoin-wallet.exe'
           TEST_RUNNER_EXTRA: ${{ github.event_name != 'pull_request' && '--extended' || '' }}
-        shell: cmd
-        run: py -3 test\functional\test_runner.py --jobs %NUMBER_OF_PROCESSORS% --ci --quiet --tmpdirprefix=%RUNNER_TEMP% --combinedlogslen=99999999 --timeout-factor=%TEST_RUNNER_TIMEOUT_FACTOR% %TEST_RUNNER_EXTRA%
+        shell: pwsh
+        run: |
+          $extra = @()
+          if ($env:TEST_RUNNER_EXTRA) { $extra += $env:TEST_RUNNER_EXTRA }
+          # Some tests use long wallet names, and Windows limits paths to 260
+          # characters. RUNNER_TEMP can be long on other runners (Buildkite:
+          # C:\Users\runneradmin\AppData\Local\Temp\1\buildkite-gha-runner-NNNNNNNNNN),
+          # so put the test directories under a short directory at the drive root.
+          $tmpdir = Join-Path ([IO.Path]::GetPathRoot($env:RUNNER_TEMP)) ("ft" + [guid]::NewGuid().ToString('N').Substring(0, 8))
+          New-Item -ItemType Directory -Path $tmpdir | Out-Null
+          py -3 test\functional\test_runner.py --jobs $env:NUMBER_OF_PROCESSORS --ci --quiet "--tmpdirprefix=$tmpdir" --combinedlogslen=99999999 "--timeout-factor=$env:TEST_RUNNER_TIMEOUT_FACTOR" @extra
+          $code = $LASTEXITCODE
+          # Keep the test directories of a failed run for inspection.
+          if ($code -eq 0) { Remove-Item -Recurse -Force $tmpdir -ErrorAction SilentlyContinue }
+          exit $code
 
       - name: Clone corpora
         if: matrix.job-type == 'fuzz'
@@ -305,18 +351,33 @@ jobs:
         working-directory: build
         env:
           BITCOINFUZZ: '${{ github.workspace }}\build\bin\Release\fuzz.exe'
-        shell: cmd
+        shell: pwsh
         run: |
-          py -3 test\fuzz\test_runner.py --par %NUMBER_OF_PROCESSORS% --loglevel DEBUG %RUNNER_TEMP%\qa-assets\fuzz_corpora
+          py -3 test\fuzz\test_runner.py --par $env:NUMBER_OF_PROCESSORS --loglevel DEBUG "$env:RUNNER_TEMP\qa-assets\fuzz_corpora"
+          exit $LASTEXITCODE
+
+  win64-native-fuzz:
+    name: ${{ matrix.job-name }}
+    runs-on: windows-2022
+    if: ${{ (vars.SKIP_BRANCH_PUSH != 'true' || github.event_name == 'pull_request') && (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref_name == 'master') || contains(github.event.pull_request.labels.*.name, 'full-ci')) }}
+    env: *win64-native-env
+    strategy:
+      fail-fast: false
+      matrix:
+        job-type: [fuzz]
+        include:
+          - job-type: fuzz
+            generate-options: '-DVCPKG_MANIFEST_NO_DEFAULT_FEATURES=ON -DVCPKG_MANIFEST_FEATURES="sqlite" -DBUILD_GUI=OFF -DBUILD_FOR_FUZZING=ON -DWERROR=ON'
+            job-name: 'Win64 native fuzz, VS 2022'
+    steps: *win64-native-steps
 
   ci-matrix:
     name: ${{ matrix.name }}
-    needs: runners
-    runs-on: ${{ needs.runners.outputs.provider == 'warp' && matrix.warp-runner || matrix.fallback-runner }}
+    runs-on: ${{ matrix.fallback-runner }}
     if: ${{ vars.SKIP_BRANCH_PUSH != 'true' || github.event_name == 'pull_request' }}
-    timeout-minutes: ${{ matrix.timeout-minutes }}
+    timeout-minutes: 240
 
-    env:
+    env: &ci-matrix-env
       DANGER_CI_ON_HOST_FOLDERS: 1
       FILE_ENV: ${{ matrix.file-env }}
 
@@ -336,12 +397,6 @@ jobs:
             timeout-minutes: 120
             file-env: './ci/test/00_setup_env_win64.sh'
 
-          - name: 'ASan + LSan + UBSan + integer, no depends, USDT'
-            warp-runner: 'warp-ubuntu-2404-x64-8x' # has to match container in ci/test/00_setup_env_native_asan.sh for tracing tools
-            fallback-runner: 'ubuntu-latest'
-            timeout-minutes: 120
-            file-env: './ci/test/00_setup_env_native_asan.sh'
-
           - name: 'macOS-cross, gui, no tests'
             warp-runner: 'warp-ubuntu-latest-x64-4x'
             fallback-runner: 'ubuntu-latest'
@@ -360,18 +415,6 @@ jobs:
             timeout-minutes: 120
             file-env: './ci/test/00_setup_env_i686_multiprocess.sh'
 
-          - name: 'fuzzer,address,undefined,integer, no depends'
-            warp-runner: 'warp-ubuntu-latest-x64-16x'
-            fallback-runner: 'ubuntu-latest'
-            timeout-minutes: 240
-            file-env: './ci/test/00_setup_env_native_fuzz.sh'
-
-          - name: 'previous releases, depends DEBUG'
-            warp-runner: 'warp-ubuntu-latest-x64-8x'
-            fallback-runner: 'ubuntu-latest'
-            timeout-minutes: 120
-            file-env: './ci/test/00_setup_env_native_previous_releases.sh'
-
           - name: 'CentOS, depends, gui'
             warp-runner: 'warp-ubuntu-latest-x64-16x'
             fallback-runner: 'ubuntu-latest'
@@ -384,54 +427,115 @@ jobs:
             timeout-minutes: 120
             file-env: './ci/test/00_setup_env_native_tidy.sh'
 
-          - name: 'TSan, depends, no gui'
-            warp-runner: 'warp-ubuntu-latest-x64-8x'
-            fallback-runner: 'ubuntu-latest'
-            timeout-minutes: 120
-            file-env: './ci/test/00_setup_env_native_tsan.sh'
-
-          - name: 'MSan, depends'
-            warp-runner: 'warp-ubuntu-latest-x64-16x'
-            fallback-runner: 'ubuntu-latest'
-            timeout-minutes: 120
-            file-env: './ci/test/00_setup_env_native_msan.sh'
-
-    steps:
-      - *CHECKOUT
+    steps: &ci-matrix-steps
+      - name: Checkout
+        uses: actions/checkout@v6
 
       - name: Configure environment
         uses: ./.github/actions/configure-environment
 
       - name: Restore caches
         id: restore-cache
+        # Persistent cache directories on a self-hosted runner replace the cache actions.
+        if: ${{ env.CI_PERSISTENT_CACHE != 'true' }}
         uses: ./.github/actions/restore-caches
 
       - name: Configure Docker
         uses: ./.github/actions/configure-docker
         with:
-          use-warp: ${{ needs.runners.outputs.use-warp-runners }}
+          use-warp: 'false'
 
       - name: Enable bpfcc script
         if: ${{ env.CONTAINER_NAME == 'ci_native_asan' }}
         # In the image build step, no external environment variables are available,
         # so any settings will need to be written to the settings env file:
-        run: sed -i "s|\${INSTALL_BCC_TRACING_TOOLS}|true|g" ./ci/test/00_setup_env_native_asan.sh
+        # The tracing tools need linux-headers for the host kernel; skip them
+        # when the runner's kernel has no matching Ubuntu headers package.
+        run: |
+          sudo apt-get update -qq
+          if apt-cache show "linux-headers-$(uname --kernel-release)" >/dev/null 2>&1; then
+            sed -i "s|\${INSTALL_BCC_TRACING_TOOLS}|true|g" ./ci/test/00_setup_env_native_asan.sh
+          else
+            echo "::warning title=bpfcc::No linux-headers package for kernel $(uname --kernel-release); USDT tracing tools are not installed"
+          fi
 
       - name: Set mmap_rnd_bits
         if: ${{ env.CONTAINER_NAME == 'ci_native_tsan' || env.CONTAINER_NAME == 'ci_native_msan' }}
         # Prevents crashes due to high ASLR entropy
         run: sudo sysctl -w vm.mmap_rnd_bits=28
 
+      - name: Enable 32-bit ARM emulation
+        if: ${{ env.CONTAINER_NAME == 'ci_arm_linux' }}
+        # Some arm64 hosts (e.g. Neoverse V1/N2) cannot execute AArch32 binaries.
+        # Register qemu-arm with the fix-binary flag so armhf test binaries run
+        # under user-mode emulation inside the CI container. Ubuntu's package
+        # skips registering arm on arm64 hosts, so register it explicitly
+        # (magic and mask from QEMU's scripts/qemu-binfmt-conf.sh).
+        run: |
+          if [ ! -e /proc/sys/fs/binfmt_misc/qemu-arm ]; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq qemu-user-static
+            if [ ! -e /proc/sys/fs/binfmt_misc/register ]; then
+              sudo mount -t binfmt_misc binfmt_misc /proc/sys/fs/binfmt_misc
+            fi
+            echo ':qemu-arm:M::\x7fELF\x01\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\x00\x28\x00:\xff\xff\xff\xff\xff\xff\xff\x00\xff\xff\xff\xff\xff\xff\xff\xff\xfe\xff\xff\xff:/usr/bin/qemu-arm-static:F' | sudo tee /proc/sys/fs/binfmt_misc/register >/dev/null
+          fi
+          cat /proc/sys/fs/binfmt_misc/qemu-arm
+
       - name: CI script
         run: ./ci/test_run_all.sh
 
       - name: Save caches
+        if: ${{ env.CI_PERSISTENT_CACHE != 'true' }}
         uses: ./.github/actions/save-caches
+
+  ci-matrix-heavy:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.fallback-runner }}
+    if: ${{ (vars.SKIP_BRANCH_PUSH != 'true' || github.event_name == 'pull_request') && (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref_name == 'master') || contains(github.event.pull_request.labels.*.name, 'full-ci')) }}
+    timeout-minutes: 240
+
+    env: *ci-matrix-env
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: 'ASan + LSan + UBSan + integer, no depends, USDT'
+            warp-runner: 'warp-ubuntu-2404-x64-8x' # has to match container in ci/test/00_setup_env_native_asan.sh for tracing tools
+            fallback-runner: 'ubuntu-latest-heavy'
+            timeout-minutes: 120
+            file-env: './ci/test/00_setup_env_native_asan.sh'
+
+          - name: 'fuzzer,address,undefined,integer, no depends'
+            warp-runner: 'warp-ubuntu-latest-x64-16x'
+            fallback-runner: 'ubuntu-latest-heavy'
+            timeout-minutes: 240
+            file-env: './ci/test/00_setup_env_native_fuzz.sh'
+
+          - name: 'previous releases, depends DEBUG'
+            warp-runner: 'warp-ubuntu-latest-x64-8x'
+            fallback-runner: 'ubuntu-latest-heavy'
+            timeout-minutes: 120
+            file-env: './ci/test/00_setup_env_native_previous_releases.sh'
+
+          - name: 'TSan, depends, no gui'
+            warp-runner: 'warp-ubuntu-latest-x64-8x'
+            fallback-runner: 'ubuntu-latest-heavy'
+            timeout-minutes: 120
+            file-env: './ci/test/00_setup_env_native_tsan.sh'
+
+          - name: 'MSan, depends'
+            warp-runner: 'warp-ubuntu-latest-x64-16x'
+            fallback-runner: 'ubuntu-latest-heavy'
+            timeout-minutes: 120
+            file-env: './ci/test/00_setup_env_native_msan.sh'
+
+    steps: *ci-matrix-steps
 
   lint:
     name: 'lint'
-    needs: runners
-    runs-on: ${{ needs.runners.outputs.provider == 'warp' && 'warp-ubuntu-latest-x64-2x' || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     if: ${{ vars.SKIP_BRANCH_PUSH != 'true' || github.event_name == 'pull_request' }}
     timeout-minutes: 20
     env:
@@ -440,13 +544,24 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
         with:
-          ref: *CHECKOUT_REF_TMPL
           fetch-depth: 0
 
       - name: Configure Docker
         uses: ./.github/actions/configure-docker
         with:
-          use-warp: ${{ needs.runners.outputs.use-warp-runners }}
+          use-warp: 'false'
+
+      - name: Create pull request merge commit
+        if: github.event_name == 'pull_request'
+        # The lint script requires HEAD to be the pull request merge commit
+        # (refs/pull/N/merge). Create it locally when the checkout is the PR head.
+        run: |
+          if [ "$(git rev-list -1 HEAD)" != "$(git rev-list -1 --merges HEAD)" ]; then
+            head_sha="$(git rev-parse HEAD)"
+            git fetch --no-tags "${{ github.server_url }}/${{ github.repository }}.git" "${{ github.base_ref }}"
+            git checkout --quiet --detach FETCH_HEAD
+            git -c user.name=ci -c user.email=ci@ci.ci merge --no-ff --no-edit "$head_sha"
+          fi
 
       - name: CI script
         run: |

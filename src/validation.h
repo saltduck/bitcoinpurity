@@ -468,7 +468,9 @@ enum class FlushStateMode {
     NONE,
     IF_NEEDED,
     PERIODIC,
-    ALWAYS
+    ALWAYS,
+    //! Write everything to disk like ALWAYS, but keep the coins cache warm.
+    FORCE_SYNC,
 };
 
 /**

@@ -19,7 +19,6 @@
 #include <cstddef>
 #include <util/time.h>
 #include <limits>
-#include <policy/policy.h>
 #include <script/script.h>
 #include <primitives/transaction.h>
 

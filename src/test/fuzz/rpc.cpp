@@ -88,6 +88,7 @@ const std::vector<std::string> RPC_COMMANDS_NOT_SAFE_FOR_FUZZING{
     "savefeeestimates",      // disabled as a precautionary measure: may take a file path argument in the future
     "savemempool",           // disabled as a precautionary measure: may take a file path argument in the future
     "setban",                // avoid DNS lookups
+    "setdatumdiff",          // avoid mutating embedded DATUM runtime state
     "stop",                  // avoid shutdown state
 };
 
@@ -133,6 +134,7 @@ const std::vector<std::string> RPC_COMMANDS_SAFE_FOR_FUZZING{
     "getchainstates",
     "getchaintxstats",
     "getconnectioncount",
+    "getdatuminfo",
     "getdeploymentinfo",
     "getdescriptoractivity",
     "getdescriptorinfo",
