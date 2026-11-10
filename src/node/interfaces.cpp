@@ -1142,6 +1142,11 @@ public:
     explicit RpcImpl(NodeContext& node) : m_node(node) {}
     UniValue executeRpc(UniValue request, std::string uri, std::string user) override
     {
+        // The IPC peer chooses `user`, so this interface bypasses RPC
+        // authentication and the per-user -rpcwhitelist. Require explicit opt-in.
+        if (!m_node.args || !m_node.args->GetBoolArg("-ipcrpc", false)) {
+            throw std::runtime_error("RPC over IPC is disabled; start the node with -ipcrpc=1 to allow it");
+        }
         JSONRPCRequest req;
         req.context = &m_node;
         req.URI = std::move(uri);

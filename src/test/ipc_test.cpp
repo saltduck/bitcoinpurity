@@ -3,6 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <chainparams.h>
+#include <common/args.h>
 #include <consensus/merkle.h>
 #include <consensus/validation.h>
 #include <interfaces/init.h>
@@ -292,6 +293,9 @@ void IpcSocketPairTest(node::NodeContext* node)
         auto rpc = remote_init->makeRpc();
         BOOST_REQUIRE(rpc);
         UniValue request; BOOST_REQUIRE(request.read(R"({"jsonrpc":"2.0","id":1,"method":"getblockcount","params":[]})"));
+        gArgs.ForceSetArg("-ipcrpc", "0");
+        BOOST_CHECK_THROW(rpc->executeRpc(request, "/", "ipc-test"), std::exception);
+        gArgs.ForceSetArg("-ipcrpc", "1");
         const auto response = rpc->executeRpc(request, "/", "ipc-test");
         BOOST_CHECK(response["error"].isNull());
         BOOST_CHECK_EQUAL(response["result"].getInt<int>(), local_tip->height + 1);

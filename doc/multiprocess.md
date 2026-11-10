@@ -64,3 +64,10 @@ client migration requirements. Run the schema contract check with:
 ~~~sh
 python3 test/util/check_ipc_schema.py
 ~~~
+
+`Init.makeRpc` is exposed for Core v32.1 compatibility, but `Rpc.executeRpc`
+refuses every call unless the node is started with `-ipcrpc=1`. The IPC peer
+names the RPC user itself, so enabling it lets any process that can open an
+`-ipcbind` socket run any RPC method (including wallet methods) without RPC
+authentication or `-rpcwhitelist` restrictions. Leave it off unless every
+process with access to the socket is fully trusted.
