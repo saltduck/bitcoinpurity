@@ -1237,15 +1237,24 @@ std::unique_ptr<BlockTemplate> Mining::createNewBlock(const node::BlockCreateOpt
     }
     if (cooldown) {
         auto& chainman = *CHECK_NONFATAL(CHECK_NONFATAL(context())->chainman);
+        // The best header can stay ahead indefinitely (for example a parked
+        // branch, or a header whose block never arrives), so bound the wait
+        // the same way the embedded SV2 template provider does: 3-20 seconds
+        // depending on how many blocks the header chain leads by.
+        std::optional<std::chrono::steady_clock::time_point> deadline;
         while (true) {
             bool ahead;
+            int lead{0};
             {
                 LOCK(cs_main);
                 const auto* best = chainman.m_best_header;
                 const auto* tip = chainman.ActiveChain().Tip();
                 ahead = best && tip && best->nChainWork > tip->nChainWork;
+                if (ahead) lead = best->nHeight - tip->nHeight;
             }
             if (!ahead) break;
+            if (!deadline) deadline = std::chrono::steady_clock::now() + std::chrono::seconds{std::clamp(lead, 3, 20)};
+            if (std::chrono::steady_clock::now() >= *deadline) break;
             const auto tip = getTip();
             if (!tip || !waitTipChanged(tip->hash, MillisecondsDouble{1000}) || m_interrupted) return {};
         }
