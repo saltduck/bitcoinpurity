@@ -8,6 +8,9 @@ zlib_packages = zlib
 
 datum_packages = curl jansson libsodium
 
+sv2_packages = sv2_crates
+sv2_native_packages = native_rust
+
 qrencode_linux_packages = qrencode
 qrencode_darwin_packages = qrencode
 qrencode_mingw32_packages = qrencode

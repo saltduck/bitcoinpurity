@@ -43,6 +43,7 @@ NO_ZMQ ?=
 NO_UPNP ?=
 NO_USDT ?=
 NO_DATUM ?=
+NO_SV2 ?=
 MULTIPROCESS ?=
 LTO ?=
 NO_HARDEN ?=
@@ -112,6 +113,21 @@ host_prefix=$($(host_arch)_$(host_os)_prefix)
 build_prefix=$(host_prefix)/native
 build_host=$(build)
 
+# Rust target triples for the embedded SV2 gateway. SV2 is built only when both
+# the build machine and the host have an entry (see packages/native_rust.mk).
+sv2_rust_triple_x86_64_linux=x86_64-unknown-linux-gnu
+sv2_rust_triple_aarch64_linux=aarch64-unknown-linux-gnu
+sv2_rust_triple_arm_linux=armv7-unknown-linux-gnueabihf
+sv2_rust_triple_riscv64_linux=riscv64gc-unknown-linux-gnu
+sv2_rust_triple_powerpc64_linux=powerpc64-unknown-linux-gnu
+sv2_rust_triple_powerpc64le_linux=powerpc64le-unknown-linux-gnu
+sv2_rust_triple_x86_64_mingw32=x86_64-pc-windows-gnu
+sv2_rust_triple_x86_64_darwin=x86_64-apple-darwin
+sv2_rust_triple_aarch64_darwin=aarch64-apple-darwin
+sv2_rust_triple_arm64_darwin=aarch64-apple-darwin
+sv2_rust_build=$(sv2_rust_triple_$(build_arch)_$(build_os))
+sv2_rust_host=$(sv2_rust_triple_$(host_arch)_$(host_os))
+
 all: install
 
 include hosts/$(host_os).mk
@@ -172,9 +188,13 @@ zmq_packages_$(NO_ZMQ) = $(zmq_packages)
 multiprocess_packages_$(MULTIPROCESS) = $(multiprocess_packages)
 usdt_packages_$(NO_USDT) = $(usdt_$(host_os)_packages)
 datum_packages_$(NO_DATUM) = $(datum_packages)
+ifneq ($(and $(sv2_rust_build),$(sv2_rust_host)),)
+sv2_packages_$(NO_SV2) = $(sv2_packages)
+sv2_native_packages_$(NO_SV2) = $(sv2_native_packages)
+endif
 
-packages += $($(host_arch)_$(host_os)_packages) $($(host_os)_packages) $(zlib_packages) $(boost_packages_) $(libevent_packages_) $(qt_packages_) $(wallet_packages_) $(upnp_packages_) $(usdt_packages_) $(datum_packages_)
-native_packages += $($(host_arch)_$(host_os)_native_packages) $($(host_os)_native_packages)
+packages += $($(host_arch)_$(host_os)_packages) $($(host_os)_packages) $(zlib_packages) $(boost_packages_) $(libevent_packages_) $(qt_packages_) $(wallet_packages_) $(upnp_packages_) $(usdt_packages_) $(datum_packages_) $(sv2_packages_)
+native_packages += $($(host_arch)_$(host_os)_native_packages) $($(host_os)_native_packages) $(sv2_native_packages_)
 
 ifneq ($(zmq_packages_),)
 packages += $(zmq_packages)
@@ -244,6 +264,10 @@ $(host_prefix)/toolchain.cmake : toolchain.cmake.in $(host_prefix)/.stamp_$(fina
             -e 's|@upnp_packages@|$(upnp_packages_)|' \
             -e 's|@usdt_packages@|$(usdt_packages_)|' \
             -e 's|@datum_packages@|$(datum_packages_)|' \
+            -e 's|@sv2_packages@|$(sv2_packages_)|' \
+            -e 's|@sv2_rust_host@|$(sv2_rust_host)|' \
+            -e 's|@sv2_rust_build@|$(sv2_rust_build)|' \
+            -e 's|@build_CC@|$(build_CC)|' \
             -e 's|@no_harden@|$(NO_HARDEN)|' \
             -e 's|@multiprocess@|$(MULTIPROCESS)|' \
             $< > $@

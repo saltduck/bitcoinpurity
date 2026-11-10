@@ -46,7 +46,6 @@ set(UPSTREAM_CORE_CONSENSUS_MINOR 4)
 # manifest feature before the first language is enabled.
 option(BUILD_DATUM "Build embedded DATUM/Stratum mining support." ON)
 option(BUILD_SV2 "Build embedded Stratum V2 pooled mining support." ON)
-set(ENABLE_SV2 ${BUILD_SV2})
 if(BUILD_DATUM)
   list(APPEND VCPKG_MANIFEST_FEATURES datum)
   list(REMOVE_DUPLICATES VCPKG_MANIFEST_FEATURES)
@@ -94,6 +93,9 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Darwin" AND NOT CMAKE_HOST_APPLE)
   set(CMAKE_PLATFORM_HAS_INSTALLNAME FALSE)
 endif()
 enable_language(CXX)
+# Evaluated once the toolchain file has been read, so a depends toolchain can
+# change BUILD_SV2.
+set(ENABLE_SV2 ${BUILD_SV2})
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)

@@ -173,6 +173,27 @@ else()
   set(WITH_USDT ON CACHE BOOL "")
 endif()
 
+# The embedded SV2 gateway is built with the pinned Rust toolchain and the
+# offline crate sources from depends (native_rust and sv2_crates).
+set(sv2_packages @sv2_packages@)
+if("${sv2_packages}" STREQUAL "")
+  # BUILD_SV2 is declared (default ON) before project() loads this file, so a
+  # plain cache default would be ignored. Without the depends Rust toolchain
+  # the gateway cannot be built, so turn it off.
+  set(BUILD_SV2 OFF CACHE BOOL "" FORCE)
+else()
+  set(BUILD_SV2 ON CACHE BOOL "")
+  set(SV2_CARGO "${CMAKE_CURRENT_LIST_DIR}/native/bin/cargo" CACHE FILEPATH "")
+  set(SV2_RUSTC "${CMAKE_CURRENT_LIST_DIR}/native/bin/rustc" CACHE FILEPATH "")
+  set(SV2_RUST_TARGET "@sv2_rust_host@" CACHE STRING "")
+  set(SV2_RUST_BUILD_TARGET "@sv2_rust_build@" CACHE STRING "")
+  set(SV2_VENDOR_DIR "${CMAKE_CURRENT_LIST_DIR}/share/sv2-vendor" CACHE PATH "")
+  if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
+    # Build scripts and proc macros are linked for the build machine.
+    set(SV2_BUILD_LINKER "@build_CC@" CACHE STRING "")
+  endif()
+endif()
+
 set(datum_packages @datum_packages@)
 if(datum_packages STREQUAL "")
   set(BUILD_DATUM OFF CACHE BOOL "")

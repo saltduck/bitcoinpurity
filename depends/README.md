@@ -123,6 +123,7 @@ The following can be set when running make: `make FOO=bar`
 - `NO_SQLITE`: Don't download/build/cache SQLite
 - `NO_UPNP`: Don't download/build/cache packages needed for enabling UPnP
 - `NO_USDT`: Don't download/build/cache packages needed for enabling USDT tracepoints
+- `NO_SV2`: Don't download/build/cache the Rust toolchain and crates needed for the embedded Stratum V2 gateway
 - `MULTIPROCESS`: Build libmultiprocess (experimental)
 - `DEBUG`: Disable some optimizations and enable more runtime checking
 - `HOST_ID_SALT`: Optional salt to use when generating host package ids

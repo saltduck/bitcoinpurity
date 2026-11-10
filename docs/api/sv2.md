@@ -40,6 +40,16 @@ was lost without an acknowledgement; they are never credited as accepted.
 Rust 1.96.0 and Cargo.lock are required for BUILD_SV2=ON. Cross builds specify
 SV2_RUST_TARGET. BUILD_SV2=OFF does not discover or invoke Rust.
 
+depends and Guix release builds build SV2 offline. depends fetches the official
+Rust 1.96.0 rustc, cargo and per-target rust-std archives (pinned by the sha256
+published on static.rust-lang.org) and every crate listed in Cargo.lock (pinned
+by its Cargo.lock checksum), plus the stratum source archive. The generated
+toolchain file then sets BUILD_SV2, SV2_CARGO, SV2_RUSTC, SV2_RUST_TARGET and
+SV2_VENDOR_DIR. With SV2_VENDOR_DIR set, CMake builds a copy of the crate with
+cargo --offline and fails if any locked crate version differs from Cargo.lock.
+Pass NO_SV2=1 to depends to omit it. After changing Cargo.lock, regenerate
+depends/packages/sv2_crates.mk with contrib/devtools/gen-sv2-crates-mk.py.
+
 
 ## Status snapshot
 
