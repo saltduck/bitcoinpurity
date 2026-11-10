@@ -2583,7 +2583,12 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
     StartupNotify(args);
 #endif
 
-    if (node.chainman->IsInitialBlockDownload()) {
+    // -dbcrashratio simulates crashes while blocks are being connected, so a
+    // test can tell which block a node was processing when it went down. The
+    // post-IBD sync runs from the scheduler at an arbitrary time instead, and a
+    // simulated crash there takes the node down while it is idle, between the
+    // blocks the test submits. Skip it when crashes are being simulated.
+    if (node.chainman->IsInitialBlockDownload() && !args.IsArgSet("-dbcrashratio")) {
         node.scheduler->scheduleFromNow([&node] {
             SyncCoinsTipAfterChainSync(node);
         }, SYNC_CHECK_INTERVAL);
