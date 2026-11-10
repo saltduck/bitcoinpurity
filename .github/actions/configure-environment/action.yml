@@ -73,3 +73,32 @@ runs:
           echo "CI_PERSISTENT_CACHE=true"
         } >> "$GITHUB_ENV"
         echo "Using persistent root $root"
+
+    # The Buildkite runner creates a new runner.temp and workspace directory for
+    # every job under the agent's TMPDIR and doesn't remove them afterwards,
+    # which fills the disk of a persistent host within days. Remove the ones
+    # left by earlier jobs. A job can't safely remove its own at the end,
+    # because post steps of actions still use it, so do it at the start of the
+    # next job instead. Only touch directories that haven't changed for longer
+    # than any job may run (timeout-minutes is at most 240), so directories of
+    # jobs still running on other agents of the same host are kept.
+    - name: Remove directories of earlier jobs
+      if: ${{ env.CI_PERSISTENT_CACHE == 'true' }}
+      shell: bash
+      run: |
+        set -uo pipefail
+        own_temp="$(realpath "$RUNNER_TEMP")"
+        own_workspace="$(realpath "$GITHUB_WORKSPACE")"
+        for parent in "$(dirname "$own_temp")" "$(dirname "$own_workspace")"; do
+          find "$parent" -mindepth 1 -maxdepth 1 -type d -name 'buildkite-gha-*' -mmin +360 -print0
+        done | sort -zu | while IFS= read -r -d '' dir; do
+          dir="$(realpath "$dir")"
+          if [ "$dir" = "$own_temp" ] || [ "$dir" = "$own_workspace" ]; then
+            continue
+          fi
+          echo "Removing $dir ($(du -sh "$dir" 2>/dev/null | cut -f1))"
+          # CI containers run as root, so files they wrote may not be removable
+          # by the runner user.
+          rm -rf "$dir" 2>/dev/null || sudo -n rm -rf "$dir" || echo "::warning title=Cleanup::Could not remove $dir"
+        done
+        df -h "$(dirname "$own_temp")"
