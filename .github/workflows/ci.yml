@@ -55,7 +55,7 @@ jobs:
 
   test-each-commit:
     name: 'test each commit'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-lastest-heavy
     if: github.event_name == 'pull_request' && github.event.pull_request.commits != 1 && contains(github.event.pull_request.labels.*.name, 'full-ci')
     timeout-minutes: 240  # Use maximum time, see https://docs.github.com/en/actions/writing-workflows/workflow-syntax-for-github-actions#jobsjob_idtimeout-minutes. Assuming a worst case time of 1 hour per commit, this leads to a --max-count=6 below.
     env:
@@ -506,31 +506,31 @@ jobs:
         include:
           - name: 'ASan + LSan + UBSan + integer, no depends, USDT'
             warp-runner: 'warp-ubuntu-2404-x64-8x' # has to match container in ci/test/00_setup_env_native_asan.sh for tracing tools
-            fallback-runner: 'ubuntu-latest'
+            fallback-runner: 'ubuntu-latest-heavy'
             timeout-minutes: 120
             file-env: './ci/test/00_setup_env_native_asan.sh'
 
           - name: 'fuzzer,address,undefined,integer, no depends'
             warp-runner: 'warp-ubuntu-latest-x64-16x'
-            fallback-runner: 'ubuntu-latest'
+            fallback-runner: 'ubuntu-latest-heavy'
             timeout-minutes: 240
             file-env: './ci/test/00_setup_env_native_fuzz.sh'
 
           - name: 'previous releases, depends DEBUG'
             warp-runner: 'warp-ubuntu-latest-x64-8x'
-            fallback-runner: 'ubuntu-latest'
+            fallback-runner: 'ubuntu-latest-heavy'
             timeout-minutes: 120
             file-env: './ci/test/00_setup_env_native_previous_releases.sh'
 
           - name: 'TSan, depends, no gui'
             warp-runner: 'warp-ubuntu-latest-x64-8x'
-            fallback-runner: 'ubuntu-latest'
+            fallback-runner: 'ubuntu-latest-heavy'
             timeout-minutes: 120
             file-env: './ci/test/00_setup_env_native_tsan.sh'
 
           - name: 'MSan, depends'
             warp-runner: 'warp-ubuntu-latest-x64-16x'
-            fallback-runner: 'ubuntu-latest'
+            fallback-runner: 'ubuntu-latest-heavy'
             timeout-minutes: 120
             file-env: './ci/test/00_setup_env_native_msan.sh'
 
