@@ -225,7 +225,10 @@ jobs:
         job-type: [standard]
         include:
           - job-type: standard
-            generate-options: '-DBUILD_GUI=OFF -DWITH_BDB=ON -DWITH_MINIUPNPC=ON -DWITH_ZMQ=ON -DBUILD_BENCH=ON -DWERROR=ON'
+            generate-options: >-
+              -DVCPKG_MANIFEST_NO_DEFAULT_FEATURES=ON
+              -DVCPKG_MANIFEST_FEATURES="miniupnpc;tests;wallet;zeromq"
+              -DBUILD_GUI=OFF -DWITH_BDB=ON -DWITH_MINIUPNPC=ON -DWITH_ZMQ=ON -DBUILD_BENCH=ON -DWERROR=ON
             job-name: 'Win64 native, VS 2022'
 
     steps: &win64-native-steps
