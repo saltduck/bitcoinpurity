@@ -53,6 +53,49 @@ impl Drop for ClientGuard {
         });
     }
 }
+// Mirrors the DATUM listener: five failed authorizations from one address
+// within a minute block further attempts from it for a minute.
+const AUTH_FAILURE_LIMIT: u32 = 5;
+const AUTH_WINDOW: Duration = Duration::from_secs(60);
+const AUTH_COOLDOWN: Duration = Duration::from_secs(60);
+const AUTH_TRACKED_ADDRESSES: usize = 1024;
+#[derive(Default)]
+pub(crate) struct AuthFailures(Mutex<HashMap<IpAddr, (Instant, u32, Option<Instant>)>>);
+impl AuthFailures {
+    fn blocked(&self, ip: IpAddr) -> bool {
+        let entries = self.0.lock().unwrap_or_else(|p| p.into_inner());
+        entries.get(&ip).and_then(|e| e.2).is_some_and(|until| Instant::now() < until)
+    }
+    fn record(&self, ip: IpAddr) {
+        let now = Instant::now();
+        let mut entries = self.0.lock().unwrap_or_else(|p| p.into_inner());
+        if entries.len() >= AUTH_TRACKED_ADDRESSES && !entries.contains_key(&ip) {
+            entries.retain(|_, e| now.duration_since(e.0) < AUTH_WINDOW || e.2.is_some_and(|u| now < u));
+            if entries.len() >= AUTH_TRACKED_ADDRESSES {
+                if let Some(oldest) = entries.iter().min_by_key(|(_, e)| e.0).map(|(k, _)| *k) {
+                    entries.remove(&oldest);
+                }
+            }
+        }
+        let entry = entries.entry(ip).or_insert((now, 0, None));
+        if now.duration_since(entry.0) >= AUTH_WINDOW {
+            *entry = (now, 0, None);
+        }
+        entry.1 += 1;
+        if entry.1 >= AUTH_FAILURE_LIMIT {
+            entry.2 = Some(now + AUTH_COOLDOWN);
+        }
+    }
+}
+// Compare secrets without an early exit on the first differing byte.
+fn secret_eq(a: &str, b: &str) -> bool {
+    let (a, b) = (a.as_bytes(), b.as_bytes());
+    let mut diff = (a.len() ^ b.len()) as u64;
+    for i in 0..a.len().max(b.len()) {
+        diff |= u64::from(a.get(i).copied().unwrap_or(0) ^ b.get(i).copied().unwrap_or(0));
+    }
+    diff == 0
+}
 async fn work(job: &Job, out: &mpsc::Sender<Value>) -> Result<()> {
     let difficulty = build_sv1_set_difficulty_from_sv2_target(Target::from_le_bytes(job.target))
         .map_err(|_| protocol_error())?;
@@ -83,6 +126,7 @@ pub(crate) async fn serve(
     shared: Arc<Shared>,
 ) {
     let counts = Arc::new(Mutex::new(HashMap::new()));
+    let auth_failures = Arc::new(AuthFailures::default());
     let mut tasks = JoinSet::new();
     let mut serial = 0u64;
     loop {
@@ -106,10 +150,10 @@ pub(crate) async fn serve(
                 let authorized=Arc::new(AtomicBool::new(false));
                 let subscribed=Arc::new(AtomicBool::new(false));
                 let guard=ClientGuard{shared:shared.clone(),counts:counts.clone(),ip:address.ip(),authorized:authorized.clone(),subscribed:subscribed.clone()};
-                let cfg=cfg.clone();let jobs=jobs.clone();let shares=shares.clone();let state=shared.clone();
+                let cfg=cfg.clone();let jobs=jobs.clone();let shares=shares.clone();let state=shared.clone();let failures=auth_failures.clone();let ip=address.ip();
                 tasks.spawn(async move {
                     let _guard=guard;
-                    let _=client(socket,serial as u32,cfg,jobs,shares,state,authorized,subscribed).await;
+                    let _=client(socket,serial as u32,cfg,jobs,shares,state,authorized,subscribed,failures,ip).await;
                 });
             }
         }
@@ -126,6 +170,8 @@ async fn client(
     shared: Arc<Shared>,
     authorized: Arc<AtomicBool>,
     subscribed_state: Arc<AtomicBool>,
+    auth_failures: Arc<AuthFailures>,
+    ip: IpAddr,
 ) -> Result<()> {
     socket.set_nodelay(true)?;
     let (mut writer, mut reader) =
@@ -201,9 +247,10 @@ async fn client(
                             let name=params[0].as_str().ok_or_else(protocol_error)?;
                             let password=params[1].as_str().ok_or_else(protocol_error)?;
                             let valid_name=name==cfg.user || name.strip_prefix(&(cfg.user.clone()+".")).is_some_and(|s|!s.is_empty());
-                            let allowed=!cfg.auth || (valid_name && password==cfg.password);
+                            let allowed=!cfg.auth || (!auth_failures.blocked(ip) && valid_name && secret_eq(password,&cfg.password));
                             response["result"]=json!(allowed);
                             if !allowed {
+                                if cfg.auth {auth_failures.record(ip);}
                                 out.send(response).await.map_err(|_|protocol_error())?;
                                 continue;
                             }
@@ -309,5 +356,34 @@ mod tests {
         assert!(line.contains("Upstream work unavailable"), "{line}");
         shared.stop.store(true, Ordering::Release);
         timeout(Duration::from_secs(5), server).await.unwrap().unwrap();
+    }
+    #[test]
+    fn secret_comparison_requires_exact_match() {
+        assert!(secret_eq("hunter2", "hunter2"));
+        assert!(secret_eq("", ""));
+        assert!(!secret_eq("hunter2", "hunter3"));
+        assert!(!secret_eq("hunter2", "hunter22"));
+        assert!(!secret_eq("hunter2", ""));
+    }
+    #[test]
+    fn repeated_auth_failures_block_the_address() {
+        let failures = AuthFailures::default();
+        let ip: IpAddr = "192.0.2.1".parse().unwrap();
+        let other: IpAddr = "192.0.2.2".parse().unwrap();
+        for _ in 0..AUTH_FAILURE_LIMIT - 1 {
+            failures.record(ip);
+            assert!(!failures.blocked(ip));
+        }
+        failures.record(ip);
+        assert!(failures.blocked(ip));
+        assert!(!failures.blocked(other));
+    }
+    #[test]
+    fn auth_failure_tracking_is_bounded() {
+        let failures = AuthFailures::default();
+        for i in 0..(AUTH_TRACKED_ADDRESSES as u32 + 10) {
+            failures.record(IpAddr::from(i.to_be_bytes()));
+        }
+        assert!(failures.0.lock().unwrap().len() <= AUTH_TRACKED_ADDRESSES);
     }
 }
