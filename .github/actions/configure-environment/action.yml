@@ -57,6 +57,13 @@ runs:
         # of the previous one with the same configuration. (The container
         # writes it as root, so it can't be removed from here anyway.)
         mkdir -p "$root/depends" "$CACHE_ROOT/depends-sources" "$CACHE_ROOT/previous-releases"
+        # Start every run with a fresh CMake configuration, as on a hosted
+        # runner, so only the build outputs are reused. Some configurations
+        # pass compilers like -DCMAKE_C_COMPILER='clang;-m32', which never
+        # equal the full path CMake caches. On an existing cache, CMake then
+        # discards it and configures again without the toolchain file, so
+        # depends packages like SQLite aren't found.
+        rm -f "$root/build/CMakeCache.txt" 2>/dev/null || sudo -n rm -f "$root/build/CMakeCache.txt"
         # Sources and previous releases don't depend on the path or the job, so
         # share them. The CI script bind-mounts these paths into the container;
         # Docker resolves the symlinks on the host.
