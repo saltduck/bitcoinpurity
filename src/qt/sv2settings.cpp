@@ -7,7 +7,7 @@
 #include <QLineEdit>
 #include <QSpinBox>
 #include <QVBoxLayout>
-#include <bitcoin-build-config.h>
+#include <bitcoin-build-config.h> // IWYU pragma: keep
 #include <common/args.h>
 #include <mining/sv2_bridge.h>
 #include <qt/sv2settings.h>

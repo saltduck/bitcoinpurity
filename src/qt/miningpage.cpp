@@ -2,7 +2,7 @@
 // Distributed under the MIT software license.
 #include <qt/miningpage.h>
 
-#include <bitcoin-build-config.h>
+#include <bitcoin-build-config.h> // IWYU pragma: keep
 #include <mining/datum_bridge.h>
 #ifdef ENABLE_SV2
 #include <mining/sv2_bridge.h>
