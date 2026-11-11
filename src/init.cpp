@@ -1417,7 +1417,15 @@ static void SyncCoinsTipAfterChainSync(const NodeContext& node)
     }
 
     LogDebug(BCLog::COINDB, "Finished syncing to tip, syncing chainstate to disk\n");
-    node.chainman->ActiveChainstate().CoinsTip().Sync();
+    // Go through FlushStateToDisk rather than syncing the coins cache directly:
+    // the coins database may refer to blocks that are only known to the block
+    // index once it has been written, so the block files and the block index
+    // must be on disk first. Otherwise a crash while the coins are being
+    // written leaves a chainstate that ReplayBlocks() cannot recover from.
+    BlockValidationState state;
+    if (!node.chainman->ActiveChainstate().FlushStateToDisk(state, FlushStateMode::FORCE_SYNC)) {
+        LogWarning("Failed to sync chainstate to disk (%s)", state.ToString());
+    }
 }
 
 bool AppInitInterfaces(NodeContext& node)
@@ -2575,7 +2583,12 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
     StartupNotify(args);
 #endif
 
-    if (node.chainman->IsInitialBlockDownload()) {
+    // -dbcrashratio simulates crashes while blocks are being connected, so a
+    // test can tell which block a node was processing when it went down. The
+    // post-IBD sync runs from the scheduler at an arbitrary time instead, and a
+    // simulated crash there takes the node down while it is idle, between the
+    // blocks the test submits. Skip it when crashes are being simulated.
+    if (node.chainman->IsInitialBlockDownload() && !args.IsArgSet("-dbcrashratio")) {
         node.scheduler->scheduleFromNow([&node] {
             SyncCoinsTipAfterChainSync(node);
         }, SYNC_CHECK_INTERVAL);

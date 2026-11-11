@@ -75,16 +75,21 @@ bool datum_test_fail_(const char *expr, const char *file, unsigned int line, con
 }
 
 void get_target_from_diff(unsigned char *result, uint64_t diff) {
-#ifdef _MSC_VER
+#ifndef __SIZEOF_INT128__
+	// No 128-bit integer type (MSVC, 32-bit targets): bitwise long division
+	// of 0xFFFF << 208 by diff, valid for any non-zero 64-bit diff.
 	unsigned char dividend[32] = {0};
 	uint64_t remainder = 0;
 	dividend[26] = 0xff;
 	dividend[27] = 0xff;
 	memset(result, 0, 32);
-	for (int i = 31; i >= 0; --i) {
-		const uint64_t value = (remainder << 8) | dividend[i];
-		result[i] = (unsigned char)(value / diff);
-		remainder = value % diff;
+	for (int bit = 255; bit >= 0; --bit) {
+		const uint64_t carry = remainder >> 63;
+		remainder = (remainder << 1) | ((dividend[bit >> 3] >> (bit & 7)) & 1);
+		if (carry || remainder >= diff) {
+			remainder -= diff;
+			result[bit >> 3] |= (unsigned char)(1u << (bit & 7));
+		}
 	}
 #else
 	uint64_t dividend_parts[4] = {0, 0, 0, 0x00000000FFFF0000};
