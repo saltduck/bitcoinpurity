@@ -13,6 +13,8 @@ export CI_IMAGE_PLATFORM="linux/amd64"
 export CI_CONTAINER_CAP="--security-opt seccomp=unconfined"
 export PACKAGES="llvm clang g++-multilib"
 export DEP_OPTS="DEBUG=1 MULTIPROCESS=1"
+# GCC Debug builds can exhaust memory when they use every available CPU.
+export MAKEJOBS="${MAKEJOBS:--j4}"
 export GOAL="install"
 export TEST_RUNNER_EXTRA="--v2transport"
 # Use the depends compiler for the i686 C++ ABI shared by the node and libkj.
