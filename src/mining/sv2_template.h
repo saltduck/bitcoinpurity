@@ -19,4 +19,4 @@ private:
     std::unique_ptr<Impl> m_impl;
 };
 }
-#endif
+#endif // BITCOIN_MINING_SV2_TEMPLATE_H

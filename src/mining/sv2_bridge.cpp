@@ -6,6 +6,7 @@
 #include <logging.h>
 #include <node/context.h>
 #include <univalue.h>
+#include <util/string.h>
 #include <util/translation.h>
 #include <array>
 #include <memory>
@@ -20,7 +21,7 @@ UniValue Config(const ArgsManager& args)
 {
     UniValue config{UniValue::VOBJ};
     const auto listen=args.GetArg("-sv2listen","127.0.0.1");
-    config.pushKV("listen",(listen.find(':')==std::string::npos ? listen : "["+listen+"]")+":"+std::to_string(args.GetIntArg("-sv2port",23334)));
+    config.pushKV("listen",(listen.find(':')==std::string::npos ? listen : "["+listen+"]")+":"+util::ToString(args.GetIntArg("-sv2port",23334)));
     for (const auto& [key,option]:{std::pair{"pool","-sv2pool"},{"jds","-sv2jds"},{"pool_key","-sv2poolkey"},{"jds_key","-sv2jdskey"},{"identity","-sv2identity"},{"pool_tag","-sv2pooltag"},{"miner_tag","-sv2minertag"},{"user","-sv2user"},{"password","-sv2password"}}) config.pushKV(key,args.GetArg(option,""));
     config.pushKV("auth",args.GetBoolArg("-sv2auth",false));
     config.pushKV("max_clients",args.GetIntArg("-sv2maxclients",32));

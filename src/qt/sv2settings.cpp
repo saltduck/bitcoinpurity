@@ -11,6 +11,7 @@
 #include <common/args.h>
 #include <mining/sv2_bridge.h>
 #include <qt/sv2settings.h>
+#include <util/string.h>
 #include <util/translation.h>
 Sv2SettingsWidget::Sv2SettingsWidget(QWidget* parent) : QWidget(parent)
 {
@@ -73,10 +74,10 @@ std::map<std::string, std::string> Sv2SettingsWidget::Values() const
     values.emplace("datum", Mode() == 1 ? "1" : "0");
 #endif
     values.emplace("sv2auth", m_auth->isChecked() ? "1" : "0");
-    values.emplace("sv2jobinterval", std::to_string(m_job_interval->value()));
-    values.emplace("sv2port", std::to_string(m_port->value()));
-    values.emplace("sv2maxclients", std::to_string(m_clients->value()));
-    values.emplace("sv2maxperip", std::to_string(m_per_ip->value()));
+    values.emplace("sv2jobinterval", util::ToString(m_job_interval->value()));
+    values.emplace("sv2port", util::ToString(m_port->value()));
+    values.emplace("sv2maxclients", util::ToString(m_clients->value()));
+    values.emplace("sv2maxperip", util::ToString(m_per_ip->value()));
     return values;
 }
 bool Sv2SettingsWidget::Validate(QString& error) const

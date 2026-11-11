@@ -14,4 +14,4 @@ void InterruptSv2();
 void StopSv2();
 UniValue GetSv2Info();
 }
-#endif
+#endif // BITCOIN_MINING_SV2_BRIDGE_H

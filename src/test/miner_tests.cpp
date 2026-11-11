@@ -26,6 +26,7 @@
 #include <util/feefrac.h>
 #include <util/strencodings.h>
 #include <util/time.h>
+#include <util/string.h>
 #include <util/translation.h>
 #include <validation.h>
 #include <versionbits.h>
@@ -279,7 +280,7 @@ BOOST_FIXTURE_TEST_CASE(sv2_job_refresh_interval, TestChain100Setup)
     } reset_clock;
     size_t coinbase_index{0};
     for (const int seconds : {30, 45, 60}) {
-        if (seconds != 30) m_node.args->ForceSetArg("-sv2jobinterval", std::to_string(seconds));
+        if (seconds != 30) m_node.args->ForceSetArg("-sv2jobinterval", util::ToString(seconds));
         auto time = MockableSteadyClock::INITIAL_MOCK_TIME;
         MockableSteadyClock::SetMockTime(time);
         mining::Sv2TemplateProvider provider{m_node};

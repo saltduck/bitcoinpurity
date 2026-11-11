@@ -56,7 +56,7 @@ class MacDeployTest(unittest.TestCase):
                 for binary in (output / "MacOS/Bitcoin-Qt",
                                output / "Frameworks/libparent.dylib",
                                output / "Frameworks/libchild.dylib"):
-                    linked = subprocess.check_output(["otool", "-L", str(binary)], text=True)
+                    linked = subprocess.check_output(["otool", "-L", str(binary)], encoding="utf8")
                     self.assertNotIn(str(libraries), linked)
                     self.assertNotIn(str(dependencies), linked)
                 subprocess.run([str(output / "MacOS/Bitcoin-Qt")], check=True,

@@ -31,4 +31,4 @@ private:
     std::map<std::string, QLineEdit*> m_fields;
     std::map<std::string, std::string> m_initial;
 };
-#endif
+#endif // BITCOIN_QT_SV2SETTINGS_H

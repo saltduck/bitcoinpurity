@@ -799,7 +799,7 @@ void MiningPage::refresh()
         SetSummaryRow(m_summary, 2, tr("Locally valid shares"), QString::number(number("local_valid_shares")), tr("Passed local validation; pool acknowledgement is tracked separately"));
         SetSummaryRow(m_summary, 3, tr("Pending / abandoned shares"), tr("%1 / %2").arg(sv2_pending).arg(number("abandoned_shares")), tr("Pending upstream acknowledgement / disconnected before acknowledgement"));
         m_miners->hide();
-        m_shares->setText(m_shares->text() + tr(" · %1 pending").arg(sv2_pending));
+        m_shares->setText(tr("%1 · %2 pending").arg(m_shares->text(), QString::number(sv2_pending)));
         SetSummaryRow(m_summary, 4, MiningSummaryMetricText(4), QString::number(sv2_best, 'g', 12), tr("Highest achieved difficulty among pool-acknowledged shares"));
     }
 #endif

@@ -1,6 +1,7 @@
-#!/usr/bin/env sh
+#!/bin/sh
 # Copyright (c) 2026 The Bitcoin Purity developers
 # Distributed under the MIT software license.
+export LC_ALL=C
 set -eu
 if [ "$#" -ne 3 ]; then
     echo "Usage: sh $0 ABSOLUTE_WORK_DIR ABSOLUTE_PREFIX JOBS" >&2

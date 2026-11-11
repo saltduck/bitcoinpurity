@@ -20,4 +20,4 @@ void purity_sv2_stop(void*);
 #ifdef __cplusplus
 }
 #endif
-#endif
+#endif // BITCOIN_MINING_SV2_FFI_H
