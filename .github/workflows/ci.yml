@@ -480,6 +480,16 @@ jobs:
         if: ${{ env.CI_PERSISTENT_CACHE != 'true' }}
         uses: ./.github/actions/save-caches
 
+      # On a persistent runner nothing else removes these: a failed run leaves
+      # the CI container running, which keeps its files and image, and the
+      # build directory holds several GB written as root.
+      - name: Remove CI container and build directory
+        if: ${{ always() && env.CI_PERSISTENT_CACHE == 'true' }}
+        run: |
+          docker container rm --force "$CONTAINER_NAME" > /dev/null 2>&1 || true
+          ./.github/actions/configure-environment/remove-dirs.sh "$BASE_BUILD_DIR"
+          df -h "$BASE_BUILD_DIR/.."
+
   ci-matrix-heavy:
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.fallback-runner }}
