@@ -305,6 +305,23 @@ jobs:
         run: |
           ctest --output-on-failure --stop-on-failure -j $env:NUMBER_OF_PROCESSORS -C Release
 
+      # Hosted Windows runners (e.g. Buildkite's) can have little disk left
+      # after the build, and bitcoind warns on stderr when a signet datadir
+      # has less than about 9 GB free, which fails the tests that expect no
+      # stderr. The object files and the vcpkg build files aren't needed
+      # anymore, and the binary cache was already saved.
+      - name: Free disk space for functional tests
+        if: matrix.job-type == 'standard'
+        shell: pwsh
+        run: |
+          function Show-Free { Get-PSDrive -PSProvider FileSystem | Where-Object { $_.Used -ne $null } | ForEach-Object { Write-Host ("{0}: {1:N1} GB free" -f $_.Name, ($_.Free / 1GB)) } }
+          Show-Free
+          Get-ChildItem build -Recurse -File -Include *.obj, *.ilk, *.iobj, *.ipdb -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
+          foreach ($dir in "$env:VCPKG_INSTALLATION_ROOT/buildtrees", "$env:VCPKG_INSTALLATION_ROOT/packages", "$env:LOCALAPPDATA/vcpkg/archives") {
+            if (Test-Path $dir) { Remove-Item -Recurse -Force $dir -ErrorAction SilentlyContinue }
+          }
+          Show-Free
+
       - name: Run functional tests
         if: matrix.job-type == 'standard'
         working-directory: build
@@ -321,8 +338,11 @@ jobs:
           # Some tests use long wallet names, and Windows limits paths to 260
           # characters. RUNNER_TEMP can be long on other runners (Buildkite:
           # C:\Users\runneradmin\AppData\Local\Temp\1\buildkite-gha-runner-NNNNNNNNNN),
-          # so put the test directories under a short directory at the drive root.
-          $tmpdir = Join-Path ([IO.Path]::GetPathRoot($env:RUNNER_TEMP)) ("ft" + [guid]::NewGuid().ToString('N').Substring(0, 8))
+          # so put the test directories under a short directory at the root of
+          # the drive with the most free space.
+          $drive = Get-PSDrive -PSProvider FileSystem | Where-Object { $_.Used -ne $null } | Sort-Object Free -Descending | Select-Object -First 1
+          $tmpdir = Join-Path $drive.Root ("ft" + [guid]::NewGuid().ToString('N').Substring(0, 8))
+          Write-Host ("Test directories in {0} ({1:N1} GB free)" -f $tmpdir, ($drive.Free / 1GB))
           New-Item -ItemType Directory -Path $tmpdir | Out-Null
           py -3 test\functional\test_runner.py --jobs $env:NUMBER_OF_PROCESSORS --ci --quiet "--tmpdirprefix=$tmpdir" --combinedlogslen=99999999 "--timeout-factor=$env:TEST_RUNNER_TIMEOUT_FACTOR" @extra
           $code = $LASTEXITCODE
