@@ -163,7 +163,8 @@ class PuritySignetMinerTest(PuritySignetTest):
 
         self.log.info("Three configured signers tolerate any single daemon outage without changing the config")
         config["signer_clis"] = [clis[i + 1] + [f"-rpcwallet=authority-{i}"] for i in range(3)]
-        config["signer_timeout_seconds"] = 3 * self.options.timeout_factor
+        # The miner only accepts a whole number of seconds; timeout_factor is a float.
+        config["signer_timeout_seconds"] = int(3 * self.options.timeout_factor)
         config_path.write_text(json.dumps(config))
         for missing, pair in ((1, "2+3"), (2, "1+3"), (3, "1+2")):
             self.stop_node(missing)
