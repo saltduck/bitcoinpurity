@@ -15,9 +15,6 @@ on:
     branches:
       - master
 
-concurrency:
-  group: ${{ github.event_name != 'pull_request' && github.run_id || github.ref }}
-
 # Sanitizers, fuzzing, and previous-release tests run on manual dispatch,
 # pushes to master, and pull requests labeled full-ci. The per-commit tests
 # run on full-ci pull requests with more than one commit.
