@@ -10,20 +10,17 @@ on:
   pull_request:
     # `labeled` lets adding the full-ci label start the heavy jobs.
     types: [opened, synchronize, reopened, labeled]
-    branches:
-      - master
   # See: https://docs.github.com/en/actions/writing-workflows/choosing-when-your-workflow-runs/events-that-trigger-workflows#push.
   push:
     branches:
       - master
-      - saltduck-patch-2
 
 concurrency:
   group: ${{ github.event_name != 'pull_request' && github.run_id || github.ref }}
 
-# Heavy jobs (sanitizers, fuzzing, previous releases, test each commit) run only
-# on manual workflow_dispatch runs, pushes to master, and pull requests labeled
-# full-ci. Ordinary pull requests and pushes to other branches run the rest.
+# Sanitizers, fuzzing, and previous-release tests run on manual dispatch,
+# pushes to master, and pull requests labeled full-ci. The per-commit tests
+# run on full-ci pull requests with more than one commit.
 # The heavy jobs reuse the steps of their light counterparts via YAML anchors.
 
 env:
@@ -109,13 +106,6 @@ jobs:
     # See: https://github.com/actions/runner-images#available-images.
     runs-on: macos-14
 
-    # When a contributor maintains a fork of the repo, any pull request they make
-    # to their own fork, or to the main repository, will trigger two CI runs:
-    # one for the branch push and one for the pull request.
-    # This can be avoided by setting SKIP_BRANCH_PUSH=true as a custom env variable
-    # in Github repository settings.
-    if: ${{ vars.SKIP_BRANCH_PUSH != 'true' || github.event_name == 'pull_request' }}
-
     timeout-minutes: 120
 
     strategy:
@@ -194,7 +184,7 @@ jobs:
   macos-native-arm64-fuzz:
     name: ${{ matrix.job-name }}
     runs-on: macos-14
-    if: ${{ (vars.SKIP_BRANCH_PUSH != 'true' || github.event_name == 'pull_request') && (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref_name == 'master') || contains(github.event.pull_request.labels.*.name, 'full-ci')) }}
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref_name == 'master') || contains(github.event.pull_request.labels.*.name, 'full-ci') }}
     timeout-minutes: 120
     strategy:
       fail-fast: false
@@ -213,7 +203,6 @@ jobs:
     # See: https://github.com/actions/runner-images#available-images.
     runs-on: windows-2022
 
-    if: ${{ vars.SKIP_BRANCH_PUSH != 'true' || github.event_name == 'pull_request' }}
 
     env: &win64-native-env
       PYTHONUTF8: 1
@@ -362,7 +351,7 @@ jobs:
   win64-native-fuzz:
     name: ${{ matrix.job-name }}
     runs-on: windows-2022
-    if: ${{ (vars.SKIP_BRANCH_PUSH != 'true' || github.event_name == 'pull_request') && (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref_name == 'master') || contains(github.event.pull_request.labels.*.name, 'full-ci')) }}
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref_name == 'master') || contains(github.event.pull_request.labels.*.name, 'full-ci') }}
     env: *win64-native-env
     strategy:
       fail-fast: false
@@ -377,7 +366,6 @@ jobs:
   ci-matrix:
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.fallback-runner }}
-    if: ${{ vars.SKIP_BRANCH_PUSH != 'true' || github.event_name == 'pull_request' }}
     timeout-minutes: 240
 
     env: &ci-matrix-env
@@ -492,10 +480,20 @@ jobs:
         if: ${{ env.CI_PERSISTENT_CACHE != 'true' }}
         uses: ./.github/actions/save-caches
 
+      # On a persistent runner nothing else removes these: a failed run leaves
+      # the CI container running, which keeps its files and image, and the
+      # build directory holds several GB written as root.
+      - name: Remove CI container and build directory
+        if: ${{ always() && env.CI_PERSISTENT_CACHE == 'true' }}
+        run: |
+          docker container rm --force "$CONTAINER_NAME" > /dev/null 2>&1 || true
+          ./.github/actions/configure-environment/remove-dirs.sh "$BASE_BUILD_DIR"
+          df -h "$BASE_BUILD_DIR/.."
+
   ci-matrix-heavy:
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.fallback-runner }}
-    if: ${{ (vars.SKIP_BRANCH_PUSH != 'true' || github.event_name == 'pull_request') && (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref_name == 'master') || contains(github.event.pull_request.labels.*.name, 'full-ci')) }}
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref_name == 'master') || contains(github.event.pull_request.labels.*.name, 'full-ci') }}
     timeout-minutes: 240
 
     env: *ci-matrix-env
@@ -539,7 +537,6 @@ jobs:
   lint:
     name: 'lint'
     runs-on: ubuntu-latest
-    if: ${{ vars.SKIP_BRANCH_PUSH != 'true' || github.event_name == 'pull_request' }}
     timeout-minutes: 20
     env:
       CONTAINER_NAME: "bitcoin-linter"

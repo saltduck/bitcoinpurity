@@ -540,6 +540,10 @@ int assign_to_thread(T_DATUM_SOCKET_APP *app, datum_socket_t fd) {
 	app->datum_threads[tid].client_data[cid].datum_thread = (void *)&app->datum_threads[tid];
 	app->datum_threads[tid].client_data[cid].in_buf = 0;
 	app->datum_threads[tid].client_data[cid].out_buf = 0;
+	// Set before the thread can see the new client: it reads rem_host (e.g.
+	// for the per-IP security checks) as soon as the lock is released.
+	strncpy(app->datum_threads[tid].client_data[cid].rem_host, remote_ip, DATUM_MAX_IP_LEN);
+	app->datum_threads[tid].client_data[cid].rem_host[DATUM_MAX_IP_LEN] = 0;
 	app->datum_threads[tid].has_new_clients = true;
 	
 	pthread_mutex_unlock(&app->datum_threads[tid].thread_data_lock);
@@ -553,10 +557,7 @@ int assign_to_thread(T_DATUM_SOCKET_APP *app, datum_socket_t fd) {
 		tc++;
 	}
 	
-	strncpy(app->datum_threads[tid].client_data[cid].rem_host, remote_ip, DATUM_MAX_IP_LEN);
-	app->datum_threads[tid].client_data[cid].rem_host[DATUM_MAX_IP_LEN] = 0;
-	
-	DLOG_DEBUG("New client (%s) on TID %d, CID %d with fd %" PRIuPTR ". clients: %d / clients on thread: %d", app->datum_threads[tid].client_data[cid].rem_host, tid, cid, (uintptr_t)fd, tc, app->datum_threads[tid].connected_clients);
+	DLOG_DEBUG("New client (%s) on TID %d, CID %d with fd %" PRIuPTR ". clients: %d / clients on thread: %d", remote_ip, tid, cid, (uintptr_t)fd, tc, app->datum_threads[tid].connected_clients);
 	DLOG_DEBUG("app->datum_threads[tid].next_open_client_index = %d", app->datum_threads[tid].next_open_client_index);
 	return 1;
 }
