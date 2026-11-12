@@ -57,8 +57,10 @@ runs:
         # The build directory stays per job in runner.temp, as on a hosted
         # runner: kept across jobs it takes several GB per configuration, while
         # ccache already makes rebuilds fast. Remove the one earlier versions
-        # of this step kept here.
-        "$GITHUB_WORKSPACE/.github/actions/configure-environment/remove-dirs.sh" "$root/build"
+        # of this step kept here, and anything else an earlier job of this
+        # configuration left behind (e.g. when it was canceled before its own
+        # cleanup ran).
+        "$GITHUB_WORKSPACE/.github/actions/configure-environment/clean-persistent-root.sh" "$root"
         # Sources and previous releases don't depend on the path or the job, so
         # share them. The CI script bind-mounts these paths into the container;
         # Docker resolves the symlinks on the host.
