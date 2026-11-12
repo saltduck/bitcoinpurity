@@ -13,7 +13,9 @@
 #include <test/util/setup_common.h>
 #include <util/string.h>
 #include <validation.h>
+#include <validationinterface.h>
 
+#include <atomic>
 #include <cstdlib>
 #include <memory>
 #include <utility>
@@ -175,6 +177,99 @@ BOOST_FIXTURE_TEST_CASE(invalidate_block, TestChain100Setup)
     }
     BOOST_REQUIRE(chainstate.ActivateBestChain(state));
     BOOST_CHECK(WITH_LOCK(cs_main, return chainstate.m_chain.Tip()) == tip);
+}
+
+namespace {
+//! Delivers the data of previously announced side-chain blocks from the
+//! validation interface queue, i.e. while InvalidateBlock() has released
+//! cs_main between two disconnects.
+struct DeliverBlocksOnDisconnect final : public CValidationInterface {
+    ChainstateManager& m_chainman;
+    std::vector<std::shared_ptr<const CBlock>> m_blocks;
+    std::atomic<int> m_delivered_at_height{-1};
+
+    DeliverBlocksOnDisconnect(ChainstateManager& chainman, std::vector<std::shared_ptr<const CBlock>> blocks)
+        : m_chainman{chainman}, m_blocks{std::move(blocks)} {}
+
+    void BlockDisconnected(const std::shared_ptr<const CBlock>&, const CBlockIndex* pindex) override
+    {
+        if (m_delivered_at_height != -1) return;
+        LOCK(cs_main);
+        for (const auto& block : m_blocks) {
+            BlockValidationState state;
+            CBlockIndex* index{nullptr};
+            BOOST_REQUIRE(m_chainman.AcceptBlock(block, state, &index, /*fRequested=*/true, nullptr, nullptr, /*min_pow_checked=*/true));
+        }
+        m_delivered_at_height = pindex->nHeight;
+    }
+};
+} // namespace
+
+// Regression test for a CheckBlockIndex() failure seen in feature_pruning.py:
+// data for side-chain blocks whose headers were already known arrived while
+// InvalidateBlock() was disconnecting. At arrival they had less work than the
+// then-current tip, so they were not added to setBlockIndexCandidates, and
+// InvalidateBlock() had only cached blocks that already had their data, so it
+// did not add them either once the tip dropped below their work.
+BOOST_FIXTURE_TEST_CASE(invalidate_block_with_concurrent_side_block_data, TestChain100Setup)
+{
+    auto& chainman = *m_node.chainman;
+    auto& chainstate = chainman.ActiveChainstate();
+    constexpr int FORK_HEIGHT{19};
+    constexpr int SIDE_BLOCKS{6};
+
+    std::vector<std::shared_ptr<const CBlock>> side_blocks;
+    std::vector<CBlockHeader> side_headers;
+    CBlockIndex* invalidate_target;
+    {
+        LOCK(cs_main);
+        invalidate_target = chainstate.m_chain[FORK_HEIGHT + 1];
+        const CBlockIndex* fork_point{chainstate.m_chain[FORK_HEIGHT]};
+        uint256 prev_hash{fork_point->GetBlockHash()};
+        int64_t prev_time{fork_point->GetBlockTime()};
+        for (int height = FORK_HEIGHT + 1; height <= FORK_HEIGHT + SIDE_BLOCKS; ++height) {
+            CBlock block = CreateBlock({}, CScript() << OP_TRUE, chainstate);
+            block.hashPrevBlock = prev_hash;
+            block.nTime = prev_time + 1;
+            CMutableTransaction coinbase(*block.vtx[0]);
+            coinbase.vin[0].scriptSig = CScript() << height << std::vector<unsigned char>{'s', 'i', 'd', 'e'};
+            block.vtx[0] = MakeTransactionRef(coinbase);
+            block.hashMerkleRoot = BlockMerkleRoot(block);
+            block.nNonce = 0;
+            while (!CheckProofOfWork(block.GetHash(), block.nBits, chainman.GetConsensus())) ++block.nNonce;
+            prev_hash = block.GetHash();
+            prev_time = block.nTime;
+            side_headers.push_back(block.GetBlockHeader());
+            side_blocks.push_back(std::make_shared<const CBlock>(block));
+        }
+    }
+
+    // Only the headers are known when InvalidateBlock() starts.
+    BlockValidationState state;
+    BOOST_REQUIRE(chainman.ProcessNewBlockHeaders(side_headers, /*min_pow_checked=*/true, state));
+    BOOST_REQUIRE(state.IsValid());
+
+    auto deliverer{std::make_shared<DeliverBlocksOnDisconnect>(chainman, side_blocks)};
+    m_node.validation_signals->RegisterSharedValidationInterface(deliverer);
+    // This used to trip the setBlockIndexCandidates assertion in the
+    // CheckBlockIndex() call at the end of the disconnect loop.
+    BOOST_REQUIRE(chainstate.InvalidateBlock(state, invalidate_target));
+    BOOST_REQUIRE(state.IsValid());
+    m_node.validation_signals->SyncWithValidationInterfaceQueue();
+    m_node.validation_signals->UnregisterSharedValidationInterface(deliverer);
+
+    const CBlockIndex* side_tip{WITH_LOCK(cs_main, return chainman.m_blockman.LookupBlockIndex(side_blocks.back()->GetHash()))};
+    BOOST_REQUIRE(side_tip);
+    {
+        LOCK(cs_main);
+        // The data must have arrived while the tip still had more work than
+        // the side chain, otherwise this test does not cover the race.
+        BOOST_REQUIRE_GT(deliverer->m_delivered_at_height.load(), FORK_HEIGHT + SIDE_BLOCKS);
+        BOOST_CHECK(chainstate.m_chain.Tip() == invalidate_target->pprev);
+        BOOST_CHECK(chainstate.setBlockIndexCandidates.contains(const_cast<CBlockIndex*>(side_tip)));
+    }
+    BOOST_REQUIRE(chainstate.ActivateBestChain(state));
+    BOOST_CHECK(WITH_LOCK(cs_main, return chainstate.m_chain.Tip()) == side_tip);
 }
 
 struct FailureFlagsTestingSetup : TestChain100Setup {
