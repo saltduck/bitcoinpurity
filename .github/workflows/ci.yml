@@ -489,7 +489,7 @@ jobs:
           docker container rm --force "$CONTAINER_NAME" > /dev/null 2>&1 || true
           ./.github/actions/configure-environment/remove-dirs.sh "$BASE_BUILD_DIR"
           ./.github/actions/configure-environment/clean-persistent-root.sh "$BASE_ROOT_DIR"
-          df -h "$BASE_BUILD_DIR/.."
+          df -h "$RUNNER_TEMP"
 
   ci-matrix-heavy:
     name: ${{ matrix.name }}
