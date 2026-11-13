@@ -47,6 +47,11 @@ struct PurityActivationLogSetup : TestChain100Setup {
 
     PurityActivationLogSetup()
     {
+        // m_always_print_category_level isn't synchronized, and the scheduler
+        // thread may still be logging callbacks for the blocks the base setup
+        // mined. Let it finish before changing the logger. The test itself only
+        // processes headers, which doesn't queue callbacks.
+        m_node.validation_signals->SyncWithValidationInterfaceQueue();
         LogInstance().DisableCategory(BCLog::ALL);
         LogInstance().SetLogLevel(BCLog::Level::Debug);
         LogInstance().SetCategoryLogLevel({});
@@ -55,6 +60,7 @@ struct PurityActivationLogSetup : TestChain100Setup {
 
     ~PurityActivationLogSetup()
     {
+        m_node.validation_signals->SyncWithValidationInterfaceQueue();
         LogInstance().DisableCategory(BCLog::ALL);
         LogInstance().EnableCategory(BCLog::LogFlags{previous_categories});
         LogInstance().SetLogLevel(previous_level);
