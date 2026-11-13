@@ -4144,10 +4144,17 @@ bool Chainstate::InvalidateBlock(BlockValidationState& state, CBlockIndex* pinde
             // as we disconnect.
             // Instead, consider only non-active-chain blocks that have at
             // least as much work as where we expect the new tip to end up.
+            // Blocks whose data has not arrived (or whose parents' data has
+            // not arrived) yet are included too: cs_main is released between
+            // disconnects, so their data may be received while we are still
+            // disconnecting, at a point where they have less work than the
+            // then-current tip and therefore were not added as candidates by
+            // ReceivedBlockTransactions. Eligibility is checked after each
+            // disconnect below instead (see upstream Bitcoin Core commit
+            // 4c29326183, part of bitcoin/bitcoin#31405).
             if (!m_chain.Contains(candidate) &&
                     !CBlockIndexWorkComparator()(candidate, pindex->pprev) &&
-                    candidate->IsValid(BLOCK_VALID_TRANSACTIONS) &&
-                    candidate->HaveNumChainTxs()) {
+                    !(candidate->nStatus & BLOCK_FAILED_MASK)) {
                 candidate_blocks_by_work.insert(std::make_pair(candidate->nChainWork, candidate));
             }
         }
@@ -4197,10 +4204,15 @@ bool Chainstate::InvalidateBlock(BlockValidationState& state, CBlockIndex* pinde
             m_blockman.m_dirty_blockindex.insert(to_mark_failed);
         }
 
-        // Add any equal or more work headers to setBlockIndexCandidates
+        // Add any equal or more work headers that have their data (and that
+        // of all their ancestors) to setBlockIndexCandidates. Headers that are
+        // not eligible yet stay in the cache, so they are reconsidered after
+        // the next disconnect in case their data arrived in the meantime.
         auto candidate_it = candidate_blocks_by_work.lower_bound(invalid_walk_tip->pprev->nChainWork);
         while (candidate_it != candidate_blocks_by_work.end()) {
-            if (!CBlockIndexWorkComparator()(candidate_it->second, invalid_walk_tip->pprev)) {
+            if (!CBlockIndexWorkComparator()(candidate_it->second, invalid_walk_tip->pprev) &&
+                    candidate_it->second->IsValid(BLOCK_VALID_TRANSACTIONS) &&
+                    candidate_it->second->HaveNumChainTxs()) {
                 TryAddBlockIndexCandidate(candidate_it->second);
                 candidate_it = candidate_blocks_by_work.erase(candidate_it);
             } else {
