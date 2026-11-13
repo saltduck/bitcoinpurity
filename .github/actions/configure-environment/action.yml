@@ -76,6 +76,13 @@ runs:
           rm "$root/previous_releases"
         fi
         mkdir -p "$root/previous_releases"
+        # Jobs of branches that still have the earlier version of this step
+        # run `ln -sfn` on this path too. Once it is a directory, that creates
+        # a symlink inside it instead of replacing it, so the directory isn't
+        # empty any more and every functional test that can use previous
+        # releases runs and fails on the missing binaries. The releases
+        # themselves are directories, so remove any symlink at the top level.
+        find "$root/previous_releases" -mindepth 1 -maxdepth 1 -type l -delete
         {
           echo "BASE_ROOT_DIR=$root"
           echo "CCACHE_DIR=$root/ccache_dir"
