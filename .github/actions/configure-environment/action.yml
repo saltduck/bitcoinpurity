@@ -53,25 +53,38 @@ runs:
         # configuration at a time, which the fixed container name already
         # requires.
         root="$CACHE_ROOT/work/$CONTAINER_NAME"
-        # The build directory is kept too, so a run builds incrementally on top
-        # of the previous one with the same configuration. (The container
-        # writes it as root, so it can't be removed from here anyway.)
-        mkdir -p "$root/depends" "$CACHE_ROOT/depends-sources" "$CACHE_ROOT/previous-releases"
-        # Start every run with a fresh CMake configuration, as on a hosted
-        # runner, so only the build outputs are reused. Some configurations
-        # pass compilers like -DCMAKE_C_COMPILER='clang;-m32', which never
-        # equal the full path CMake caches. On an existing cache, CMake then
-        # discards it and configures again without the toolchain file, so
-        # depends packages like SQLite aren't found.
-        rm -f "$root/build/CMakeCache.txt" 2>/dev/null || sudo -n rm -f "$root/build/CMakeCache.txt"
-        # Sources and previous releases don't depend on the path or the job, so
-        # share them. The CI script bind-mounts these paths into the container;
-        # Docker resolves the symlinks on the host.
+        mkdir -p "$root/depends" "$CACHE_ROOT/depends-sources"
+        # The build directory stays per job in runner.temp, as on a hosted
+        # runner: kept across jobs it takes several GB per configuration, while
+        # ccache already makes rebuilds fast. Remove the one earlier versions
+        # of this step kept here, and anything else an earlier job of this
+        # configuration left behind (e.g. when it was canceled before its own
+        # cleanup ran).
+        "$GITHUB_WORKSPACE/.github/actions/configure-environment/clean-persistent-root.sh" "$root"
+        # Sources don't depend on the path or the job, so share them. The CI
+        # script bind-mounts this path into the container; Docker resolves the
+        # symlink on the host.
         ln -sfn "$CACHE_ROOT/depends-sources" "$root/depends/sources"
-        ln -sfn "$CACHE_ROOT/previous-releases" "$root/previous_releases"
+        # Previous releases stay per configuration, like the per-container
+        # volume the CI script uses otherwise: functional tests use them
+        # whenever the directory isn't empty, so a shared one makes every
+        # configuration run the compatibility tests once the previous releases
+        # job downloaded them, including ones whose BDB the old releases can't
+        # read. Replace the symlink to a shared directory earlier versions of
+        # this step created.
+        if [ -L "$root/previous_releases" ]; then
+          rm "$root/previous_releases"
+        fi
+        mkdir -p "$root/previous_releases"
+        # Jobs of branches that still have the earlier version of this step
+        # run `ln -sfn` on this path too. Once it is a directory, that creates
+        # a symlink inside it instead of replacing it, so the directory isn't
+        # empty any more and every functional test that can use previous
+        # releases runs and fails on the missing binaries. The releases
+        # themselves are directories, so remove any symlink at the top level.
+        find "$root/previous_releases" -mindepth 1 -maxdepth 1 -type l -delete
         {
           echo "BASE_ROOT_DIR=$root"
-          echo "BASE_BUILD_DIR=$root/build"
           echo "CCACHE_DIR=$root/ccache_dir"
           echo "DEPENDS_DIR=$root/depends"
           echo "BASE_CACHE=$root/depends/built"
@@ -103,9 +116,6 @@ runs:
           if [ "$dir" = "$own_temp" ] || [ "$dir" = "$own_workspace" ]; then
             continue
           fi
-          echo "Removing $dir ($(du -sh "$dir" 2>/dev/null | cut -f1))"
-          # CI containers run as root, so files they wrote may not be removable
-          # by the runner user.
-          rm -rf "$dir" 2>/dev/null || sudo -n rm -rf "$dir" || echo "::warning title=Cleanup::Could not remove $dir"
+          "$GITHUB_WORKSPACE/.github/actions/configure-environment/remove-dirs.sh" "$dir"
         done
         df -h "$(dirname "$own_temp")"

@@ -10,20 +10,14 @@ on:
   pull_request:
     # `labeled` lets adding the full-ci label start the heavy jobs.
     types: [opened, synchronize, reopened, labeled]
-    branches:
-      - master
   # See: https://docs.github.com/en/actions/writing-workflows/choosing-when-your-workflow-runs/events-that-trigger-workflows#push.
   push:
     branches:
       - master
-      - saltduck-patch-2
 
-concurrency:
-  group: ${{ github.event_name != 'pull_request' && github.run_id || github.ref }}
-
-# Heavy jobs (sanitizers, fuzzing, previous releases, test each commit) run only
-# on manual workflow_dispatch runs, pushes to master, and pull requests labeled
-# full-ci. Ordinary pull requests and pushes to other branches run the rest.
+# Sanitizers, fuzzing, and previous-release tests run on manual dispatch,
+# pushes to master, and pull requests labeled full-ci. The per-commit tests
+# run on full-ci pull requests with more than one commit.
 # The heavy jobs reuse the steps of their light counterparts via YAML anchors.
 
 env:
@@ -109,13 +103,6 @@ jobs:
     # See: https://github.com/actions/runner-images#available-images.
     runs-on: macos-14
 
-    # When a contributor maintains a fork of the repo, any pull request they make
-    # to their own fork, or to the main repository, will trigger two CI runs:
-    # one for the branch push and one for the pull request.
-    # This can be avoided by setting SKIP_BRANCH_PUSH=true as a custom env variable
-    # in Github repository settings.
-    if: ${{ vars.SKIP_BRANCH_PUSH != 'true' || github.event_name == 'pull_request' }}
-
     timeout-minutes: 120
 
     strategy:
@@ -194,7 +181,7 @@ jobs:
   macos-native-arm64-fuzz:
     name: ${{ matrix.job-name }}
     runs-on: macos-14
-    if: ${{ (vars.SKIP_BRANCH_PUSH != 'true' || github.event_name == 'pull_request') && (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref_name == 'master') || contains(github.event.pull_request.labels.*.name, 'full-ci')) }}
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref_name == 'master') || contains(github.event.pull_request.labels.*.name, 'full-ci') }}
     timeout-minutes: 120
     strategy:
       fail-fast: false
@@ -213,7 +200,6 @@ jobs:
     # See: https://github.com/actions/runner-images#available-images.
     runs-on: windows-2022
 
-    if: ${{ vars.SKIP_BRANCH_PUSH != 'true' || github.event_name == 'pull_request' }}
 
     env: &win64-native-env
       PYTHONUTF8: 1
@@ -316,6 +302,23 @@ jobs:
         run: |
           ctest --output-on-failure --stop-on-failure -j $env:NUMBER_OF_PROCESSORS -C Release
 
+      # Hosted Windows runners (e.g. Buildkite's) can have little disk left
+      # after the build, and bitcoind warns on stderr when a signet datadir
+      # has less than about 9 GB free, which fails the tests that expect no
+      # stderr. The object files and the vcpkg build files aren't needed
+      # anymore, and the binary cache was already saved.
+      - name: Free disk space for functional tests
+        if: matrix.job-type == 'standard'
+        shell: pwsh
+        run: |
+          function Show-Free { Get-PSDrive -PSProvider FileSystem | Where-Object { $_.Used -ne $null } | ForEach-Object { Write-Host ("{0}: {1:N1} GB free" -f $_.Name, ($_.Free / 1GB)) } }
+          Show-Free
+          Get-ChildItem build -Recurse -File -Include *.obj, *.ilk, *.iobj, *.ipdb -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
+          foreach ($dir in "$env:VCPKG_INSTALLATION_ROOT/buildtrees", "$env:VCPKG_INSTALLATION_ROOT/packages", "$env:LOCALAPPDATA/vcpkg/archives") {
+            if (Test-Path $dir) { Remove-Item -Recurse -Force $dir -ErrorAction SilentlyContinue }
+          }
+          Show-Free
+
       - name: Run functional tests
         if: matrix.job-type == 'standard'
         working-directory: build
@@ -332,8 +335,11 @@ jobs:
           # Some tests use long wallet names, and Windows limits paths to 260
           # characters. RUNNER_TEMP can be long on other runners (Buildkite:
           # C:\Users\runneradmin\AppData\Local\Temp\1\buildkite-gha-runner-NNNNNNNNNN),
-          # so put the test directories under a short directory at the drive root.
-          $tmpdir = Join-Path ([IO.Path]::GetPathRoot($env:RUNNER_TEMP)) ("ft" + [guid]::NewGuid().ToString('N').Substring(0, 8))
+          # so put the test directories under a short directory at the root of
+          # the drive with the most free space.
+          $drive = Get-PSDrive -PSProvider FileSystem | Where-Object { $_.Used -ne $null } | Sort-Object Free -Descending | Select-Object -First 1
+          $tmpdir = Join-Path $drive.Root ("ft" + [guid]::NewGuid().ToString('N').Substring(0, 8))
+          Write-Host ("Test directories in {0} ({1:N1} GB free)" -f $tmpdir, ($drive.Free / 1GB))
           New-Item -ItemType Directory -Path $tmpdir | Out-Null
           py -3 test\functional\test_runner.py --jobs $env:NUMBER_OF_PROCESSORS --ci --quiet "--tmpdirprefix=$tmpdir" --combinedlogslen=99999999 "--timeout-factor=$env:TEST_RUNNER_TIMEOUT_FACTOR" @extra
           $code = $LASTEXITCODE
@@ -362,7 +368,7 @@ jobs:
   win64-native-fuzz:
     name: ${{ matrix.job-name }}
     runs-on: windows-2022
-    if: ${{ (vars.SKIP_BRANCH_PUSH != 'true' || github.event_name == 'pull_request') && (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref_name == 'master') || contains(github.event.pull_request.labels.*.name, 'full-ci')) }}
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref_name == 'master') || contains(github.event.pull_request.labels.*.name, 'full-ci') }}
     env: *win64-native-env
     strategy:
       fail-fast: false
@@ -377,7 +383,6 @@ jobs:
   ci-matrix:
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.fallback-runner }}
-    if: ${{ vars.SKIP_BRANCH_PUSH != 'true' || github.event_name == 'pull_request' }}
     timeout-minutes: 240
 
     env: &ci-matrix-env
@@ -492,10 +497,21 @@ jobs:
         if: ${{ env.CI_PERSISTENT_CACHE != 'true' }}
         uses: ./.github/actions/save-caches
 
+      # On a persistent runner nothing else removes these: a failed run leaves
+      # the CI container running, which keeps its files and image, and the
+      # build directory holds several GB written as root.
+      - name: Remove CI container and build directory
+        if: ${{ always() && env.CI_PERSISTENT_CACHE == 'true' }}
+        run: |
+          docker container rm --force "$CONTAINER_NAME" > /dev/null 2>&1 || true
+          ./.github/actions/configure-environment/remove-dirs.sh "$BASE_BUILD_DIR"
+          ./.github/actions/configure-environment/clean-persistent-root.sh "$BASE_ROOT_DIR"
+          df -h "$RUNNER_TEMP"
+
   ci-matrix-heavy:
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.fallback-runner }}
-    if: ${{ (vars.SKIP_BRANCH_PUSH != 'true' || github.event_name == 'pull_request') && (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref_name == 'master') || contains(github.event.pull_request.labels.*.name, 'full-ci')) }}
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref_name == 'master') || contains(github.event.pull_request.labels.*.name, 'full-ci') }}
     timeout-minutes: 240
 
     env: *ci-matrix-env
@@ -539,7 +555,6 @@ jobs:
   lint:
     name: 'lint'
     runs-on: ubuntu-latest
-    if: ${{ vars.SKIP_BRANCH_PUSH != 'true' || github.event_name == 'pull_request' }}
     timeout-minutes: 20
     env:
       CONTAINER_NAME: "bitcoin-linter"
