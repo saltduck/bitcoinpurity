@@ -5,6 +5,8 @@
 # runner user. Fall back to sudo, and then to Docker, which the runner user
 # can use to act as root anyway.
 
+export LC_ALL=C
+
 set -uo pipefail
 
 for dir in "$@"; do
