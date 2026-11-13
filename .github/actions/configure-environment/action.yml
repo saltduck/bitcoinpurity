@@ -53,7 +53,7 @@ runs:
         # configuration at a time, which the fixed container name already
         # requires.
         root="$CACHE_ROOT/work/$CONTAINER_NAME"
-        mkdir -p "$root/depends" "$CACHE_ROOT/depends-sources" "$CACHE_ROOT/previous-releases"
+        mkdir -p "$root/depends" "$CACHE_ROOT/depends-sources"
         # The build directory stays per job in runner.temp, as on a hosted
         # runner: kept across jobs it takes several GB per configuration, while
         # ccache already makes rebuilds fast. Remove the one earlier versions
@@ -61,11 +61,21 @@ runs:
         # configuration left behind (e.g. when it was canceled before its own
         # cleanup ran).
         "$GITHUB_WORKSPACE/.github/actions/configure-environment/clean-persistent-root.sh" "$root"
-        # Sources and previous releases don't depend on the path or the job, so
-        # share them. The CI script bind-mounts these paths into the container;
-        # Docker resolves the symlinks on the host.
+        # Sources don't depend on the path or the job, so share them. The CI
+        # script bind-mounts this path into the container; Docker resolves the
+        # symlink on the host.
         ln -sfn "$CACHE_ROOT/depends-sources" "$root/depends/sources"
-        ln -sfn "$CACHE_ROOT/previous-releases" "$root/previous_releases"
+        # Previous releases stay per configuration, like the per-container
+        # volume the CI script uses otherwise: functional tests use them
+        # whenever the directory isn't empty, so a shared one makes every
+        # configuration run the compatibility tests once the previous releases
+        # job downloaded them, including ones whose BDB the old releases can't
+        # read. Replace the symlink to a shared directory earlier versions of
+        # this step created.
+        if [ -L "$root/previous_releases" ]; then
+          rm "$root/previous_releases"
+        fi
+        mkdir -p "$root/previous_releases"
         {
           echo "BASE_ROOT_DIR=$root"
           echo "CCACHE_DIR=$root/ccache_dir"
