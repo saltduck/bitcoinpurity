@@ -78,6 +78,7 @@ BOOST_AUTO_TEST_CASE(flatfile_large_file)
             BOOST_REQUIRE(!file.IsNull());
             BOOST_CHECK_EQUAL(file.tell(), offset);
             file << uint32_t{0x12345678};
+            BOOST_REQUIRE_EQUAL(file.fclose(), 0);
         }
         BOOST_CHECK_EQUAL(fs::file_size(path), offset + sizeof(uint32_t));
         {
@@ -93,6 +94,7 @@ BOOST_AUTO_TEST_CASE(flatfile_large_file)
         {
             AutoFile file{seq.Open({0, 0})};
             BOOST_REQUIRE(file.Truncate(offset + 1));
+            BOOST_REQUIRE_EQUAL(file.fclose(), 0);
         }
         BOOST_CHECK_EQUAL(fs::file_size(path), offset + 1);
         const uint64_t allocation_start{((offset + 99) / 100) * 100};

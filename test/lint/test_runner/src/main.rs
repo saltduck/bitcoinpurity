@@ -205,14 +205,25 @@ fn get_subtrees() -> Vec<&'static str> {
         "src/crypto/ctaes",
         //"src/leveldb", No longer a subtree in this release branch, due to direct cherry-picks
         "src/minisketch",
-        "src/secp256k1",
+        //"src/secp256k1", No longer a pure subtree, due to direct cherry-picks; see get_vendored_dirs()
     ]
 }
 
-/// Return the pathspecs to exclude all subtrees
+/// Return vendored upstream source paths that are not git subtrees, but are
+/// excluded from lints like subtrees are.
+fn get_vendored_dirs() -> Vec<&'static str> {
+    vec![
+        "src/datum",   // OCEAN-xyz/datum_gateway, see src/datum/NOTICE.md
+        "src/qt/quirc", // dlbeer/quirc, see src/qt/quirc/LICENSE
+        "src/secp256k1", // subtree with cherry-picked upstream fixes, not subtree-checked
+    ]
+}
+
+/// Return the pathspecs to exclude all subtrees and vendored directories
 fn get_pathspecs_exclude_subtrees() -> Vec<String> {
     get_subtrees()
         .iter()
+        .chain(get_vendored_dirs().iter())
         .map(|s| format!(":(exclude){}", s))
         .collect()
 }
@@ -475,6 +486,7 @@ fn get_pathspecs_exclude_whitespace() -> Vec<String> {
             "src/univalue/include/univalue_escapes.h",
             "src/univalue/test/object.cpp",
             "test/lint/git-subtree-check.sh",
+            ".github/workflows/release.yml", // release workflow is maintained separately
         ]
         .iter()
         .map(|s| format!(":(exclude){}", s)),
@@ -644,6 +656,7 @@ fn lint_doc() -> LintResult {
 fn lint_markdown() -> LintResult {
     let bin_name = "mlc";
     let mut md_ignore_paths = get_subtrees();
+    md_ignore_paths.extend(get_vendored_dirs());
     md_ignore_paths.push("./doc/README_doxygen.md");
     let md_ignore_path_str = md_ignore_paths.join(",");
 
