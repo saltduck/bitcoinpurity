@@ -17,6 +17,8 @@
 #include <wallet/wallet.h>
 #include <wallet/walletutil.h>
 
+#include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <utility>
@@ -59,7 +61,7 @@ static void WalletLoading(benchmark::Bench& bench, bool legacy_wallet)
     // reload the wallet for the actual benchmark
     TestUnloadWallet(std::move(wallet));
 
-    bench.epochs(5).run([&] {
+    bench.epochs(std::min(bench.epochs(), size_t{5})).run([&] {
         wallet = TestLoadWallet(std::move(database), context, create_flags);
 
         // Cleanup
