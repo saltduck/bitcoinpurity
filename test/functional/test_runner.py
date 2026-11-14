@@ -454,6 +454,7 @@ BASE_SCRIPTS = [
     'p2p_i2p_sessions.py',
     'feature_presegwit_node_upgrade.py',
     'feature_settings.py',
+    'feature_datadir_confirm.py',
     'rpc_getdescriptorinfo.py',
     'rpc_mempool_info.py',
     'rpc_getgeneralinfo.py',

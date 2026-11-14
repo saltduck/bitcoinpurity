@@ -42,6 +42,25 @@ umask of `0077`, but these can be overridden with the `-rpccookieperms` option.
 
 This allows for running bitcoind without having to do any manual configuration.
 
+First-use data directory confirmation
+-------------------------------------
+
+The first manual start of `bitcoind` against an existing, non-empty network
+data directory asks for confirmation before it modifies that directory.
+Answer `y` to continue. Any other answer, including Enter, exits without
+starting the node. `-daemon` and `-daemonwait` ask this question before
+forking. A later start of the same directory does not ask again.
+
+systemd services are recognized automatically. launchd is recognized when
+its job starts `bitcoind` directly. A launchd job whose program is a wrapper
+script, and the other sample service scripts in `contrib/init/`, pass
+`-service-mode=1` on the command line so they can start unattended. The
+sample launchd plist also passes that option, which is unnecessary when
+`bitcoind` itself is the job. That option is ignored in `bitcoin.conf`.
+Skipping the prompt does not record approval: a later manual start in a
+terminal still asks. `-nosettings` also cannot remember the answer, so a
+manual start asks again next time.
+
 `conf`, `pid`, and `wallet` accept relative paths which are interpreted as
 relative to the data directory. `wallet` *only* supports relative paths.
 

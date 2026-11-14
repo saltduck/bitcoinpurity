@@ -1,5 +1,35 @@
 # Embedded DATUM Migration Report
 
+## Guix release manifest artifacts (TASK-030)
+
+The old release generator recognizes only `bitcoin-purity-` and cannot extract
+versions from the Guix `bitcoinpurity-` assets published in v1.1.2. Accept both
+prefixes, macOS unsigned application ZIPs and Windows pgpverifiable ZIPs. Use
+ZIPs for macOS/Windows and tarballs for Linux; filter auxiliary artifacts before
+duplicate checks and prefer final codesigned ZIPs when available. Publishers
+can point `--artifacts-dir` at the nested Guix output tree or a release asset
+directory. If omitted, it defaults to `./guix-build-<version>/output` in the
+current working directory, with the leading `v` removed from `--version`;
+existing explicit paths continue to work.
+Recursive scanning may find both original outputs and copies in a nested
+`release-upload-<version>` directory. Same-name copies are merged only after
+matching byte sizes and SHA256 digests; conflicting artifacts still fail.
+The output schema, client platform IDs and signing process require
+no migration. This task does not change the release workflow or publish files.
+
+## Core October 2026 security backports (TASK-029)
+
+All three vulnerable code patterns are present in the baseline. Adapt Core
+#36665/#36667/#36669 without unrelated upstream refactors: RECV/SEND names,
+seconds-based peer clock, CBlockFileInfo in chain.h and BlockInfo in
+interfaces/chain.h differ from upstream. Preserve disk VARINTs, wire/RPC
+formats, consensus and buffer thresholds. Rebuild/restart the node and any
+internal C++ BlockInfo consumers. Healthy databases need no migration,
+reindex or rescan; previously corrupted undo data is not repaired. No
+deployment or dependency source modification is included. See the
+[architecture](architecture/core-security-backports.md),
+[contract](api/core-security-backports.md) and [task](tasks/TASK-029.md).
+
 ## Node configuration default updates
 
 TASK-027 updates wallet fallback, relay, incremental replacement, mining fee,

@@ -11,6 +11,7 @@
 #include <interfaces/mining.h>
 #include <node/miner.h>
 #include <policy/policy.h>
+#include <pow.h>
 #include <test/util/random.h>
 #include <test/util/transaction_utils.h>
 #include <test/util/txmempool.h>
@@ -26,7 +27,9 @@
 
 #include <test/util/setup_common.h>
 
+#include <limits>
 #include <memory>
+#include <utility>
 #include <vector>
 
 #include <boost/test/unit_test.hpp>

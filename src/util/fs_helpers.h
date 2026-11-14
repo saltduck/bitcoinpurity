@@ -10,6 +10,9 @@
 
 #include <cstdint>
 #include <cstdio>
+#ifndef WIN32
+#include <sys/types.h>
+#endif
 #include <iosfwd>
 #include <limits>
 #include <optional>
@@ -26,9 +29,36 @@ bool FileCommit(FILE* file);
  */
 void DirectoryCommit(const fs::path& dirname);
 
-bool TruncateFile(FILE* file, unsigned int length);
+bool TruncateFile(FILE* file, uint64_t length);
+
+/**
+ * 64-bit file positioning. long is only 32 bits on Windows (LLP64) and on
+ * 32-bit POSIX targets, so std::fseek cannot reach offsets beyond 2 GiB there.
+ * POSIX fseeko takes off_t, which is 64-bit on 32-bit Linux because the build
+ * defines _FILE_OFFSET_BITS=64.
+ */
+inline int FileSeek64(FILE* file, int64_t offset, int origin)
+{
+#if defined(WIN32)
+    return _fseeki64(file, offset, origin);
+#else
+    static_assert(sizeof(off_t) >= sizeof(int64_t), "64-bit off_t required");
+    return fseeko(file, static_cast<off_t>(offset), origin);
+#endif
+}
+
+/** 64-bit file position, see FileSeek64. */
+inline int64_t FileTell64(FILE* file)
+{
+#if defined(WIN32)
+    return _ftelli64(file);
+#else
+    return ftello(file);
+#endif
+}
+
 int RaiseFileDescriptorLimit(int nMinFD);
-void AllocateFileRange(FILE* file, unsigned int offset, unsigned int length);
+void AllocateFileRange(FILE* file, uint64_t offset, unsigned int length);
 
 /**
  * Rename src to dest.

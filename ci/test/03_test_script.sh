@@ -86,7 +86,8 @@ if [ "$USE_BUSY_BOX" = "true" ]; then
   echo "Setup to use BusyBox utils"
   # tar excluded for now because it requires passing in the exact archive type in ./depends (fixed in later BusyBox version)
   # ar excluded for now because it does not recognize the -q option in ./depends (unknown if fixed)
-  for util in $(busybox --list | grep -v "^ar$" | grep -v "^tar$" ); do ln -s "$(command -v busybox)" "${BINS_SCRATCH_DIR}/$util"; done
+  # Use the system xz for the official Rust archives unpacked by tar.
+  for util in $(busybox --list | grep -Exv 'ar|tar|xz'); do ln -s "$(command -v busybox)" "${BINS_SCRATCH_DIR}/$util"; done
   # Print BusyBox version
   patch --help
 fi

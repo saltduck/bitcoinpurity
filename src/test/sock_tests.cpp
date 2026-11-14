@@ -81,6 +81,50 @@ BOOST_AUTO_TEST_CASE(move_assignment)
     BOOST_CHECK(SocketIsClosed(s2));
 }
 
+#ifndef USE_POLL
+BOOST_AUTO_TEST_CASE(wait_many_urgent_data)
+{
+    Sock listener{CreateSocket()};
+    sockaddr_in address{};
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    BOOST_REQUIRE_EQUAL(listener.Bind(reinterpret_cast<sockaddr*>(&address), sizeof(address)), 0);
+    BOOST_REQUIRE_EQUAL(listener.Listen(1), 0);
+    socklen_t address_size{sizeof(address)};
+    BOOST_REQUIRE_EQUAL(listener.GetSockName(reinterpret_cast<sockaddr*>(&address), &address_size), 0);
+    auto sender{std::make_shared<Sock>(CreateSocket())};
+    BOOST_REQUIRE_EQUAL(sender->Connect(reinterpret_cast<sockaddr*>(&address), sizeof(address)), 0);
+    std::shared_ptr<Sock> receiver{listener.Accept(nullptr, nullptr)};
+    BOOST_REQUIRE(receiver);
+    BOOST_REQUIRE_EQUAL(sender->Send("a", 1, 0), 1);
+    char received;
+    BOOST_REQUIRE_EQUAL(receiver->Recv(&received, 1, 0), 1);
+    BOOST_REQUIRE_EQUAL(sender->Send("!", 1, MSG_OOB), 1);
+
+    Sock::EventsPerSock events{{receiver, Sock::Events{Sock::RECV}}};
+    const auto deadline{std::chrono::steady_clock::now() + 5s};
+    do {
+        BOOST_REQUIRE(receiver->WaitMany(100ms, events));
+    } while (!(events.at(receiver).occurred & Sock::ERR) && std::chrono::steady_clock::now() < deadline);
+    BOOST_REQUIRE(events.at(receiver).occurred & Sock::ERR);
+
+    // Windows select requires at least one socket in its descriptor sets.
+    events.emplace(sender, Sock::Events{Sock::SEND});
+    events.at(receiver).requested = 0;
+    BOOST_REQUIRE(receiver->WaitMany(1ms, events));
+    BOOST_CHECK_EQUAL(events.at(receiver).occurred, 0);
+
+    events.at(receiver).requested = Sock::SEND;
+    BOOST_REQUIRE(receiver->WaitMany(1s, events));
+    BOOST_CHECK(events.at(receiver).occurred & Sock::SEND);
+    BOOST_CHECK(!(events.at(receiver).occurred & Sock::ERR));
+
+    events.at(receiver).requested = Sock::RECV | Sock::SEND;
+    BOOST_REQUIRE(receiver->WaitMany(1s, events));
+    BOOST_CHECK(events.at(receiver).occurred & Sock::ERR);
+}
+#endif
+
 #ifndef WIN32 // Windows does not have socketpair(2).
 
 static void CreateSocketPair(int s[2])

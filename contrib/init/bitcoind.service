@@ -21,6 +21,7 @@ Wants=network-online.target
 ExecStart=/usr/bin/bitcoind -pid=/run/bitcoind/bitcoind.pid \
                             -conf=/etc/bitcoin/bitcoin.conf \
                             -datadir=/var/lib/bitcoind \
+                            -service-mode=1 \
                             -startupnotify='systemd-notify --ready' \
                             -shutdownnotify='systemd-notify --stopping'
 

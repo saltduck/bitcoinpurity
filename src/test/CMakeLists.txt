@@ -42,6 +42,7 @@ add_executable(test_bitcoin
   compress_tests.cpp
   crypto_tests.cpp
   cuckoocache_tests.cpp
+  datadir_confirm_tests.cpp
   dbwrapper_tests.cpp
   denialofservice_tests.cpp
   descriptor_tests.cpp
@@ -61,6 +62,7 @@ add_executable(test_bitcoin
   mempool_tests.cpp
   merkle_tests.cpp
   merkleblock_tests.cpp
+  miner_cached_validation_tests.cpp
   miner_tests.cpp
   miniminer_tests.cpp
   miniscript_tests.cpp

@@ -153,10 +153,10 @@ void DirectoryCommit(const fs::path& dirname)
 #endif
 }
 
-bool TruncateFile(FILE* file, unsigned int length)
+bool TruncateFile(FILE* file, uint64_t length)
 {
 #if defined(WIN32)
-    return _chsize(_fileno(file), length) == 0;
+    return _chsize_s(_fileno(file), length) == 0;
 #else
     return ftruncate(fileno(file), length) == 0;
 #endif
@@ -209,7 +209,7 @@ int RaiseFileDescriptorLimit(int nMinFD)
  * this function tries to make a particular range of a file allocated (corresponding to disk space)
  * it is advisory, and the range specified in the arguments will never contain live data
  */
-void AllocateFileRange(FILE* file, unsigned int offset, unsigned int length)
+void AllocateFileRange(FILE* file, uint64_t offset, unsigned int length)
 {
 #if defined(WIN32)
     // Windows-specific version
@@ -246,7 +246,7 @@ void AllocateFileRange(FILE* file, unsigned int offset, unsigned int length)
     // Fallback version
     // TODO: just write one byte per block
     uint8_t buf[65536];
-    if (fseek(file, offset, SEEK_SET)) {
+    if (FileSeek64(file, offset, SEEK_SET)) {
         return;
     }
     clearerr(file);
@@ -444,7 +444,10 @@ bool IsDirWritable(const fs::path& dir_path)
     // Attempt to create a tmp file in the directory
     if (!fs::is_directory(dir_path)) throw std::runtime_error(strprintf("Path %s is not a directory", fs::PathToString(dir_path)));
     FastRandomContext rng;
-    const auto tmp = dir_path / fs::PathFromString(strprintf(".tmp_%d", rng.rand64()));
+    // Keep the probe name no longer than the files a wallet creates here
+    // (e.g. "wallet.dat-journal"): on Windows a longer name can exceed
+    // MAX_PATH in a directory that is otherwise usable.
+    const auto tmp = dir_path / fs::PathFromString(strprintf(".tmp%08x", rng.rand32()));
 
     if (const auto created{fsbridge::fopen(tmp, "wbx")}) {
         std::fclose(created);

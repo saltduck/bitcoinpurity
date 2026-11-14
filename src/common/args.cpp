@@ -423,6 +423,9 @@ bool ArgsManager::ReadSettingsFile(std::vector<std::string>* errors)
         return false;
     }
     for (const auto& setting : m_settings.rw_settings) {
+        // The CLI first-use record is internal. It is not a registered option,
+        // and warning about it on every startup would be noise.
+        if (setting.first == common::PURITY_CLI_DATADIR_SETTING) continue;
         KeyInfo key = InterpretKey(setting.first); // Split setting key into section and argname
         if (!GetArgFlags('-' + key.name)) {
             LogWarning("Ignoring unknown rw_settings value %s", setting.first);

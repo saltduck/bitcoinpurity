@@ -94,6 +94,11 @@ if [ -z "$DANGER_RUN_CI_ON_HOST" ]; then
   # When detecting podman-docker, `--external` should be added.
   docker image prune --force --filter "label=$CI_IMAGE_LABEL"
 
+  # A failed run exits before the container is killed below. On a persistent
+  # (self-hosted) runner that container would keep the name in use and make
+  # every later run of this job fail, so remove it first.
+  docker container rm --force "$CONTAINER_NAME" > /dev/null 2>&1 || true
+
   # Append $USER to /tmp/env to support multi-user systems and $CONTAINER_NAME
   # to allow support starting multiple runs simultaneously by the same user.
   # shellcheck disable=SC2086

@@ -1,5 +1,56 @@
 # Bitcoin Purity Product Specification
 
+## Guix release manifest artifacts
+
+The release manifest generator accepts Guix `bitcoinpurity-` and legacy
+`bitcoin-purity-` names. For each supported platform it selects a Linux binary
+tarball, macOS application ZIP or Windows ZIP. macOS `-unsigned.zip` and
+Windows `-pgpverifiable.zip` are accepted; final codesigned ZIPs take priority
+when present. Source/debug/codesigning archives, installers and macOS CLI
+tarballs are excluded. Equally preferred copies with matching filenames, byte
+sizes and SHA256 digests are merged; conflicting artifacts fail. Version filtering,
+platform IDs and unsigned schema 1 fields retain their existing contract.
+The artifact directory defaults to `./guix-build-<version>/output` in the current
+working directory, with the leading `v` removed from `--version`;
+`--artifacts-dir` can override it.
+See [TASK-030](../tasks/TASK-030.md) and the
+[CLI contract](../api/official-packages.md#software-release-manifest-generator).
+
+## October 2026 security backports
+
+Apply Core #36665 (receive-only select exception monitoring), #36667
+(disconnect after more than 20 minutes of continuous send-buffer pause), and
+#36669 (64-bit block/undo offsets and file sizes, including Windows file I/O).
+Continuing sends/receives and additional queued messages do not extend an
+existing pause. Draining the buffer ends it; a new pause gets a new timer.
+Keep consensus, wire/RPC formats, buffer configuration and VARINT disk encoding.
+See [TASK-029](../tasks/TASK-029.md), the
+[architecture](../architecture/core-security-backports.md) and
+[compatibility contract](../api/core-security-backports.md).
+
+## First-use data directory confirmation
+
+`bitcoin-qt` asks before its startup wizard uses an existing non-empty data
+directory. Cancel is the default, and the choice is not stored. Nodes that
+skip the wizard start as before.
+
+`bitcoind` keeps a separate record in the network `settings.json`:
+
+```json
+{"purity-cli-datadir": {"schema": 1, "status": "created"}}
+```
+
+`created` means the directory was missing or empty. `approved` means the
+operator answered `y` for a non-empty directory. A manual start, including
+`-daemon` and `-daemonwait`, asks before forking when that record is missing.
+Enter, `n`, EOF, and a missing terminal do not approve. systemd is detected
+from `INVOCATION_ID`. launchd is detected when it starts `bitcoind` directly
+(parent pid 1, session id 1, and a job label in `XPC_SERVICE_NAME`). `-daemon`,
+`nohup`, and `ssh` do not qualify. Other service managers, and a launchd
+wrapper script, pass `-service-mode=1` on the command line; the same setting
+in `bitcoin.conf` is ignored. Skipping the prompt does not write `approved`.
+See [init scripts](../../doc/init.md).
+
 ## Node configuration defaults
 
 The wallet fallback fee is 1 sat/vB. Mining templates default to 3985000 bytes

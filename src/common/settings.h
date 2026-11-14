@@ -9,7 +9,9 @@
 
 #include <cstddef>
 #include <map>
+#include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 class UniValue;
@@ -26,6 +28,15 @@ namespace common {
 //!       from UniValue. (An implementation with boost::variant was posted at
 //!       https://github.com/bitcoin/bitcoin/pull/15934/files#r337691812)
 using SettingsValue = UniValue;
+
+//! Internal settings.json record of CLI data-directory first use.
+//! This is not a user-configurable option and must be read from rw_settings.
+inline constexpr char PURITY_CLI_DATADIR_SETTING[] = "purity-cli-datadir";
+
+//! Build the strict {"schema":1,"status":"created"|"approved"} object.
+SettingsValue MakePurityCliDatadirMarker(std::string_view status);
+//! Return "created" or "approved" only when schema, types, and keys are exact.
+std::optional<std::string> ParsePurityCliDatadirStatus(const SettingsValue& value);
 
 //! Stored settings. This struct combines settings from the command line, a
 //! read-only configuration file, and a read-write runtime settings file.

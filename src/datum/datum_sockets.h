@@ -136,6 +136,11 @@ typedef struct T_DATUM_THREAD_DATA {
 	
 	bool is_active;
 	
+	// Set by the listener once pthread_create succeeds and never cleared, so
+	// the owner can join every started worker on shutdown. Unlike is_active,
+	// the worker thread does not write it.
+	bool pthread_started;
+	
 	bool has_new_clients;
 	
 	bool empty_request;

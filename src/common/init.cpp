@@ -6,8 +6,10 @@
 #include <chainparamsbase.h>
 #include <common/args.h>
 #include <common/init.h>
+#include <common/settings.h>
 #include <logging.h>
 #include <tinyformat.h>
+#include <univalue.h>
 #include <util/fs.h>
 #include <util/translation.h>
 
@@ -16,7 +18,7 @@
 #include <optional>
 
 namespace common {
-std::optional<ConfigError> InitConfig(ArgsManager& args, SettingsAbortFn settings_abort_fn)
+std::optional<ConfigError> InitConfig(ArgsManager& args, SettingsAbortFn settings_abort_fn, DataDirPreflightFn preflight)
 {
     try {
         if (!CheckDataDirOption(args)) {
@@ -40,10 +42,20 @@ std::optional<ConfigError> InitConfig(ArgsManager& args, SettingsAbortFn setting
             return ConfigError{ConfigStatus::FAILED, strprintf(_("Error reading configuration file: %s"), error)};
         }
 
-        // Select base params first so GetDataDirNet() works, then ensure the
-        // datadir exists.
+        // Select base params first so GetDataDirNet() works. The preflight
+        // callback sees this effective path before it is created or populated.
         const ChainType chain{args.GetChainType()};
         SelectBaseParams(chain);
+
+        std::optional<std::string> persist_status;
+        if (preflight) {
+            const DataDirPreflight result{preflight(args)};
+            if (result.error) return result.error;
+            if (result.persist_status &&
+                (*result.persist_status == "created" || *result.persist_status == "approved")) {
+                persist_status = result.persist_status;
+            }
+        }
 
         // Create datadir if it does not exist.
         const auto base_path{args.GetDataDirBase()};
@@ -113,6 +125,11 @@ std::optional<ConfigError> InitConfig(ArgsManager& args, SettingsAbortFn setting
                 } else {
                     details.clear(); // User chose to ignore the error and proceed.
                 }
+            }
+            if (persist_status) {
+                args.LockSettings([&](common::Settings& settings) {
+                    settings.rw_settings[PURITY_CLI_DATADIR_SETTING] = MakePurityCliDatadirMarker(*persist_status);
+                });
             }
             if (!args.WriteSettingsFile(&details)) {
                 const bilingual_str& message = _("Settings file could not be written");

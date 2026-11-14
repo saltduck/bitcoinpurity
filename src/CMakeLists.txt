@@ -281,6 +281,7 @@ add_library(bitcoin_node STATIC EXCLUDE_FROM_ALL
   node/coins_view_args.cpp
   node/connection_types.cpp
   node/context.cpp
+  node/datadir_confirm.cpp
   node/database_args.cpp
   node/eviction.cpp
   node/interface_ui.cpp

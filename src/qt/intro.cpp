@@ -93,7 +93,7 @@ std::optional<std::string> FetchOfficialPackagesJson(const QUrl& url, QString& e
         return std::nullopt;
     }
 
-    const std::string contents = reply->readAll().toStdString();
+    std::string contents = reply->readAll().toStdString();
     reply->deleteLater();
     QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
     if (contents.empty()) {
@@ -227,7 +227,7 @@ bool NeedsSyncSetup(const fs::path& base_datadir)
 {
     const fs::path settings_path = NetworkSettingsPath(base_datadir);
     std::error_code ec;
-    if (!std::filesystem::exists(settings_path, ec) || ec) {
+    if (!fs::exists(settings_path, ec) || ec) {
         return true;
     }
     std::map<std::string, common::SettingsValue> values;
@@ -286,7 +286,7 @@ bool SavedDataDirIsUsable(const fs::path& datadir)
     }
     blocks /= "blocks";
     std::error_code ec;
-    if (!std::filesystem::exists(blocks, ec) || ec) {
+    if (!fs::exists(blocks, ec) || ec) {
         return true;
     }
     return IsUsableDirectory(blocks);
@@ -310,7 +310,7 @@ void FreespaceChecker::check()
     fs::path parentDirOld = fs::path();
     while (parentDir.has_parent_path()) {
         std::error_code ec;
-        if (std::filesystem::exists(parentDir, ec) && !ec) {
+        if (fs::exists(parentDir, ec) && !ec) {
             break;
         }
         parentDir = parentDir.parent_path();
@@ -508,7 +508,7 @@ IntroStoragePage::IntroStoragePage(Intro* wizard)
     m_prune = new QCheckBox(Intro::tr("Limit block chain storage to"), m_p2p_page);
     m_prune->setToolTip(Intro::tr("Reverting this setting requires re-downloading the entire blockchain. It is faster to download the full chain first and prune it later. Disables some advanced features."));
     m_prune_mib = new QSpinBox(m_p2p_page);
-    m_prune_mib->setSuffix(Intro::tr(" MiB"));
+    m_prune_mib->setSuffix(QStringLiteral(" ") + Intro::tr("MiB"));
     m_prune_suffix = new QLabel(m_p2p_page);
     prune_layout->addWidget(m_prune);
     prune_layout->addWidget(m_prune_mib);
@@ -872,6 +872,46 @@ void Intro::onSyncModeChanged()
     }
 }
 
+bool Intro::confirmNonEmptyDataDirectory()
+{
+    QString display_path = QDir::toNativeSeparators(getDataDirectory());
+    QString error;
+    try {
+        const fs::path datadir = fs::absolute(GUIUtil::QStringToPath(getDataDirectory()));
+        display_path = QDir::toNativeSeparators(GUIUtil::PathToQString(datadir));
+        if (!fs::exists(datadir)) return true;
+        if (!fs::is_directory(datadir)) {
+            error = tr("The selected path is not a directory.");
+        } else if (fs::is_empty(datadir)) {
+            return true;
+        }
+    } catch (const fs::filesystem_error&) {
+        error = tr("Could not inspect the data directory. Check that it is accessible.");
+    }
+
+    if (!error.isEmpty()) {
+        QMessageBox message(QMessageBox::Critical, windowTitle(),
+            tr("Cannot use the selected data directory:\n\n%1\n\n%2").arg(display_path, error),
+            QMessageBox::Ok, this);
+        message.setTextFormat(Qt::PlainText);
+        message.exec();
+        return false;
+    }
+
+    QMessageBox message(QMessageBox::Warning, tr("Data directory is not empty"),
+        tr("The selected data directory already exists and is not empty:\n\n%1").arg(display_path),
+        QMessageBox::Cancel, this);
+    message.setTextFormat(Qt::PlainText);
+    message.setInformativeText(syncMode() == IntroSyncMode::OFFICIAL_PACKAGE
+        ? tr("Installing the official data package may overwrite existing blockchain data (blocks/ and chainstate/) and bitcoin.conf in this directory. Back up any data you want to keep before continuing.")
+        : tr("Continuing will use this directory and may update existing node data and settings. Make sure this is the directory you intend to use."));
+    QPushButton* continue_button = message.addButton(tr("Continue"), QMessageBox::AcceptRole);
+    message.setDefaultButton(QMessageBox::Cancel);
+    message.setEscapeButton(QMessageBox::Cancel);
+    message.exec();
+    return message.clickedButton() == continue_button;
+}
+
 bool Intro::validateCurrentPage()
 {
     if (currentId() == 0) {
@@ -895,6 +935,9 @@ bool Intro::validateCurrentPage()
                 tr("Not enough disk space. At least %1 GB is required.").arg(m_required_space_gb));
             return false;
         }
+        // Check on every Start, including CLI-selected directories and download retries,
+        // before creating wallets/ or starting an official package download.
+        return confirmNonEmptyDataDirectory();
     }
     return true;
 }
