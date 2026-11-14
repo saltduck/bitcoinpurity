@@ -177,10 +177,7 @@ endif()
 # offline crate sources from depends (native_rust and sv2_crates).
 set(sv2_packages @sv2_packages@)
 if("${sv2_packages}" STREQUAL "")
-  # BUILD_SV2 is declared (default ON) before project() loads this file, so a
-  # plain cache default would be ignored. Without the depends Rust toolchain
-  # the gateway cannot be built, so turn it off.
-  set(BUILD_SV2 OFF CACHE BOOL "" FORCE)
+  set(BUILD_SV2 OFF CACHE BOOL "")
 else()
   set(BUILD_SV2 ON CACHE BOOL "")
   set(SV2_CARGO "${CMAKE_CURRENT_LIST_DIR}/native/bin/cargo" CACHE FILEPATH "")
