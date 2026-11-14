@@ -63,7 +63,7 @@ Local macOS arm64, AppleClang 21, Release, WERROR=OFF, wallet and GUI disabled:
 Existing mismatched bilingual_str declaration and duplicate-link-library warnings
 remain. Linux, Windows, Qt, IPC, sanitizers and fuzzing were not validated.
 At that initial checkpoint there was no runtime; subsequent work and acceptance
-are recorded below and in TASK-032 through TASK-034 and TASK-049.
+are recorded below and in TASK-032, TASK-033, TASK-049 and TASK-051.
 
 ## Template provider and C ABI implementation
 

@@ -193,4 +193,16 @@ static inline void datum_socket_thread_client_count_decrement(T_DATUM_THREAD_DAT
 	if (not_already_locked) pthread_mutex_unlock(&my->thread_data_lock);
 }
 
+
+// Close a client's socket and free its slot. Both happen under
+// thread_data_lock, because assign_to_thread reads and peeks the fds of all
+// slots under that lock to count connections per IP: closing first and
+// clearing the slot later would let it peek a closed, or already reused, fd.
+static inline void datum_socket_thread_close_client(T_DATUM_THREAD_DATA *my, int cid) {
+	pthread_mutex_lock(&my->thread_data_lock);
+	datum_socket_close(my->client_data[cid].fd);
+	datum_socket_thread_client_count_decrement(my, cid, false);
+	pthread_mutex_unlock(&my->thread_data_lock);
+}
+
 #endif

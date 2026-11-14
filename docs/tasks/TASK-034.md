@@ -1,37 +1,25 @@
-# TASK-034: Configuration, RPC and Qt integration
+# TASK-034: Headers presync ASERT difficulty check (M-1)
 
-Mutually exclusive modes, safe persistence and shared RPC/Qt status; test outages, reorg and restart.
+- Status: Implemented
 
-See [requirements](../../input/requirements.md), [architecture](../architecture/embedded-sv2.md) and [contract](../api/sv2.md).
+Implements the [requirements](../../input/requirements.md) section "Headers
+presync ASERT difficulty check" per the
+[architecture](../architecture/validation-issues.md). Numbered 034 because
+TASK-030 to TASK-033 are used on master or other branches.
 
-## Status
+## Verification
 
-Implemented; daemon and Qt verified locally on macOS and Linux. Native Windows CI remains tracked in TASK-049.
+`headers_sync_chainwork_tests` with mainnet parameters, written first and
+failing on the previous sources:
 
-## Daemon configuration and RPC checkpoint
+- a post-activation `powLimit` header is rejected in presync, starting above
+  and below the ASERT anchor;
+- the exact ASERT header is accepted, including the harder activation block;
+- a header more than 2 hours in the future is rejected;
+- redownload rejects a wrong-`nBits` header that presync never saw.
 
-Added opt-in sv2 configuration, authenticated endpoint/key validation, sensitive
-argument marking, and mutual exclusion with DATUM before subsystem validation.
-Invalid local configuration fails startup. The miner listener is bound before
-startup succeeds; remote failures only affect the gateway. Start/interrupt/join
-are ordered around node lifetime. getsv2info returns the shared aggregate runtime
-snapshot without worker names, local credentials or the upstream account.
-
-The daemon is linked against the Rust static library and has passed the complete
-local V1/SV2/JDS proof-of-work functional scenario. Qt integration is implemented below.
-
-
-## Qt mode and status checkpoint
-
-Added restart-based Disabled/DATUM Solo/SV2 selection, endpoint/authority/account
-settings and masked local credentials. Only edited values are written to the
-read/write configuration file; settings.json does not receive passwords.
-Validation rejects characters truncated by the config parser. Tests first
-caught unnecessary writes from an unchanged dialog and acceptance of # in an
-edited password, then passed after the fixes.
-
-Mining pages use the getsv2info snapshot, show local-valid/pending/abandoned and
-pool-acknowledged counters, and retain fractional work for regtest hashrate.
-The fractional-work regression first failed under the old integer accumulator.
-The macOS Qt application and full macOS/Linux Qt suites pass. macOS's existing
-minimal-platform IntroTests skip is unchanged.
+Fuzz target `headers_sync_state_asert` starts from a synthetic mainnet index
+below the anchor, between anchor and activation, or after activation. It can
+give fuzzed headers the required nBits, and asserts that every header presync
+accepts or redownload releases has the nBits and time full validation requires.
+It crashes on the previous sources.

@@ -49,6 +49,8 @@
 - [TASK-029: Core #36665, #36667 and #36669 security backports](TASK-029.md)
 
 - [TASK-030: Guix release manifest artifacts](TASK-030.md)
+
+- [TASK-034: Headers presync ASERT difficulty check](TASK-034.md)
   (includes the default `./guix-build-<version>/output` artifact directory and
   identical upload-staging copies).
 
@@ -85,7 +87,7 @@
 - [TASK-031: Mining template and validation bridge](TASK-031.md) — implemented; unit and sanitizer checks pass.
 - [TASK-032: Rust protocol gateway and lifecycle](TASK-032.md) — implemented; local pool/JDS acceptance passes.
 - [TASK-033: Independent pool and V1 end-to-end acceptance](TASK-033.md) — Linux/macOS local chain passes.
-- [TASK-034: Configuration, RPC and Qt integration](TASK-034.md) — implemented; Linux/macOS CLI/Qt verified.
+- [TASK-051: Configuration, RPC and Qt integration](TASK-051.md) — implemented; Linux/macOS CLI/Qt verified.
 - [TASK-049: Platform builds, fuzzing and release verification](TASK-049.md) — local builds/packages pass; hosted/native Windows CI blocked by account Actions restriction.
 - [TASK-050: Restore optional IPC builds](TASK-050.md) — Linux/macOS daemon and GUI IPC runtime verified.
 

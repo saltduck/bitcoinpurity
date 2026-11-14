@@ -471,7 +471,7 @@ Existing two-entry files keep fixed-pair behavior. Local regression evidence
 and remaining checks are recorded in TASK-PS-011; no deployment is part of this
 change.
 
-## Embedded SV2 (TASK-048 and TASK-031 through TASK-034 and TASK-049)
+## Embedded SV2 (TASK-048 and TASK-031 through TASK-033, TASK-049 and TASK-051)
 
 Add an opt-in pooled backend, preserving DATUM Solo and IPC field numbers.
 No consensus/database migration, reindex or rescan. Rebuild with pinned Rust and
