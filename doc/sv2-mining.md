@@ -170,7 +170,7 @@ its normal non-mining operation while the pool is unavailable.
 
 - [Configuration and RPC contract](../docs/api/sv2.md)
 - [Embedded gateway architecture](../docs/architecture/embedded-sv2.md)
-- [Build, test and release acceptance status](../docs/tasks/TASK-035.md)
+- [Build, test and release acceptance status](../docs/tasks/TASK-049.md)
 
 ## Optional fixed coinbase tags
 

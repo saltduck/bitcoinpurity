@@ -65,7 +65,7 @@ project's acceptance conclusions belong here.
 
 Native Windows MSVC/Qt and Windows release execution were not available; hosted
 CI was not run. Independent pool stress, full one-sided fault/accounting and
-CKPool's updated Core IPC bindings remain separate gates in TASK-035/TASK-037.
+CKPool's updated Core IPC bindings remain separate gates in TASK-049/TASK-037.
 PR #44 remains Draft; no merge, production endpoint or miner migration occurred.
 
 ## Reproduction and local records

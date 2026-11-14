@@ -63,7 +63,7 @@ Local macOS arm64, AppleClang 21, Release, WERROR=OFF, wallet and GUI disabled:
 Existing mismatched bilingual_str declaration and duplicate-link-library warnings
 remain. Linux, Windows, Qt, IPC, sanitizers and fuzzing were not validated.
 At that initial checkpoint there was no runtime; subsequent work and acceptance
-are recorded below and in TASK-032 through TASK-035.
+are recorded below and in TASK-032 through TASK-034 and TASK-049.
 
 ## Template provider and C ABI implementation
 
@@ -92,6 +92,6 @@ to a second node. macOS and Linux mining suites pass. macOS C++ ASan/UBSan
 pass all eight cases; LeakSanitizer is unsupported on that host. Header catch-up
 cooldown resets when headers first get ahead, even if the tip has not changed.
 
-At this checkpoint IPC was forced OFF. TASK-036 subsequently restored the
+At this checkpoint IPC was forced OFF. TASK-050 subsequently restored the
 optional build, retaining old wire ordinals and adding missing fork methods.
 SV2-specific helper methods remain in-process.

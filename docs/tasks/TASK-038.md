@@ -1,7 +1,7 @@
 # TASK-038: Align IPC with Bitcoin Core v32.1
 
 Status: implementation and local Linux/macOS validation complete; external
-acceptance remains open. Supersedes TASK-036 wire-number preservation and TASK-037's
+acceptance remains open. Supersedes TASK-050 wire-number preservation and TASK-037's
 proposed separate compatibility socket. Authorized 2026-11-02.
 Reference: bitcoin/bitcoin v32.1, f0de87f040621468b956f01f526a43a010310501.
 
@@ -114,7 +114,7 @@ This task does not establish independent Core-client or CKPool end-to-end
 interoperability. CKPool's Core v31-era bindings still need the changes above and
 isolated consensus-backed acceptance. No CKPool source or production service was
 changed. Native Windows MSVC/Qt, Windows release-package execution and hosted CI
-have not been rerun by this task. TASK-035/TASK-037 release gates remain open;
+have not been rerun by this task. TASK-049/TASK-037 release gates remain open;
 PR #44 must stay Draft. The earlier independent network-fault and saturation
 acceptance gaps are not closed by these IPC checks.
 

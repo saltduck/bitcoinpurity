@@ -58,7 +58,7 @@ sources are unmodified.
 
 ## Optional IPC restoration
 
-TASK-036 restored the separate multi-process build. TASK-038 upgrades its
+TASK-050 restored the separate multi-process build. TASK-038 upgrades its
 libmultiprocess dependency to the unmodified Core v32.1 snapshot and replaces the
 inherited wire layout with Core v32.1. SV2 retains its same-process C ABI bridge;
 Purity-specific convenience methods are not additional IPC methods.

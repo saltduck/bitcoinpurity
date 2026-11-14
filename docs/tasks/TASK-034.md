@@ -6,7 +6,7 @@ See [requirements](../../input/requirements.md), [architecture](../architecture/
 
 ## Status
 
-Implemented; daemon and Qt verified locally on macOS and Linux. Native Windows CI remains tracked in TASK-035.
+Implemented; daemon and Qt verified locally on macOS and Linux. Native Windows CI remains tracked in TASK-049.
 
 ## Daemon configuration and RPC checkpoint
 

@@ -471,7 +471,7 @@ Existing two-entry files keep fixed-pair behavior. Local regression evidence
 and remaining checks are recorded in TASK-PS-011; no deployment is part of this
 change.
 
-## Embedded SV2 (TASK-048 and TASK-031 through TASK-035)
+## Embedded SV2 (TASK-048 and TASK-031 through TASK-034 and TASK-049)
 
 Add an opt-in pooled backend, preserving DATUM Solo and IPC field numbers.
 No consensus/database migration, reindex or rescan. Rebuild with pinned Rust and
@@ -489,24 +489,24 @@ enabled startup, retry-only failure status, RPC and joined shutdown; this does
 not replace native MSVC/Qt acceptance. Dedicated CI covers native Windows static
 CRT and macOS/Linux ON/OFF CLI/Qt, local mining, DATUM and fuzz regressions.
 Release jobs install pinned Rust. Native Windows CI and real pool/production
-acceptance remain open. TASK-036 subsequently restored optional IPC and
+acceptance remain open. TASK-050 subsequently restored optional IPC and
 verified Linux/macOS builds and runtime paths; existing ordinals remain unchanged.
 
-## Optional IPC restoration (TASK-036)
+## Optional IPC restoration (TASK-050)
 
 Restore a default-OFF build option and fix project-owned integration, retaining
 unmodified libmultiprocess v5.0 and Cap'n Proto 1.2.0 dependencies. No database or
-consensus migration. Concrete failures and acceptance are recorded in TASK-036.
+consensus migration. Concrete failures and acceptance are recorded in TASK-050.
 
 IPC restoration builds bitcoin-node and bitcoin-gui on Linux/macOS. Local C++
 template getters return owned snapshots; consumers of the old const/reference
 C++ signatures need recompilation. Existing wire methods retain their ordinals;
 the missing fork methods and full options are additive. Core v32.1's incompatible
 schema is not substituted. No consensus, database, RPC JSON or SV2 protocol
-migration is required. See TASK-036 for failures and acceptance results.
+migration is required. See TASK-050 for failures and acceptance results.
 
 
-## TASK-035 hosted acceptance follow-through
+## TASK-049 hosted acceptance follow-through
 
 The SV2 branch is pushed. GitHub's account-level Actions restriction currently
 rejects manual dispatch and prevents push-triggered runs; native Windows/Qt and
@@ -534,7 +534,7 @@ v31-era binding must be updated externally; its current layout is not the target
 
 ## Core v32.1 IPC replacement (TASK-038, 2026-11-02)
 
-This intentionally supersedes the historical TASK-036 ordinal-preservation
+This intentionally supersedes the historical TASK-050 ordinal-preservation
 results above. Init.makeMining moves from @2 to @3, and old @2 explicitly fails.
 Mining.createNewBlock @4 gains context/cooldown; @5 becomes checkBlock rather
 than createNewBlock2. Core submitBlock, interrupt and both transaction lookups

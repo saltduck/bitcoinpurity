@@ -6,7 +6,7 @@ See [requirements](../../input/requirements.md), [architecture](../architecture/
 
 ## Status
 
-Implemented; local macOS and Linux end-to-end scenarios pass. Native Windows gates are tracked in TASK-035.
+Implemented; local macOS and Linux end-to-end scenarios pass. Native Windows gates are tracked in TASK-049.
 
 ## Independent regtest acceptance
 

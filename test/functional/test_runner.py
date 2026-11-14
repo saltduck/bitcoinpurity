@@ -106,6 +106,7 @@ BASE_SCRIPTS = [
     'feature_purity_rdts_grandfather.py',
     'feature_rdts_ignore_rejects.py',
     'feature_park_deep_reorg.py',
+    'feature_park_catchup.py',
     'feature_parked_chain.py --scenario=active-park-rejected',
     'feature_parked_chain.py --scenario=state-a',
     'feature_parked_chain.py --scenario=state-b',

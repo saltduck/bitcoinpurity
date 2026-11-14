@@ -6,7 +6,7 @@ See [requirements](../../input/requirements.md), [architecture](../architecture/
 
 ## Status
 
-Implemented and exercised by independent local pool/JDS acceptance on macOS and Linux. Platform gates remain in TASK-035.
+Implemented and exercised by independent local pool/JDS acceptance on macOS and Linux. Platform gates remain in TASK-049.
 
 ## Authenticated transport checkpoint
 

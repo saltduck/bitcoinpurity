@@ -1,5 +1,28 @@
 # Bitcoin Purity Product Specification
 
+## Catch-up-aware deep-reorg parking
+
+- A block is protected (`BLOCK_PARK_PROTECTED`, persisted) when connected to
+  the active chain outside catch-up, and unprotected when connected during
+  catch-up. Missing flags mean unprotected (ordinary most-work selection).
+- Catch-up begins at every start and ends once per run: not in IBD, at least
+  `-parkcatchuppeers` (default 3, minimum 1) qualifying peers (automatic
+  full-relay, block-relay-only and manual outbound, excluding demoted
+  stale-consensus peers) report our tip as best known, and none reports a
+  non-failed, non-parked block with more work. No time or tip-age condition.
+  Outside IBD the node requests headers (rate-limited to every 5 seconds) from
+  qualifying peers that have not reported its tip while in catch-up, except
+  peers whose chain-sync eviction timer is running.
+- A competing chain is parked when the protected active blocks above the fork
+  exceed `parkreorgdepth` (default 3). No automatic unparking; manual RPCs,
+  persisted flags and `getchaintips.parked` are unchanged.
+- A node warning (RPC warnings, GUI, `-alertnotify`) is present while a parked
+  branch has more work than the active tip; `getblockchaininfo.parkcatchup`
+  reports the catch-up state.
+- Automatic outbound selection prefers bit-25 records only from the tried
+  table (handshake-confirmed services), via the normal bucket walk; gossip-only
+  claims are not preferred.
+
 ## Guix release manifest artifacts
 
 The release manifest generator accepts Guix `bitcoinpurity-` and legacy
@@ -211,8 +234,8 @@ verification criteria, and non-goals are normative in
   validation category, including height and both hashes. Preserve the rejection
   reason and peer handling. A conflicting activation block already stored in
   the local block index must still produce an ERROR and prevent startup.
-- Automatic outbound selection prefers known bit-25 records in the existing
-  AddrMan for the first 20 attempts. If there are no matching records, use normal
+- Automatic outbound selection prefers known bit-25 tried-table records (see
+  catch-up parking section) for the first 20 attempts. If there are none, use normal
   selection immediately; after 20 ineligible draws, return to normal selection.
   Existing network diversity, services, recent-attempt and port checks apply.
 - Missing bit 25 never independently causes rejection or punishment. Manual
@@ -238,7 +261,7 @@ verification criteria, and non-goals are normative in
   `unparkblock` clears flags and invokes normal activation. Delivery order and
   `pblock` do not affect parking. `getchaintips.parked` and local-policy
   semantics are retained. The default `parkreorgdepth` is 3; rewinds of 3 or
-  fewer proceed normally, while deeper rewinds are parked. Explicit thresholds
+  fewer protected blocks proceed normally, while deeper rewinds are parked. Explicit thresholds
   remain supported; no automatic unparking is implemented.
   Restart and chainstate-only rebuild retain flags. Full reindex reconstructs
   local status from scratch and may select a previously parked branch when
@@ -401,7 +424,7 @@ Passwords must not enter settings.json; status must not expose miner identities
 or credentials. Add getsv2info and Qt mode, configuration and backend status.
 Configuration changes require restart.
 
-Use TDD and reviewable commits under TASK-048 and TASK-031 through TASK-035. Acceptance
+Use TDD and reviewable commits under TASK-048 and TASK-031 through TASK-034 and TASK-049. Acceptance
 requires an independent local test pool/JDS, actual external V1 proof of work,
 upstream share acknowledgement and block propagation to a second regtest node.
 Cover faults, reorgs, shutdown, protocol/FFI fuzzing and three-platform ON/OFF
@@ -416,10 +439,10 @@ failures and fix only this project's integration. Use the unmodified libmultipro
 Cap'n Proto 1.2.0. Align IPC with Core v32.1 while preserving Purity
 consensus, single-process binaries and embedded SV2 behavior. Reference Core
 v32.1 where useful. Validate enabled daemon/Qt, actual IPC/mining calls, disabled
-build and SV2 compatibility. Track concrete failures and evidence in TASK-036.
+build and SV2 compatibility. Track concrete failures and evidence in TASK-050.
 
 
-## TASK-035 hosted acceptance and release archives
+## TASK-049 hosted acceptance and release archives
 
 Validate the pushed SV2 branch on native Linux/macOS/Windows, including MSVC/Qt,
 ON/OFF builds and extracted release binaries/application bundles. Manual release

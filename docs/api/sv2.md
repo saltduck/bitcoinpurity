@@ -89,11 +89,11 @@ The test-only fixture is not installed or included in release packages.
 Production pools must implement this pinned Full-Template protocol dialect;
 local success does not establish interoperability with every SV2 pool.
 
-IPC restoration (TASK-036) preserves this gateway API. TASK-038 subsequently
+IPC restoration (TASK-050) preserves this gateway API. TASK-038 subsequently
 replaces the inherited IPC wire layout with Core v32.1; the gateway stays in process.
 
 
-TASK-035 release acceptance exercises the same RPC contract from packaged
+TASK-049 release acceptance exercises the same RPC contract from packaged
 executables; packaging changes introduce no RPC or protocol migration.
 
 Pre-release review follow-up: [TASK-037](../tasks/TASK-037.md) tracks F1–F4 correctness fixes.
