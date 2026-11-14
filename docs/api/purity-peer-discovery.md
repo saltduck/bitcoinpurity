@@ -5,14 +5,6 @@ built-in seed list without changing RPC/P2P formats, DNS-seeding options or
 explicit peer configuration. Other networks' DNS seeds and fixed seeds remain
 unchanged.
 
-Mainnet fixed-seed fallback contains only the 11 endpoints selected in
-`input/requirements.md`. `node0.bitcoinpurity.org` is encoded as
-`49.190.167.39` at ports 8333 and 8334; `node1.bitcoinpurity.org` is encoded as
-`51.79.241.169:8333`, using DNS results from 2026-10-12. These are static address
-snapshots; updating DNS alone does not change compiled fixed seeds.
-The list retains the requested IPv6 endpoints and `57.129.53.78:5890`.
-RPC/P2P formats and the `-fixedseeds` option retain their existing behavior.
-
 `NODE_PURITY_ASERT` is experimental nServices bit 25. It claims support for
 the Bitcoin Purity ASERT chain and is only an unauthenticated discovery hint.
 
