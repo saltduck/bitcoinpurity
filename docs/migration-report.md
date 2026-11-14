@@ -360,8 +360,9 @@ change does not restrict all connections to the new fixed seeds.
 Keep a mainnet fixed seed only when a live VERSION message includes
 `NODE_NETWORK`. Remove `207.244.247.51:8333`, `51.79.241.169:8333` and
 `76.13.13.187:8333`: each answered with `NODE_NETWORK_LIMITED` and without
-`NODE_NETWORK`. Leave the other endpoints in place when they do not complete a handshake;
-that absence is not treated as proof they are pruned. Remove node0's
+`NODE_NETWORK`. An endpoint that does not complete a handshake is not proof
+of pruning, but it cannot serve blocks either, so it is removed as well (listed
+below). Remove node0's
 2026-10-12 address `49.190.167.39` on ports 8333 and 8334 without a
 replacement: `node0.bitcoinpurity.org` is a dynamic-DNS name and had already
 moved to `49.190.165.128` by 2026-10-29, so a compiled numeric address for it
