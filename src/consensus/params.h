@@ -145,6 +145,14 @@ struct Params {
     /** Correction activation; unset preserves historical validation pending a consensus decision. */
     int nReducedDataGrandfatherFixHeight{std::numeric_limits<int>::max()};
     /**
+     * Strict multisig public keys (doc/bips/bip-strict-multisig-pubkeys.md).
+     * Blocks at or above the enforcement height (H_b) require valid multisig
+     * public keys for inputs spending UTXOs created at or above the UTXO
+     * eligibility height (H_a). When set, H_a must be less than H_b. Unset => never enforced.
+     */
+    int nStrictMultisigUtxoHeight{std::numeric_limits<int>::max()};
+    int nStrictMultisigEnforcementHeight{std::numeric_limits<int>::max()};
+    /**
      * Hash of the Purity activation block (the block at nPurityActivationHeight).
      * When non-null, any block at that height with a different hash is invalid
      * by consensus. Unlike checkpoints, this cannot be disabled at runtime.

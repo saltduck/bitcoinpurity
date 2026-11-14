@@ -643,6 +643,11 @@ public:
             consensus.nReducedDataGrandfatherFixHeight = *opts.reduced_data_grandfather_fix_height;
         }
 
+        if (opts.strict_multisig_utxo_height && opts.strict_multisig_enforcement_height) {
+            consensus.nStrictMultisigUtxoHeight = *opts.strict_multisig_utxo_height;
+            consensus.nStrictMultisigEnforcementHeight = *opts.strict_multisig_enforcement_height;
+        }
+
         for (const auto& [dep, height] : opts.activation_heights) {
             switch (dep) {
             case Consensus::BuriedDeployment::DEPLOYMENT_SEGWIT:

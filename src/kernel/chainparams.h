@@ -203,6 +203,8 @@ public:
         std::unordered_map<Consensus::BuriedDeployment, int> activation_heights{};
         std::optional<int> purity_activation_height{};
         std::optional<int> reduced_data_grandfather_fix_height{};
+        std::optional<int> strict_multisig_utxo_height{};
+        std::optional<int> strict_multisig_enforcement_height{};
         bool fastprune{false};
         bool enforce_bip94{false};
     };

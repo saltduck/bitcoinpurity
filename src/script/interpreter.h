@@ -150,6 +150,11 @@ enum : uint32_t {
     // OP_IF is also forbidden inside Tapscript
     SCRIPT_VERIFY_REDUCED_DATA = (1U << 21),
 
+    // Every public-key operand of an executed OP_CHECKMULTISIG(VERIFY) must be a
+    // fully valid compressed or uncompressed secp256k1 public key, including
+    // operands the signature-matching loop never visits
+    SCRIPT_VERIFY_STRICT_MULTISIG_PUBKEYS = (1U << 22),
+
     // Constants to point to the highest flag in use. Add new flags above this line.
     //
     SCRIPT_VERIFY_END_MARKER
