@@ -452,6 +452,24 @@ precedence chain.
   AddrMan persistence, deterministic preference/fallback, legacy handshakes
   and advertised-bit activation-hash mismatches.
 
+## Headers presync ASERT difficulty check
+
+- Headers presync and redownload must not accept arbitrary `nBits` at or after
+  Purity activation. On networks with ASERT retargeting (mainnet, Purity
+  Signet), each header from the activation height must carry the exact ASERT
+  `nBits` computed from the anchor and its previous header, with the activation
+  block allowed to be harder, matching full header validation.
+- The anchor `nBits` and anchor-parent time come from the local block index
+  when the sync starts at or above the anchor height, otherwise from the
+  headers received in the same phase.
+- On those networks, presync and redownload abort on a header whose time is
+  more than `MAX_FUTURE_BLOCK_TIME` (2 hours) ahead of the local clock, so
+  future timestamps cannot lower the ASERT difficulty.
+- Pre-activation headers keep the inherited transition bound. Networks with
+  minimum-difficulty blocks or no retargeting (testnet, regtest) are unchanged.
+- No consensus, P2P message or disk-format change. Unit tests are written
+  first and fail on the current sources.
+
 ## Validation and signed-manifest corrections
 
 - Active-chain manual parking/rewind is deferred. Retain the

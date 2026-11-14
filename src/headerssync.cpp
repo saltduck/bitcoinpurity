@@ -41,6 +41,12 @@ HeadersSyncState::HeadersSyncState(NodeId id, const Consensus::Params& consensus
     // exceeds this bound, because it's not possible for a consensus-valid
     // chain to be longer than this (at the current time -- in the future we
     // could try again, if necessary, to sync a longer chain).
+    if (chain_start->nHeight >= m_consensus_params.nAsertAnchorHeight) {
+        const CBlockIndex* anchor{chain_start->GetAncestor(m_consensus_params.nAsertAnchorHeight)};
+        m_presync_asert_anchor = AsertAnchor{anchor->nBits, (anchor->pprev ? anchor->pprev : anchor)->GetBlockTime()};
+        m_redownload_asert_anchor = m_presync_asert_anchor;
+    }
+
     m_max_commitments = 6*(Ticks<std::chrono::seconds>(NodeClock::now() - NodeSeconds{std::chrono::seconds{chain_start->GetMedianTimePast()}}) + MAX_FUTURE_BLOCK_TIME) / HEADER_COMMITMENT_PERIOD;
 
     LogDebug(BCLog::NET, "Initial headers sync started with peer=%d: height=%i, max_commitments=%i, min_work=%s\n", m_id, m_current_height, m_max_commitments, m_minimum_required_work.ToString());
@@ -194,8 +200,8 @@ bool HeadersSyncState::ValidateAndProcessSingleHeader(const CBlockHeader& curren
     // work chain if they compress the work into as few blocks as possible,
     // so don't let anyone give a chain that would violate the difficulty
     // adjustment maximum.
-    if (!PermittedDifficultyTransition(m_consensus_params, next_height,
-                m_last_header_received.nBits, current.nBits)) {
+    if (!PermittedNextHeader(m_presync_asert_anchor, next_height,
+                m_last_header_received.nBits, m_last_header_received.GetBlockTime(), current)) {
         LogDebug(BCLog::NET, "Initial headers sync aborted with peer=%d: invalid difficulty transition at height=%i (presync phase)\n", m_id, next_height);
         return false;
     }
@@ -244,14 +250,17 @@ bool HeadersSyncState::ValidateAndStoreRedownloadedHeader(const CBlockHeader& he
 
     // Check that the difficulty adjustments are within our tolerance:
     uint32_t previous_nBits{0};
+    int64_t previous_time{0};
     if (!m_redownloaded_headers.empty()) {
         previous_nBits = m_redownloaded_headers.back().nBits;
+        previous_time = m_redownloaded_headers.back().nTime;
     } else {
         previous_nBits = m_chain_start->nBits;
+        previous_time = m_chain_start->GetBlockTime();
     }
 
-    if (!PermittedDifficultyTransition(m_consensus_params, next_height,
-                previous_nBits, header.nBits)) {
+    if (!PermittedNextHeader(m_redownload_asert_anchor, next_height,
+                previous_nBits, previous_time, header)) {
         LogDebug(BCLog::NET, "Initial headers sync aborted with peer=%d: invalid difficulty transition at height=%i (redownload phase)\n", m_id, next_height);
         return false;
     }
@@ -291,6 +300,36 @@ bool HeadersSyncState::ValidateAndStoreRedownloadedHeader(const CBlockHeader& he
     m_redownload_buffer_last_hash = header.GetHash();
 
     return true;
+}
+
+bool HeadersSyncState::PermittedNextHeader(std::optional<AsertAnchor>& anchor, int64_t next_height,
+        uint32_t prev_bits, int64_t prev_time, const CBlockHeader& next) const
+{
+    const Consensus::Params& params{m_consensus_params};
+    if (params.fPowAllowMinDifficultyBlocks || params.fPowNoRetargeting) {
+        return PermittedDifficultyTransition(params, next_height, prev_bits, next.nBits);
+    }
+    // ASERT difficulty falls as timestamps advance, so cap them as full
+    // validation does (time-too-new).
+    if (NodeSeconds{std::chrono::seconds{next.GetBlockTime()}} > NodeClock::now() + std::chrono::seconds{MAX_FUTURE_BLOCK_TIME}) {
+        LogDebug(BCLog::NET, "Initial headers sync aborted with peer=%d: header time too far in the future at height=%i\n", m_id, next_height);
+        return false;
+    }
+    if (next_height == params.nAsertAnchorHeight) anchor = AsertAnchor{next.nBits, prev_time};
+    if (next_height < params.nPurityActivationHeight) {
+        return PermittedDifficultyTransition(params, next_height, prev_bits, next.nBits);
+    }
+    if (!Assume(anchor)) return false;
+
+    arith_uint256 anchor_target;
+    anchor_target.SetCompact(anchor->bits);
+    const int64_t time_diff{prev_time - anchor->parent_time};
+    const int64_t height_diff{next_height - 1 - params.nAsertAnchorHeight};
+    const arith_uint256 pow_limit{UintToArith256(params.powLimit)};
+    const arith_uint256 required{params.signet_blocks ?
+        CalculateSignetASERT(anchor_target, params.nPowTargetSpacing, time_diff, height_diff, pow_limit, params.nDAAHalfLife) :
+        CalculateASERT(anchor_target, params.nPowTargetSpacing, time_diff, height_diff, pow_limit, params.nDAAHalfLife)};
+    return CheckDifficultyBits(next.nBits, required.GetCompact(), next_height, params);
 }
 
 std::vector<CBlockHeader> HeadersSyncState::PopHeadersReadyForAcceptance()
