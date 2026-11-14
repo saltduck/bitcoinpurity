@@ -3241,7 +3241,7 @@ bool Chainstate::FlushStateToDisk(
         // It's been a while since we wrote the block index and chain state to disk. Do this frequently, so we don't need to redownload or reindex after a crash.
         bool fPeriodicWrite = mode == FlushStateMode::PERIODIC && nNow >= m_next_write;
         // Combine all conditions that result in a write to disk.
-        bool should_write = (mode == FlushStateMode::ALWAYS) || fCacheLarge || fCacheCritical || fPeriodicWrite || fFlushForPrune;
+        bool should_write = (mode == FlushStateMode::ALWAYS) || (mode == FlushStateMode::FORCE_SYNC) || fCacheLarge || fCacheCritical || fPeriodicWrite || fFlushForPrune;
         // Write blocks, block index and best chain related state to disk.
         if (should_write) {
             // Ensure we can write block index
@@ -3667,6 +3667,17 @@ bool Chainstate::ConnectTip(BlockValidationState& state, CBlockIndex* pindexNew,
         m_mempool->removeForBlock(blockConnecting.vtx, pindexNew->nHeight);
         disconnectpool.removeForBlock(blockConnecting.vtx);
     }
+    // Only history connected after catch-up counts toward the parking depth.
+    if (this == &m_chainman.ActiveChainstate()) {
+        const uint32_t old_status{pindexNew->nStatus};
+        if (m_chainman.InParkCatchup()) {
+            pindexNew->nStatus &= ~BLOCK_PARK_PROTECTED;
+        } else {
+            pindexNew->nStatus |= BLOCK_PARK_PROTECTED;
+        }
+        if (pindexNew->nStatus != old_status) m_blockman.m_dirty_blockindex.insert(pindexNew);
+    }
+
     // Update m_chain & related variables.
     m_chain.SetTip(*pindexNew);
     m_chainman.UpdateIBDStatus();
@@ -3746,6 +3757,9 @@ CBlockIndex* Chainstate::FindMostWorkChain()
                         pindexFailed->nStatus |= BLOCK_FAILED_CHILD;
                         m_blockman.m_dirty_blockindex.insert(pindexFailed);
                     } else if (fParkedChain) {
+                        if (pindexFailed == pindexNew && m_chain.Tip() && pindexNew->nChainWork > m_chain.Tip()->nChainWork) {
+                            m_chainman.SetParkedChainWarning(*pindexNew);
+                        }
                         pindexFailed->nStatus |= BLOCK_PARKED_CHILD;
                         m_blockman.m_dirty_blockindex.insert(pindexFailed);
                     } else if (fMissingData) {
@@ -4144,10 +4158,17 @@ bool Chainstate::InvalidateBlock(BlockValidationState& state, CBlockIndex* pinde
             // as we disconnect.
             // Instead, consider only non-active-chain blocks that have at
             // least as much work as where we expect the new tip to end up.
+            // Blocks whose data has not arrived (or whose parents' data has
+            // not arrived) yet are included too: cs_main is released between
+            // disconnects, so their data may be received while we are still
+            // disconnecting, at a point where they have less work than the
+            // then-current tip and therefore were not added as candidates by
+            // ReceivedBlockTransactions. Eligibility is checked after each
+            // disconnect below instead (see upstream Bitcoin Core commit
+            // 4c29326183, part of bitcoin/bitcoin#31405).
             if (!m_chain.Contains(candidate) &&
                     !CBlockIndexWorkComparator()(candidate, pindex->pprev) &&
-                    candidate->IsValid(BLOCK_VALID_TRANSACTIONS) &&
-                    candidate->HaveNumChainTxs()) {
+                    !(candidate->nStatus & BLOCK_FAILED_MASK)) {
                 candidate_blocks_by_work.insert(std::make_pair(candidate->nChainWork, candidate));
             }
         }
@@ -4197,10 +4218,15 @@ bool Chainstate::InvalidateBlock(BlockValidationState& state, CBlockIndex* pinde
             m_blockman.m_dirty_blockindex.insert(to_mark_failed);
         }
 
-        // Add any equal or more work headers to setBlockIndexCandidates
+        // Add any equal or more work headers that have their data (and that
+        // of all their ancestors) to setBlockIndexCandidates. Headers that are
+        // not eligible yet stay in the cache, so they are reconsidered after
+        // the next disconnect in case their data arrived in the meantime.
         auto candidate_it = candidate_blocks_by_work.lower_bound(invalid_walk_tip->pprev->nChainWork);
         while (candidate_it != candidate_blocks_by_work.end()) {
-            if (!CBlockIndexWorkComparator()(candidate_it->second, invalid_walk_tip->pprev)) {
+            if (!CBlockIndexWorkComparator()(candidate_it->second, invalid_walk_tip->pprev) &&
+                    candidate_it->second->IsValid(BLOCK_VALID_TRANSACTIONS) &&
+                    candidate_it->second->HaveNumChainTxs()) {
                 TryAddBlockIndexCandidate(candidate_it->second);
                 candidate_it = candidate_blocks_by_work.erase(candidate_it);
             } else {
@@ -4387,6 +4413,7 @@ void Chainstate::TryAddBlockIndexCandidate(CBlockIndex* pindex)
     }
     if (pindex->nStatus & BLOCK_PARKED_MASK) {
         setBlockIndexCandidates.erase(pindex);
+        if (m_chain.Tip() && pindex->nChainWork > m_chain.Tip()->nChainWork) m_chainman.SetParkedChainWarning(*pindex);
         return;
     }
     // The block only is a candidate for the most-work-chain if it has the same
@@ -5165,15 +5192,22 @@ bool ChainstateManager::AcceptBlock(const std::shared_ptr<const CBlock>& pblock,
         const CBlockIndex* active_tip = active_chain.Tip();
         if (m_options.park_deep_reorg && active_tip) {
             const CBlockIndex* fork = active_chain.FindFork(pindex);
+            int protected_rewind{0};
             if (fork && fork != pindex && active_tip->nHeight - fork->nHeight > m_options.park_reorg_depth) {
+                // Blocks connected while catching up do not count.
+                for (const CBlockIndex* walk{active_tip}; walk != fork && protected_rewind <= m_options.park_reorg_depth; walk = walk->pprev) {
+                    if (walk->nStatus & BLOCK_PARK_PROTECTED) ++protected_rewind;
+                }
+            }
+            if (protected_rewind > m_options.park_reorg_depth) {
                 CBlockIndex* root = pindex->GetAncestor(fork->nHeight + 1);
                 if (!(root->nStatus & BLOCK_PARKED_MASK)) {
                     root->nStatus |= BLOCK_PARKED;
                     m_blockman.m_dirty_blockindex.insert(root);
                     for (Chainstate* chainstate : GetAll()) chainstate->setBlockIndexCandidates.erase(root);
-                    LogPrintf("Parking block %s at height %d; active tip height=%d, fork height=%d, rewind=%d exceeds parkreorgdepth=%d; use unparkblock to accept or invalidateblock to reject\n",
+                    LogPrintf("Parking block %s at height %d; active tip height=%d, fork height=%d, rewind=%d with more than %d protected blocks exceeds parkreorgdepth=%d; use unparkblock to accept or invalidateblock to reject\n",
                               root->GetBlockHash().ToString(), root->nHeight, active_tip->nHeight, fork->nHeight,
-                              active_tip->nHeight - fork->nHeight, m_options.park_reorg_depth);
+                              active_tip->nHeight - fork->nHeight, m_options.park_reorg_depth, m_options.park_reorg_depth);
                 }
             }
         }
@@ -7239,6 +7273,45 @@ std::optional<int> ChainstateManager::GetSnapshotBaseHeight() const
 {
     const CBlockIndex* base = this->GetSnapshotBaseBlock();
     return base ? std::make_optional(base->nHeight) : std::nullopt;
+}
+
+void ChainstateManager::EndParkCatchup()
+{
+    if (m_park_catchup.exchange(false)) {
+        LogInfo("Deep-reorg parking catch-up complete; newly connected blocks are protected");
+    }
+}
+
+void ChainstateManager::SetParkedChainWarning(const CBlockIndex& block)
+{
+    AssertLockHeld(cs_main);
+    const CBlockIndex* root{&block};
+    while (root->pprev && !(root->nStatus & BLOCK_PARKED) && !ActiveChain().Contains(root->pprev)) root = root->pprev;
+    GetNotifications().warningSet(kernel::Warning::PARKED_CHAIN,
+        strprintf(_("A competing chain with more work than the active chain is parked by the local deep-reorganization policy (first parked block %s at height %d). Review it, then use unparkblock to accept it or invalidateblock to reject it."),
+                  root->GetBlockHash().ToString(), root->nHeight));
+}
+
+void ChainstateManager::UpdateParkedChainWarning()
+{
+    AssertLockHeld(cs_main);
+    const CBlockIndex* tip{ActiveChain().Tip()};
+    std::vector<const CBlockIndex*> roots;
+    for (const auto& [_, index] : m_blockman.m_block_index) {
+        if ((index.nStatus & BLOCK_PARKED) && !(index.nStatus & BLOCK_FAILED_MASK)) roots.push_back(&index);
+    }
+    if (tip && !roots.empty()) {
+        for (const auto& [_, index] : m_blockman.m_block_index) {
+            if ((index.nStatus & BLOCK_FAILED_MASK) || index.nChainWork <= tip->nChainWork) continue;
+            for (const CBlockIndex* root : roots) {
+                if (index.GetAncestor(root->nHeight) == root) {
+                    SetParkedChainWarning(index);
+                    return;
+                }
+            }
+        }
+    }
+    GetNotifications().warningUnset(kernel::Warning::PARKED_CHAIN);
 }
 
 void ChainstateManager::RecalculateBestHeader()

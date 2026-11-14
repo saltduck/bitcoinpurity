@@ -8,7 +8,7 @@ from decimal import Decimal
 
 from test_framework.blocktools import COINBASE_MATURITY
 from test_framework.test_framework import BitcoinTestFramework
-from test_framework.util import assert_equal, assert_raises_rpc_error
+from test_framework.util import assert_greater_than_or_equal, assert_raises_rpc_error
 
 class WalletRBFTest(BitcoinTestFramework):
     def add_options(self, parser):
@@ -31,7 +31,14 @@ class WalletRBFTest(BitcoinTestFramework):
         txid = self.nodes[0].sendtoaddress(self.nodes[0].getnewaddress(), 1)
         tx = self.nodes[0].gettransaction(txid)
         vsize = self.nodes[0].decoderawtransaction(tx["hex"])["vsize"]
-        assert_equal(-tx["fee"], Decimal(vsize) / 100000000)
+        # The default fallback fee is 1 sat/vB. The wallet pays for the size it
+        # estimates before signing, which assumes a 71 byte signature (low R).
+        # About one signature in 128 has an R value shorter than 32 bytes, so
+        # the signed transaction can be a byte smaller than the estimate, and
+        # the input spends a coinbase output whose signature is not discounted
+        # as witness data.
+        assert_greater_than_or_equal(-tx["fee"], Decimal(vsize) / 100000000)
+        assert_greater_than_or_equal(Decimal(vsize + 1) / 100000000, -tx["fee"])
 
         # test sending a tx with disabled fallback fee (must fail)
         self.restart_node(0, extra_args=["-fallbackfee=0"])

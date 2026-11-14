@@ -25,3 +25,97 @@ runs:
       run: |
         source $FILE_ENV
         echo "CONTAINER_NAME=$CONTAINER_NAME" >> "$GITHUB_ENV"
+
+    # runner.temp is a fresh directory for every job, and the cache actions
+    # only save on pushes to the default branch, so a self-hosted runner would
+    # otherwise start every job cold. When the repository variable
+    # CI_PERSISTENT_CACHE_DIR names a directory on the runner host, keep
+    # ccache, depends and previous releases there across jobs instead.
+    - name: Use persistent cache directories
+      if: ${{ runner.environment == 'self-hosted' && vars.CI_PERSISTENT_CACHE_DIR != '' }}
+      shell: bash
+      env:
+        CACHE_ROOT: ${{ vars.CI_PERSISTENT_CACHE_DIR }}
+      run: |
+        set -euo pipefail
+        # Only a host that opted in by creating the directory uses it; other
+        # self-hosted runners (e.g. hosted agents that report themselves as
+        # self-hosted) keep the default per-job directories.
+        if [ ! -d "$CACHE_ROOT" ] || [ ! -w "$CACHE_ROOT" ]; then
+          echo "::notice title=Persistent cache::$CACHE_ROOT is not a writable directory on this runner; using per-job cache directories"
+          exit 0
+        fi
+        # Built depends packages contain absolute paths of the depends prefix
+        # (e.g. in their CMake config files), and ccache only hits when paths
+        # match, so the caches need the same root directory in every run. Use
+        # one root per container: the container name is unique per job
+        # configuration. This assumes a host runs one job of a given
+        # configuration at a time, which the fixed container name already
+        # requires.
+        root="$CACHE_ROOT/work/$CONTAINER_NAME"
+        mkdir -p "$root/depends" "$CACHE_ROOT/depends-sources"
+        # The build directory stays per job in runner.temp, as on a hosted
+        # runner: kept across jobs it takes several GB per configuration, while
+        # ccache already makes rebuilds fast. Remove the one earlier versions
+        # of this step kept here, and anything else an earlier job of this
+        # configuration left behind (e.g. when it was canceled before its own
+        # cleanup ran).
+        "$GITHUB_WORKSPACE/.github/actions/configure-environment/clean-persistent-root.sh" "$root"
+        # Sources don't depend on the path or the job, so share them. The CI
+        # script bind-mounts this path into the container; Docker resolves the
+        # symlink on the host.
+        ln -sfn "$CACHE_ROOT/depends-sources" "$root/depends/sources"
+        # Previous releases stay per configuration, like the per-container
+        # volume the CI script uses otherwise: functional tests use them
+        # whenever the directory isn't empty, so a shared one makes every
+        # configuration run the compatibility tests once the previous releases
+        # job downloaded them, including ones whose BDB the old releases can't
+        # read. Replace the symlink to a shared directory earlier versions of
+        # this step created.
+        if [ -L "$root/previous_releases" ]; then
+          rm "$root/previous_releases"
+        fi
+        mkdir -p "$root/previous_releases"
+        # Jobs of branches that still have the earlier version of this step
+        # run `ln -sfn` on this path too. Once it is a directory, that creates
+        # a symlink inside it instead of replacing it, so the directory isn't
+        # empty any more and every functional test that can use previous
+        # releases runs and fails on the missing binaries. The releases
+        # themselves are directories, so remove any symlink at the top level.
+        find "$root/previous_releases" -mindepth 1 -maxdepth 1 -type l -delete
+        {
+          echo "BASE_ROOT_DIR=$root"
+          echo "CCACHE_DIR=$root/ccache_dir"
+          echo "DEPENDS_DIR=$root/depends"
+          echo "BASE_CACHE=$root/depends/built"
+          echo "SOURCES_PATH=$root/depends/sources"
+          echo "PREVIOUS_RELEASES_DIR=$root/previous_releases"
+          echo "CI_PERSISTENT_CACHE=true"
+        } >> "$GITHUB_ENV"
+        echo "Using persistent root $root"
+
+    # The Buildkite runner creates a new runner.temp and workspace directory for
+    # every job under the agent's TMPDIR and doesn't remove them afterwards,
+    # which fills the disk of a persistent host within days. Remove the ones
+    # left by earlier jobs. A job can't safely remove its own at the end,
+    # because post steps of actions still use it, so do it at the start of the
+    # next job instead. Only touch directories that haven't changed for longer
+    # than any job may run (timeout-minutes is at most 240), so directories of
+    # jobs still running on other agents of the same host are kept.
+    - name: Remove directories of earlier jobs
+      if: ${{ env.CI_PERSISTENT_CACHE == 'true' }}
+      shell: bash
+      run: |
+        set -uo pipefail
+        own_temp="$(realpath "$RUNNER_TEMP")"
+        own_workspace="$(realpath "$GITHUB_WORKSPACE")"
+        for parent in "$(dirname "$own_temp")" "$(dirname "$own_workspace")"; do
+          find "$parent" -mindepth 1 -maxdepth 1 -type d -name 'buildkite-gha-*' -mmin +360 -print0
+        done | sort -zu | while IFS= read -r -d '' dir; do
+          dir="$(realpath "$dir")"
+          if [ "$dir" = "$own_temp" ] || [ "$dir" = "$own_workspace" ]; then
+            continue
+          fi
+          "$GITHUB_WORKSPACE/.github/actions/configure-environment/remove-dirs.sh" "$dir"
+        done
+        df -h "$(dirname "$own_temp")"

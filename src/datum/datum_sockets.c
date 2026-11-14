@@ -356,7 +356,11 @@ void *datum_threadpool_thread(void *arg) {
 }
 
 void clean_thread_data(T_DATUM_THREAD_DATA *d, T_DATUM_SOCKET_APP *app) {
-	int i,ret;
+	int i;
+	
+	// thread_data_lock is initialized once by the app owner; RPC stats readers
+	// may hold it concurrently, so reset the thread state under the lock.
+	pthread_mutex_lock(&d->thread_data_lock);
 	
 	// clean up clients, just in case
 	for(i=0;i<app->max_clients_thread;i++) {
@@ -373,16 +377,21 @@ void clean_thread_data(T_DATUM_THREAD_DATA *d, T_DATUM_SOCKET_APP *app) {
 	
 	memset(d->pollfds, 0, sizeof(datum_pollfd) * app->max_clients_thread);
 	
-	// init the mutex
-	ret = pthread_mutex_init(&d->thread_data_lock, NULL);
-	if (ret) {
-		DLOG_FATAL("Could not init mutex for thread data: %s", strerror(ret));
-		panic_from_thread(__LINE__);
-		return;
-	}
-	
 	// fix the app pointer
 	d->app = app;
+	
+	pthread_mutex_unlock(&d->thread_data_lock);
+}
+
+// A client that already closed its end can keep its slot until its pool thread
+// next polls it, which may lag behind a quick reconnect from the same host
+// (notably with WSAPoll on Windows). Peek without consuming data so such stale
+// slots do not count against the per-IP limit. Client sockets are non-blocking.
+static bool datum_client_peer_closed(datum_socket_t fd) {
+	char byte;
+	const int n = recv(fd, &byte, 1, MSG_PEEK | DATUM_MSG_DONTWAIT);
+	if (n == 0) return true;
+	return n < 0 && !datum_socket_would_block();
 }
 
 int assign_to_thread(T_DATUM_SOCKET_APP *app, datum_socket_t fd) {
@@ -405,7 +414,8 @@ int assign_to_thread(T_DATUM_SOCKET_APP *app, datum_socket_t fd) {
 	for (i = 0; i < app->max_threads; ++i) {
 		for (j = 0; j < app->max_clients_thread; ++j) {
 			if (app->datum_threads[i].client_data[j].fd > 0 &&
-				!strcmp(app->datum_threads[i].client_data[j].rem_host, remote_ip)) ++per_ip;
+				!strcmp(app->datum_threads[i].client_data[j].rem_host, remote_ip) &&
+				!datum_client_peer_closed(app->datum_threads[i].client_data[j].fd)) ++per_ip;
 		}
 	}
 	if (per_ip >= datum_config.stratum_v1_max_clients_per_ip) {
@@ -445,6 +455,7 @@ int assign_to_thread(T_DATUM_SOCKET_APP *app, datum_socket_t fd) {
 			DLOG_ERROR("Could not start new thread for TID %d", tid);
 			return 0;
 		}
+		app->datum_threads[tid].pthread_started = true;
 		app->datum_active_threads++;
 	} else {
 		// active threads are maxed already.  find one with the fewest clients
@@ -551,6 +562,10 @@ int assign_to_thread(T_DATUM_SOCKET_APP *app, datum_socket_t fd) {
 	app->datum_threads[tid].client_data[cid].datum_thread = (void *)&app->datum_threads[tid];
 	app->datum_threads[tid].client_data[cid].in_buf = 0;
 	app->datum_threads[tid].client_data[cid].out_buf = 0;
+	// Set before the thread can see the new client: it reads rem_host (e.g.
+	// for the per-IP security checks) as soon as the lock is released.
+	strncpy(app->datum_threads[tid].client_data[cid].rem_host, remote_ip, DATUM_MAX_IP_LEN);
+	app->datum_threads[tid].client_data[cid].rem_host[DATUM_MAX_IP_LEN] = 0;
 	app->datum_threads[tid].has_new_clients = true;
 	
 	pthread_mutex_unlock(&app->datum_threads[tid].thread_data_lock);
@@ -564,10 +579,7 @@ int assign_to_thread(T_DATUM_SOCKET_APP *app, datum_socket_t fd) {
 		tc++;
 	}
 	
-	strncpy(app->datum_threads[tid].client_data[cid].rem_host, remote_ip, DATUM_MAX_IP_LEN);
-	app->datum_threads[tid].client_data[cid].rem_host[DATUM_MAX_IP_LEN] = 0;
-	
-	DLOG_DEBUG("New client (%s) on TID %d, CID %d with fd %" PRIuPTR ". clients: %d / clients on thread: %d", app->datum_threads[tid].client_data[cid].rem_host, tid, cid, (uintptr_t)fd, tc, app->datum_threads[tid].connected_clients);
+	DLOG_DEBUG("New client (%s) on TID %d, CID %d with fd %" PRIuPTR ". clients: %d / clients on thread: %d", remote_ip, tid, cid, (uintptr_t)fd, tc, app->datum_threads[tid].connected_clients);
 	DLOG_DEBUG("app->datum_threads[tid].next_open_client_index = %d", app->datum_threads[tid].next_open_client_index);
 	return 1;
 }
@@ -674,7 +686,7 @@ bool datum_sockets_setup_listening_sockets(const char * const purpose, const cha
 }
 
 void *datum_gateway_listener_thread(void *arg) {
-	int i, ret;
+	int i;
 	bool rejecting_now = false;
 	uint64_t last_reject_msg_tsms = 0, curtime_tsms = 0;
 	uint64_t reject_count = 0;
@@ -693,16 +705,9 @@ void *datum_gateway_listener_thread(void *arg) {
 	
 	DLOG_DEBUG("Setting up app '%s' on address %s port %d. (T:%d/TC:%d/C:%d)", app->name, datum_config.stratum_v1_listen_addr[0] ? datum_config.stratum_v1_listen_addr : "(any)", app->listen_port, app->max_threads, app->max_clients_thread, app->max_clients);
 	
-	// we assume the caller sets up the thread data in some way
-	// don't clobber those pointers
+	// we assume the caller sets up the thread data in some way, including
+	// initializing thread_data_lock; don't clobber those pointers
 	for(i=0;i<app->max_threads;i++) {
-		ret = pthread_mutex_init(&app->datum_threads[i].thread_data_lock, NULL);
-		if (ret) {
-			DLOG_FATAL("Could not init mutex for thread data: %s", strerror(ret));
-			panic_from_thread(__LINE__);
-			return NULL;
-		}
-		
 		// set app data pointer
 		app->datum_threads[i].app = app;
 		app->datum_threads[i].thread_id = i;

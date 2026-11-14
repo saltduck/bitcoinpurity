@@ -37,6 +37,15 @@
 #include "thirdparty_base58.h"
 #include "datum_utils.h"
 
+/* MSVC has no C99 variable length arrays; allocate the same buffers on the
+ * stack with _alloca there and keep VLAs everywhere else. */
+#ifdef _MSC_VER
+#include <malloc.h>
+#define B58_STACK_ARRAY(type, name, count) type *name = (type *)_alloca(sizeof(type) * (count))
+#else
+#define B58_STACK_ARRAY(type, name, count) type name[count]
+#endif
+
 #define b58_sha256_impl my_sha256
 
 bool _blkmk_b58tobin(void *bin, size_t binsz, const char *b58, size_t b58sz) {
@@ -107,7 +116,7 @@ bool b58tobin(void *bin, size_t *binszp, const char *b58, size_t b58sz)
 	const unsigned char *b58u = (void*)b58;
 	unsigned char *binu = bin;
 	size_t outisz = (binsz + sizeof(b58_almostmaxint_t) - 1) / sizeof(b58_almostmaxint_t);
-	b58_almostmaxint_t outi[outisz];
+	B58_STACK_ARRAY(b58_almostmaxint_t, outi, outisz);
 	b58_maxint_t t;
 	b58_almostmaxint_t c;
 	size_t i, j;
@@ -218,7 +227,7 @@ bool b58enc(char *b58, size_t *b58sz, const void *data, size_t binsz)
 		++zcount;
 	
 	size = (binsz - zcount) * 138 / 100 + 1;
-	uint8_t buf[size];
+	B58_STACK_ARRAY(uint8_t, buf, size);
 	memset(buf, 0, size);
 	
 	for (i = zcount, high = size - 1; i < binsz; ++i, high = j)
@@ -255,7 +264,7 @@ bool b58enc(char *b58, size_t *b58sz, const void *data, size_t binsz)
 
 bool b58check_enc(char *b58c, size_t *b58c_sz, uint8_t ver, const void *data, size_t datasz)
 {
-	uint8_t buf[1 + datasz + 0x20];
+	B58_STACK_ARRAY(uint8_t, buf, 1 + datasz + 0x20);
 	uint8_t *hash = &buf[1 + datasz];
 	
 	buf[0] = ver;

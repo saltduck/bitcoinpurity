@@ -54,6 +54,10 @@
 
 - [TASK-033: DATUM public exposure and payout script hardening](TASK-033.md)
 
+- [TASK-035: Catch-up-aware deep-reorg parking](TASK-035.md)
+
+- [TASK-036: Verified-only Purity peer preference](TASK-036.md)
+
 ## Purity Signet
 
 - [TASK-PS-000: Baseline and requirement amendments](TASK-PS-000.md)

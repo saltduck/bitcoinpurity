@@ -699,7 +699,8 @@ void SetupServerArgs(ArgsManager& argsman, bool can_listen_ipc)
     argsman.AddArg("-checkmempool=<n>", strprintf("Run mempool consistency checks every <n> transactions. Use 0 to disable. (default: %u, regtest: %u)", defaultChainParams->DefaultConsistencyChecks(), regtestChainParams->DefaultConsistencyChecks()), ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::DEBUG_TEST);
     argsman.AddArg("-checkpoints", strprintf("Enable rejection of any forks from the known historical chain until block %s (default: %u)", defaultChainParams->Checkpoints().GetHeight(), DEFAULT_CHECKPOINTS_ENABLED), ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::DEBUG_TEST);
     argsman.AddArg("-parkdeepreorg", "Park a competing chain instead of activating it automatically when doing so would require a reorganization deeper than -parkreorgdepth. Local chain-selection policy, not a consensus rule. Enabled by default on mainnet (default: 1 on mainnet, 0 on test chains)", ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
-    argsman.AddArg("-parkreorgdepth=<n>", strprintf("Maximum number of active-chain blocks that may be automatically rewound before a competing chain is parked for manual review. Reorgs of this depth or less proceed normally; deeper reorgs are parked. Local policy, not consensus. (default: %i)", DEFAULT_PARK_REORG_DEPTH), ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
+    argsman.AddArg("-parkreorgdepth=<n>", strprintf("Maximum number of protected active-chain blocks that may be automatically rewound before a competing chain is parked for manual review. Blocks connected while the node is catching up after start are not protected. Reorgs of this depth or less proceed normally; deeper reorgs are parked. Local policy, not consensus. (default: %i)", DEFAULT_PARK_REORG_DEPTH), ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
+    argsman.AddArg("-parkcatchuppeers=<n>", strprintf("Number of outbound or manual peers that must report our chain tip, with none reporting a valid unparked chain with more work, before newly connected blocks are protected by deep-reorg parking (1 to %d, default: %d)", MAX_PARK_CATCHUP_PEERS, DEFAULT_PARK_CATCHUP_PEERS), ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
     argsman.AddArg("-deprecatedrpc=<method>", "Allows deprecated RPC method(s) to be used", ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::DEBUG_TEST);
     argsman.AddArg("-stopafterblockimport", strprintf("Stop running after importing blocks from disk (default: %u)", DEFAULT_STOPAFTERBLOCKIMPORT), ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::DEBUG_TEST);
     argsman.AddArg("-stopatheight", strprintf("Stop running after reaching the given height in the main chain (default: %u). Blocks after target height may be processed during shutdown.", DEFAULT_STOPATHEIGHT), ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::DEBUG_TEST);
@@ -1417,7 +1418,15 @@ static void SyncCoinsTipAfterChainSync(const NodeContext& node)
     }
 
     LogDebug(BCLog::COINDB, "Finished syncing to tip, syncing chainstate to disk\n");
-    node.chainman->ActiveChainstate().CoinsTip().Sync();
+    // Go through FlushStateToDisk rather than syncing the coins cache directly:
+    // the coins database may refer to blocks that are only known to the block
+    // index once it has been written, so the block files and the block index
+    // must be on disk first. Otherwise a crash while the coins are being
+    // written leaves a chainstate that ReplayBlocks() cannot recover from.
+    BlockValidationState state;
+    if (!node.chainman->ActiveChainstate().FlushStateToDisk(state, FlushStateMode::FORCE_SYNC)) {
+        LogWarning("Failed to sync chainstate to disk (%s)", state.ToString());
+    }
 }
 
 bool AppInitInterfaces(NodeContext& node)
@@ -2532,6 +2541,7 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
     // cannot yet be called. Before we make it callable, we need to make sure
     // that the RPC's view of the best block is valid and consistent with
     // ChainstateManager's active tip.
+    WITH_LOCK(cs_main, chainman.UpdateParkedChainWarning());
     SetRPCWarmupFinished();
 
 #ifdef ENABLE_DATUM
@@ -2575,7 +2585,12 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
     StartupNotify(args);
 #endif
 
-    if (node.chainman->IsInitialBlockDownload()) {
+    // -dbcrashratio simulates crashes while blocks are being connected, so a
+    // test can tell which block a node was processing when it went down. The
+    // post-IBD sync runs from the scheduler at an arbitrary time instead, and a
+    // simulated crash there takes the node down while it is idle, between the
+    // blocks the test submits. Skip it when crashes are being simulated.
+    if (node.chainman->IsInitialBlockDownload() && !args.IsArgSet("-dbcrashratio")) {
         node.scheduler->scheduleFromNow([&node] {
             SyncCoinsTipAfterChainSync(node);
         }, SYNC_CHECK_INTERVAL);

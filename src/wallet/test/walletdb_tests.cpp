@@ -47,7 +47,7 @@ BOOST_AUTO_TEST_CASE(walletdb_keypair_hash)
             const CPubKey pubkey = key.GetPubKey();
             const CPrivKey privkey = key.GetPrivKey();
             const CPubKey original_pubkey = pubkey;
-            const CPrivKey original_privkey = privkey;
+            const CPrivKey original_privkey = privkey; // NOLINT(performance-unnecessary-copy-initialization): snapshot to compare against
             std::vector<unsigned char> concatenated(pubkey.begin(), pubkey.end());
             concatenated.insert(concatenated.end(), privkey.begin(), privkey.end());
             const uint256 old_hash = Hash(concatenated);

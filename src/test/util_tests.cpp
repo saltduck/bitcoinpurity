@@ -2,6 +2,8 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <bitcoin-build-config.h> // IWYU pragma: keep
+
 #include <clientversion.h>
 #include <common/signmessage.h> // For MessageSign(), MessageVerify(), MESSAGE_MAGIC
 #include <hash.h> // For Hash()

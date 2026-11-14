@@ -17,8 +17,14 @@ alongside its existing conditions. RPC fields and consensus rules are unchanged.
 The minimum-chain-work test explicitly configures node2 with `-maxtipage=86400`;
 its two-day clock offset must keep `initialblockdownload` true after syncing.
 
-`-parkreorgdepth=<n>` defaults to 3. A rewind of 3 blocks may activate;
-rewinds of 4 or more are parked when parking is enabled. Explicit values of
+`-parkreorgdepth=<n>` defaults to 3. A rewind of 3 protected blocks may
+activate; rewinds of 4 or more protected blocks are parked when parking is
+enabled. Blocks connected while the node was catching up are not counted.
+`-parkcatchuppeers=<n>` (default 3, minimum 1) sets how many qualifying peers
+must report the tip before catch-up ends. `getblockchaininfo` adds required
+boolean `parkcatchup`. While a parked branch has more work than the active tip,
+`warnings` (getblockchaininfo/getnetworkinfo), the GUI and `-alertnotify`
+report it. Explicit values of
 at least 1 still override this local-policy threshold. Mainnet parking remains
 enabled by default; test-chain parking remains disabled by default.
 
