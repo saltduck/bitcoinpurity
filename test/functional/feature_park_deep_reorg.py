@@ -26,7 +26,7 @@ class ParkDeepReorgTest(BitcoinTestFramework):
         self.num_nodes = 2
         self.setup_clean_chain = True
         self.extra_args = [
-            ["-parkdeepreorg=1", "-checkblockindex=1"],
+            ["-parkdeepreorg=1", "-parkcatchuppeers=1", "-checkblockindex=1"],
             ["-parkdeepreorg=0", "-checkblockindex=1"],
         ]
 
@@ -37,6 +37,9 @@ class ParkDeepReorgTest(BitcoinTestFramework):
 
     def _build_fork(self, short_idx, long_idx, rewind, extra=1):
         """Mine a competing fork that would rewind `rewind` blocks on short_idx."""
+        if short_idx == 0:
+            # Only blocks connected after catch-up are protected by parking.
+            self.wait_until(lambda: not self.nodes[0].getblockchaininfo()["parkcatchup"])
         self.disconnect_nodes(short_idx, long_idx)
         fork_height = self.nodes[short_idx].getblockcount()
         self.generate(self.nodes[short_idx], rewind, sync_fun=self.no_op)
@@ -102,7 +105,7 @@ class ParkDeepReorgTest(BitcoinTestFramework):
 
     def test_custom_threshold(self):
         self.log.info("Custom parkreorgdepth=4: 4-block reorg is not parked")
-        self.restart_node(0, extra_args=["-parkdeepreorg=1", "-parkreorgdepth=4"])
+        self.restart_node(0, extra_args=["-parkdeepreorg=1", "-parkcatchuppeers=1", "-parkreorgdepth=4"])
         self.connect_nodes(0, 1)
         self.sync_all()
         _, _, long_height = self._build_fork(0, 1, rewind=4)
@@ -120,7 +123,7 @@ class ParkDeepReorgTest(BitcoinTestFramework):
 
     def test_headers_first_missing_ancestor_last(self):
         self.log.info("Headers first, missing ancestor last: park independently of pblock")
-        self.restart_node(0, extra_args=["-parkdeepreorg=1", "-parkreorgdepth=6", "-checkblockindex=1"])
+        self.restart_node(0, extra_args=["-parkdeepreorg=1", "-parkcatchuppeers=1", "-parkreorgdepth=6", "-checkblockindex=1"])
         self.connect_nodes(0, 1)
         self.sync_all()
         fork_hash, short_height, long_height = self._build_fork(0, 1, rewind=7)
@@ -170,13 +173,13 @@ class ParkDeepReorgTest(BitcoinTestFramework):
         self.nodes[0].invalidateblock(competing_tip)
         self.nodes[0].invalidateblock(fork_hash)
         self.nodes[0].invalidateblock(competing_tip)
-        self.restart_node(0, extra_args=["-parkdeepreorg=1", "-parkreorgdepth=6", "-checkblockindex=1"])
+        self.restart_node(0, extra_args=["-parkdeepreorg=1", "-parkcatchuppeers=1", "-parkreorgdepth=6", "-checkblockindex=1"])
         tip = next(t for t in self.nodes[0].getchaintips() if t["hash"] == header_block.hash)
         assert_equal(tip["status"], "invalid")
         assert_equal(tip["parked"], True)
         assert_equal(self.nodes[0].getbestblockhash(), original_tip)
         for extra_args in ([], ["-reindex-chainstate"]):
-            self.restart_node(0, extra_args=["-parkdeepreorg=1", "-parkreorgdepth=6", "-checkblockindex=1", *extra_args])
+            self.restart_node(0, extra_args=["-parkdeepreorg=1", "-parkcatchuppeers=1", "-parkreorgdepth=6", "-checkblockindex=1", *extra_args])
             # reconsiderblock calls ABC(nullptr); clearing invalidity must not
             # clear the independent persisted parking decision.
             self.nodes[0].reconsiderblock(header_block.hash)
@@ -209,7 +212,7 @@ class ParkDeepReorgTest(BitcoinTestFramework):
             for block in [*blocks[1:], blocks[0]]:
                 data = block.serialize()
                 stream.write(MAGIC_BYTES["regtest"] + struct.pack("<I", len(data)) + data)
-        self.restart_node(0, extra_args=["-parkdeepreorg=1", "-parkreorgdepth=6", f"-loadblock={bootstrap}"])
+        self.restart_node(0, extra_args=["-parkdeepreorg=1", "-parkcatchuppeers=1", "-parkreorgdepth=6", f"-loadblock={bootstrap}"])
         assert_equal(self.nodes[0].getbestblockhash(), original_tip)
         assert_equal(next(t for t in self.nodes[0].getchaintips() if t["hash"] == blocks[-1].hash)["parked"], True)
         # Import calls ABC(nullptr) after all bodies have been accepted.
@@ -226,7 +229,7 @@ class ParkDeepReorgTest(BitcoinTestFramework):
         self.disconnect_nodes(0, 1)
         # Full reindex discards the index and active chainstate. Unpruned import
         # initially activates only genesis, so there is no deep active rewind.
-        self.restart_node(0, extra_args=["-parkdeepreorg=1", "-reindex"])
+        self.restart_node(0, extra_args=["-parkdeepreorg=1", "-parkcatchuppeers=1", "-reindex"])
         assert_equal(self.nodes[0].getbestblockhash(), competing_tip)
         assert all(not tip["parked"] for tip in self.nodes[0].getchaintips())
         self.connect_nodes(0, 1)

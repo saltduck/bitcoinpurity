@@ -98,8 +98,10 @@ class ParkedChainTest(BitcoinTestFramework):
         self.sync_all()
 
     def enable_parking(self, extra_args=()):
-        self.restart_node(0, extra_args=["-parkdeepreorg=1", "-parkreorgdepth=6", *extra_args])
+        self.restart_node(0, extra_args=["-parkdeepreorg=1", "-parkreorgdepth=6", "-parkcatchuppeers=1", *extra_args])
         self.reconnect()
+        # Only blocks connected after catch-up are protected by parking.
+        self.wait_until(lambda: not self.nodes[0].getblockchaininfo()["parkcatchup"])
 
     def test_active_park_rejected(self):
         node = self.nodes[0]

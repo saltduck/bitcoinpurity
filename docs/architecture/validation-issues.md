@@ -22,8 +22,29 @@ clock offset continues to keep it in IBD after the minimum work is reached.
 `ChainstateManager::AcceptBlock` evaluates the active-chain fork depth after
 contextual checks and successful block storage, immediately before
 `ReceivedBlockTransactions`. It marks the first competing header index
-`BLOCK_PARKED` when the rewind exceeds the configured depth (default 3),
-even if that ancestor's body is missing, and dirties the index.
+`BLOCK_PARKED` when the number of `BLOCK_PARK_PROTECTED` active blocks above
+the fork exceeds the configured depth (default 3), even if that ancestor's
+body is missing, and dirties the index.
+
+`Chainstate::ConnectTip` sets `BLOCK_PARK_PROTECTED` when the block is
+connected outside catch-up and clears it during catch-up. The bit is a normal
+nStatus bit (2048) and is persisted with the index; absence means unprotected.
+`ChainstateManager` holds the catch-up latch, true at start. PeerManager ends
+it once per run when the node is out of IBD, at least `-parkcatchuppeers`
+qualifying outbound/manual peers (excluding demoted stale-consensus peers)
+report the tip as best known, and none reports a non-failed, non-parked block
+with more work. While latched and out of IBD, a qualifying peer whose best
+known block is not our tip gets a headers request at most every 5 seconds
+(a peer that learned our blocks from us never announces them back), so
+agreement is observable on a quiet chain. Peers whose chain-sync eviction
+timer is running are left to `ConsiderEviction`, which keeps its own
+getheaders slot. Existing nodes start with no protected blocks after the
+upgrade; protection resumes with blocks connected after the first catch-up. Blocks
+connected while catching up therefore cannot shield a short attacker extension
+from the honest chain, while history accepted before a restart stays protected.
+`TryAddBlockIndexCandidate` raises `kernel::Warning::PARKED_CHAIN` when a parked
+block has more work than the tip; `UpdateParkedChainWarning` rescans at startup
+and after the park/unpark/invalidate/reconsider RPCs.
 `TryAddBlockIndexCandidate` excludes parked ancestry and records descendant
 `BLOCK_PARKED_CHILD`; `FindMostWorkChain` retains its ancestor exclusion.
 `UnparkBlock` clears relevant descendants and ancestors before restoring

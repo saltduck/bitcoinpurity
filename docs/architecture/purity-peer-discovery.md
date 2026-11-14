@@ -18,11 +18,13 @@ gossip adds advertised flags with Add. Existing uint64/CompactSize encodings
 and peers.dat retain bit 25 without a format change.
 
 ThreadOpenConnections requests a service preference for the first 20 attempts
-of automatic non-anchor, non-feeler selection. AddrMan scans its existing
-records for matching service hints within the selected networks/table. It
-randomly samples matches using the existing GetChance penalty, new-record
-multiplicity, and the 50% new/tried split. When no hints match, it immediately
-uses its original bucket selector. No persistent index/database is added.
+of automatic non-anchor, non-feeler selection. AddrMan counts tried records
+whose handshake-confirmed services match within the selected networks. When
+there is at least one, it walks random tried buckets/positions as usual and
+accepts only matching records, with the existing GetChance penalty. New-table
+(gossip-only) claims are never preferred, so an addr flood cannot bypass
+bucket dilution. When no tried record matches, it immediately uses its
+original bucket selector. No persistent index/database is added.
 The scan is linear in AddrMan size and only occurs during these connection
 attempts; normal selection/feelers retain the original path.
 
