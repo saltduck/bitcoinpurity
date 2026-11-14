@@ -8,6 +8,7 @@
 #include <consensus/merkle.h>
 #include <consensus/validation.h>
 #include <key_io.h>
+#include <node/block_validation_state_catcher.h>
 #include <node/context.h>
 #include <pow.h>
 #include <primitives/transaction.h>
@@ -69,22 +70,6 @@ COutPoint MineBlock(const NodeContext& node, const node::BlockAssembler::Options
     return valid;
 }
 
-struct BlockValidationStateCatcher : public CValidationInterface {
-    const uint256 m_hash;
-    std::optional<BlockValidationState> m_state;
-
-    BlockValidationStateCatcher(const uint256& hash)
-        : m_hash{hash},
-          m_state{} {}
-
-protected:
-    void BlockChecked(const CBlock& block, const BlockValidationState& state) override
-    {
-        if (block.GetHash() != m_hash) return;
-        m_state = state;
-    }
-};
-
 COutPoint MineBlock(const NodeContext& node, std::shared_ptr<CBlock>& block)
 {
     while (!CheckProofOfWork(block->GetHash(), block->nBits, Params().GetConsensus())) {
@@ -95,7 +80,7 @@ COutPoint MineBlock(const NodeContext& node, std::shared_ptr<CBlock>& block)
     auto& chainman{*Assert(node.chainman)};
     const auto old_height = WITH_LOCK(chainman.GetMutex(), return chainman.ActiveHeight());
     bool new_block;
-    BlockValidationStateCatcher bvsc{block->GetHash()};
+    node::BlockValidationStateCatcher bvsc{block->GetHash()};
     node.validation_signals->RegisterValidationInterface(&bvsc);
     const bool processed{chainman.ProcessNewBlock(block, true, true, &new_block)};
     const bool duplicate{!new_block && processed};
