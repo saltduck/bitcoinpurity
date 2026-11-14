@@ -1,5 +1,26 @@
 # Implementation Task Index
 
+## Numbering
+
+Name a new task `TASK-YYYYMMDD-HHMM-NN`, for example `TASK-20261115-0930-01`:
+
+- `YYYYMMDD-HHMM` is the UTC time of the first commit of the branch that adds
+  the task, to the minute. For a branch that has commits,
+  `TZ=UTC git log --reverse --format=%cd --date=format-local:%Y%m%d-%H%M master..HEAD | head -n 1`
+  prints it; before the first commit, use the current UTC time.
+- `NN` numbers the tasks of that branch, starting at `01`.
+
+Branches developed in parallel then don't pick the same number, so merging
+`master` into a long-lived branch doesn't require renumbering its tasks. Keep
+the number when the branch is merged, and don't reuse it. A branch that splits
+off another one and adds tasks of its own uses the time of its own first
+commit (replace `master` with that branch in the command above).
+
+Tasks numbered before this rule, `TASK-NNN` and `TASK-PS-NNN`, keep their
+numbers.
+
+## Tasks
+
 - [TASK-001: Baseline provenance, minimal C source, and conditional build](TASK-001.md)
 - [TASK-002: Purity bridge, configuration, lifecycle, and refresh](TASK-002.md)
 - [TASK-003: Stratum authorization and bounded public-port security](TASK-003.md)
