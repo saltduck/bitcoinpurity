@@ -81,6 +81,9 @@ settings.json.bak
 #build tests
 test/lint/test_runner/target/
 
+# Functional test cache created when running tests directly from the source tree
+/test/cache/
+
 /guix-build-*
 
 /ci/scratch/
