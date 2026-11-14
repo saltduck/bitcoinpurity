@@ -1340,6 +1340,10 @@ bool OptionsDialog::saveDatumSettings()
         QMessageBox::critical(this, tr("Invalid DATUM setting"), tr("The Stratum listen address must be a numeric IPv4 or IPv6 address."));
         return false;
     }
+    if (enabled && datumUpnp->isChecked() && !datumAuth->isChecked()) {
+        QMessageBox::critical(this, tr("Invalid DATUM setting"), tr("UPnP requires Stratum authentication."));
+        return false;
+    }
 #ifdef USE_UPNP
     if (enabled && datumUpnp->isChecked()) {
         const auto listen_addr{LookupHost(listen, /*fAllowLookup=*/false)};
