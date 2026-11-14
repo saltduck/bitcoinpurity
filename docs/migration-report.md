@@ -370,6 +370,8 @@ with `NODE_NETWORK`. On 2026-10-30 add
 `[2403:71c0:2000:1d46::a]:8333`. Also remove `[240e:390:6ee0:f370::b40]:8333`,
 `[2a02:4780:79:909::1]:8333`, `36.25.72.251:8333`, `45.77.139.7:8333`,
 `46.7.6.219:8333` and `57.129.53.78:5890`: none returned a VERSION message.
+On 2026-11-14 add `195.154.208.43:8333` and
+`[2001:bc8:1200:14:dac4:97ff:fe68:a7e]:8333`.
 Regenerate only `chainparams_seed_main`.
 Other networks' seed arrays stay byte-for-byte unchanged. Rebuild and restart
 for the shorter list to be used; existing peers.dat entries are not deleted.

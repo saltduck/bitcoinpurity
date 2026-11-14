@@ -56,6 +56,8 @@ BOOST_AUTO_TEST_CASE(purity_mainnet_fixed_seeds)
         "159.195.92.32:8333",
         "[2a0a:4cc0:120:506:68c5:f1ff:fea6:1e03]:8333",
         "[2403:71c0:2000:1d46::a]:8333",
+        "195.154.208.43:8333",
+        "[2001:bc8:1200:14:dac4:97ff:fe68:a7e]:8333",
     };
     BOOST_REQUIRE_EQUAL(actual.size(), expected.size());
     BOOST_CHECK_EQUAL_COLLECTIONS(actual.begin(), actual.end(), expected.begin(), expected.end());
