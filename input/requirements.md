@@ -48,7 +48,7 @@ ports refused connections from multiple regions, one timed out everywhere, and
 The remaining endpoints are:
 
 - `185.184.223.247:8333`
-- `159.195.92.32:8333`
+- `node0.bitcoinpurity.org:8333` (`159.195.92.32:8333`, resolved 2026-11-14; port 8334 no longer used)
 - `[2a0a:4cc0:120:506:68c5:f1ff:fea6:1e03]:8333`
 - `[2403:71c0:2000:1d46::a]:8333`
 - `195.154.208.43:8333`
