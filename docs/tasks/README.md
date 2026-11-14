@@ -80,3 +80,28 @@
 - [Signet complete source audit and Linux fuzz](../purity-signet-review.md)
 
 - [Late-H implementation and final validation](../purity-signet-late-h-review.md)
+
+## Embedded Stratum V2
+
+- [TASK-048: Requirements, provenance and contracts](TASK-048.md)
+- [TASK-031: Mining template and validation bridge](TASK-031.md) — implemented; unit and sanitizer checks pass.
+- [TASK-032: Rust protocol gateway and lifecycle](TASK-032.md) — implemented; local pool/JDS acceptance passes.
+- [TASK-033: Independent pool and V1 end-to-end acceptance](TASK-033.md) — Linux/macOS local chain passes.
+- [TASK-051: Configuration, RPC and Qt integration](TASK-051.md) — implemented; Linux/macOS CLI/Qt verified.
+- [TASK-049: Platform builds, fuzzing and release verification](TASK-049.md) — local builds/packages pass; hosted/native Windows CI blocked by account Actions restriction.
+- [TASK-050: Restore optional IPC builds](TASK-050.md) — Linux/macOS daemon and GUI IPC runtime verified.
+
+- [TASK-037: SV2 pre-release correctness and independent interoperability](TASK-037.md)
+
+- [TASK-038: Align the IPC wire contract with Bitcoin Core v32.1](TASK-038.md)
+
+- [TASK-039: Requirements and contracts](TASK-039.md)
+- [TASK-040: Isolate Cargo artifacts](TASK-040.md)
+- [TASK-041: Stage-aware diagnostics](TASK-041.md)
+- [TASK-042: Reset reconnect backoff after confirmed work](TASK-042.md)
+- [TASK-043: Encode negotiated extranonce as data](TASK-043.md)
+- [TASK-044: Generic pool and miner tags](TASK-044.md)
+- [TASK-045: Reply to unavailable subscriptions before closing](TASK-045.md)
+- [TASK-046: Regression and interoperability evidence](TASK-046.md)
+
+- [TASK-047: Configurable periodic SV2 job refresh](TASK-047.md)

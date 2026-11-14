@@ -17,7 +17,13 @@
 #include <policy/policy.h>
 
 #include <cstddef>
+#include <util/time.h>
+#include <limits>
 #include <script/script.h>
+#include <primitives/transaction.h>
+
+#include <optional>
+#include <vector>
 
 namespace node {
 enum class TransactionError {
@@ -32,6 +38,26 @@ enum class TransactionError {
 };
 
 static const bool DEFAULT_PRINT_MODIFIED_FEE = false;
+
+struct CoinbaseTx {
+    uint32_t version;
+    uint32_t sequence;
+    CScript script_sig_prefix;
+    std::optional<uint256> witness;
+    CAmount block_reward_remaining;
+    std::vector<CTxOut> required_outputs;
+    uint32_t lock_time;
+};
+
+struct BlockWaitOptions {
+    MillisecondsDouble timeout{MillisecondsDouble::max()};
+    CAmount fee_threshold{MAX_MONEY};
+};
+
+struct BlockCheckOptions {
+    bool check_merkle_root{true};
+    bool check_pow{true};
+};
 
 struct BlockCreateOptions {
     /**

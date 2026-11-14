@@ -157,6 +157,8 @@ for host in $HOSTS; do
         *mingw*)  required_KiB=7600000 ;;
         *)        required_KiB=6400000 ;;
     esac
+    # Embedded SV2: depends Rust toolchain, vendored crates and the cargo build.
+    required_KiB=$((required_KiB+1100000))
     total_required_KiB=$((total_required_KiB+required_KiB))
 done
 

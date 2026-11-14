@@ -34,3 +34,40 @@ Alternately, you can install [Cap'n Proto](https://capnproto.org/) and [libmulti
 `bitcoin-node` is a drop-in replacement for `bitcoind`, and `bitcoin-gui` is a drop-in replacement for `bitcoin-qt`, and there are no differences in use or external behavior between the new and old executables. But internally after [#10102](https://github.com/bitcoin/bitcoin/pull/10102), `bitcoin-gui` will spawn a `bitcoin-node` process to run P2P and RPC code, communicating with it across a socket pair, and `bitcoin-node` will spawn `bitcoin-wallet` to run wallet code, also communicating over a socket pair. This will let node, wallet, and GUI code run in separate address spaces for better isolation, and allow future improvements like being able to start and stop components independently on different machines and environments.
 [#19460](https://github.com/bitcoin/bitcoin/pull/19460) also adds a new `bitcoin-node` `-ipcbind` option and a `bitcoind-wallet` `-ipcconnect` option to allow new wallet processes to connect to an existing node process.
 And [#19461](https://github.com/bitcoin/bitcoin/pull/19461) adds a new `bitcoin-gui` `-ipcconnect` option to allow new GUI processes to connect to an existing node process.
+
+
+## Purity integration
+
+Purity restores WITH_MULTIPROCESS as an opt-in option (default OFF). Build the
+pinned dependencies in separate build directories without source modifications:
+
+~~~sh
+sh contrib/devtools/build-ipc-deps.sh /absolute/ipc-work /absolute/ipc-prefix 3
+cmake -S . -B build -DWITH_MULTIPROCESS=ON -DCMAKE_PREFIX_PATH=/absolute/ipc-prefix
+cmake --build build --target bitcoin-node bitcoin-gui test_bitcoin
+build/bin/test_bitcoin --run_test=ipc_tests,miner_tests
+~~~
+
+Include the Qt prefix in CMAKE_PREFIX_PATH when needed. The helper reads existing
+versions/checksums from depends/packages and verifies downloaded archives.
+
+The IPC wire contract follows Bitcoin Core v32.1, pinned to commit
+`f0de87f040621468b956f01f526a43a010310501`. The dependency helper builds the
+unmodified libmultiprocess snapshot from that Core archive and Cap'n Proto 1.2.0.
+It does not patch dependency sources. Older Purity/Knots IPC bindings are
+incompatible and must be regenerated; there is no parallel legacy endpoint.
+The embedded SV2 gateway remains in-process in these executables.
+
+See [Core v32.1 IPC migration](ipc-core32-migration.md) for method changes and
+client migration requirements. Run the schema contract check with:
+
+~~~sh
+python3 test/util/check_ipc_schema.py
+~~~
+
+`Init.makeRpc` is exposed for Core v32.1 compatibility, but `Rpc.executeRpc`
+refuses every call unless the node is started with `-ipcrpc=1`. The IPC peer
+names the RPC user itself, so enabling it lets any process that can open an
+`-ipcbind` socket run any RPC method (including wallet methods) without RPC
+authentication or `-rpcwhitelist` restrictions. Leave it off unless every
+process with access to the socket is fully trusted.

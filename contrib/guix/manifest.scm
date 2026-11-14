@@ -6,6 +6,7 @@
              ((gnu packages cmake) #:select (cmake-minimal))
              (gnu packages commencement)
              (gnu packages compression)
+             ((gnu packages elf) #:select (patchelf))
              (gnu packages cross-base)
              (gnu packages file)
              (gnu packages gawk)
@@ -562,6 +563,8 @@ inspecting signatures in Mach-O binaries.")
         cmake-minimal
         gnu-make
         pkg-config
+        ;; Runs the prebuilt Rust toolchain from depends (embedded SV2)
+        patchelf
         imagemagick
         libicns
         librsvg-2.40

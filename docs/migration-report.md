@@ -470,3 +470,123 @@ wallet custody. No node rebuild, reindex or consensus migration is required.
 Existing two-entry files keep fixed-pair behavior. Local regression evidence
 and remaining checks are recorded in TASK-PS-011; no deployment is part of this
 change.
+
+## Embedded SV2 (TASK-048 and TASK-031 through TASK-033, TASK-049 and TASK-051)
+
+Add an opt-in pooled backend, preserving DATUM Solo and IPC field numbers.
+No consensus/database migration, reindex or rescan. Rebuild with pinned Rust and
+restart; BUILD_SV2=OFF retains a Rust-free build. Configure a Purity-compatible
+pool supporting Full-Template Job Declaration. Real pool interoperability and
+deployment remain separate from local acceptance. See [architecture](architecture/embedded-sv2.md)
+and [contract](api/sv2.md). Requirements and selected in-process mining interface
+adaptations, C ABI provider, Rust gateway, configuration, RPC and Qt are
+implemented. Independent regtest mining, witness transfer, pool share acceptance,
+rolled-version blocks, peer propagation, reorgs and outage recovery pass locally
+on macOS and Linux. Release CLI/Qt ON/OFF builds pass on those platforms.
+
+Windows GNU cross-builds produce daemon/CLI binaries. Emulated Wine passes
+enabled startup, retry-only failure status, RPC and joined shutdown; this does
+not replace native MSVC/Qt acceptance. Dedicated CI covers native Windows static
+CRT and macOS/Linux ON/OFF CLI/Qt, local mining, DATUM and fuzz regressions.
+Release jobs install pinned Rust. Native Windows CI and real pool/production
+acceptance remain open. TASK-050 subsequently restored optional IPC and
+verified Linux/macOS builds and runtime paths; existing ordinals remain unchanged.
+
+## Optional IPC restoration (TASK-050)
+
+Restore a default-OFF build option and fix project-owned integration, retaining
+unmodified libmultiprocess v5.0 and Cap'n Proto 1.2.0 dependencies. No database or
+consensus migration. Concrete failures and acceptance are recorded in TASK-050.
+
+IPC restoration builds bitcoin-node and bitcoin-gui on Linux/macOS. Local C++
+template getters return owned snapshots; consumers of the old const/reference
+C++ signatures need recompilation. Existing wire methods retain their ordinals;
+the missing fork methods and full options are additive. Core v32.1's incompatible
+schema is not substituted. No consensus, database, RPC JSON or SV2 protocol
+migration is required. See TASK-050 for failures and acceptance results.
+
+
+## TASK-049 hosted acceptance follow-through
+
+The SV2 branch is pushed. GitHub's account-level Actions restriction currently
+rejects manual dispatch and prevents push-triggered runs; native Windows/Qt and
+hosted release acceptance remain unverified. Local release checks include actual
+application deployment/extraction. Packaging fixes are confined to this project
+and do not modify dependency sources or introduce a data/protocol migration.
+
+Project-owned macdeploy now resolves relative dependency paths from original
+libraries/plugins and rewrites only bundle copies. Native macOS full-feature
+source tests and extracted signed-app startup/PoW pass; Linux extracted-package
+startup/PoW also passes. Release CI now verifies actual archives, adds macOS app
+ZIPs and selects those as the canonical macOS update artifact, preserving CLI
+tar downloads. Manifest schema is unchanged. Hosted CI, native MSVC/Qt, and
+Windows release-archive runtime checks remain blocked by the Actions restriction.
+
+Pre-release review follow-up: [TASK-037](tasks/TASK-037.md) tracks F1–F4 correctness fixes.
+PR #44 remains draft. Existing local fixture results do not establish independent
+CKPool interoperability or native Windows acceptance.
+
+The 2026-11-02 decision supersedes preservation of the inherited IPC wire layout:
+Core v32.1 is the single target contract (TASK-038). Existing IPC clients must
+regenerate bindings and update calls; no parallel legacy socket is planned.
+Purity consensus and in-process SV2 behavior remain project-owned. CKPool's
+v31-era binding must be updated externally; its current layout is not the target.
+
+## Core v32.1 IPC replacement (TASK-038, 2026-11-02)
+
+This intentionally supersedes the historical TASK-050 ordinal-preservation
+results above. Init.makeMining moves from @2 to @3, and old @2 explicitly fails.
+Mining.createNewBlock @4 gains context/cooldown; @5 becomes checkBlock rather
+than createNewBlock2. Core submitBlock, interrupt and both transaction lookups
+are exposed. BlockTemplate exports structured coinbase and Core wait methods;
+submitSolution @10 returns rejection details, while old @7 explicitly fails.
+There is no alternate legacy socket and no additional Purity wire methods.
+
+Bindings must be regenerated. In-process raw coinbase, coin-age metadata and
+legacy template convenience calls remain project-owned and do not define wire
+compatibility. RPC getblocktemplate keeps its external result and fee indexing
+is adapted because Core IPC fee/sigop lists exclude coinbase. Block consensus,
+ASERT, RDTS, witness commitments and transaction selection remain Purity rules.
+
+The old libmultiprocess v5 worker failed to transport a deprecated-method
+exception safely. Use the unmodified snapshot shipped in the fixed Core v32.1
+archive instead. Only this project's integration and dependency recipes change;
+no dependency source is patched. The schema contract check binds all five
+schemas to the reference version independently of C++ binding annotations.
+
+### Generic SV2 interoperability corrections (2026-11-02)
+
+- Implement TASK-039 through TASK-046 as separate commits, with failing tests
+  before each correction. Retain existing F1-F4 and Core v32.1 IPC behavior.
+- Separate production/test Cargo outputs; expose bounded, sanitized stage/error
+  diagnostics through the shared RPC/Qt snapshot; retain failures until recovery.
+- Reset reconnect backoff after a session has ever obtained confirmed custom work.
+- Build BIP34 + optional pool/miner pushes + negotiated extranonce data push.
+  Tags default empty; UTF-8 encoded tags including push bytes total at most 59.
+  Validate actual scriptSig <=100 bytes. Preserve witness, payouts and templates.
+- Add sv2pooltag/sv2minertag to CLI/configuration/Qt, effective after restart.
+- Unavailable subscribe receives error 20, flushed before close. Preserve client
+  limits, deadlines and disconnect of subscribed miners when work disappears.
+- Retain generic empty-tag and 12/16/32-byte cases. Do not implement fixed PUSH12
+  or a named-pool mode. Independent pool/native Windows acceptance remains open.
+
+Attachment baseline predates 9461eee44d. Selectively adapt to be1821d9e7;
+never overwrite existing review fixes or dependency source.
+
+## Generic SV2 interoperability follow-up (TASK-039--046)
+
+Corrections were committed independently, preserving Core v32.1 IPC, F1-F4,
+Purity consensus and empty-tag defaults. Local Linux/macOS regression, disabled
+builds and packages pass. A limited independently rebuilt external-pool regtest
+also observed pool ACK, local block acceptance and second-node propagation.
+See TASK-046 for initial failures, fixture timestamp correction and remaining
+gates. External operator-owned materials are not vendored or committed.
+Native Windows/hosted CI and broader independent acceptance remain open.
+
+## TASK-047: Periodic SV2 work refresh
+
+Replace per-mempool-change rebuilding with a monotonic configurable 30–60 second
+refresh deadline (default 30). Keep immediate tip transitions, target changes,
+acknowledgement gating and existing consensus/IPC contracts. Existing settings
+need no migration. CLI/config/Qt changes require restart. Only project-owned code
+and generic tests are involved; no external pool source is incorporated.

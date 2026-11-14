@@ -377,6 +377,10 @@ my_bind_socket_with_handle(struct evhttp *http, const char *address, ev_uint16_t
         hints.ai_family = AF_UNSPEC;
         hints.ai_socktype = SOCK_STREAM;
         hints.ai_flags = EVUTIL_AI_PASSIVE|EVUTIL_AI_ADDRCONFIG;
+        // AI_ADDRCONFIG excludes IPv6 loopback on hosts without other IPv6 addresses.
+        if (address && LookupHost(address, /*fAllowLookup=*/false).has_value()) {
+            hints.ai_flags = EVUTIL_AI_PASSIVE|EVUTIL_AI_NUMERICHOST;
+        }
         const std::string strport = strprintf("%d", port);
         ai_result = evutil_getaddrinfo(address, strport.c_str(), &hints, &aitop);
         if (ai_result || !aitop) {

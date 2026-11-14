@@ -3,15 +3,20 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <addresstype.h>
+#include <chainparams.h>
 #include <coins.h>
 #include <common/system.h>
 #include <consensus/consensus.h>
 #include <consensus/merkle.h>
 #include <consensus/tx_verify.h>
+#include <core_io.h>
 #include <interfaces/mining.h>
+#include <mining/sv2_template.h>
 #include <node/miner.h>
 #include <policy/policy.h>
 #include <pow.h>
+#include <streams.h>
+#include <univalue.h>
 #include <test/util/random.h>
 #include <test/util/transaction_utils.h>
 #include <test/util/txmempool.h>
@@ -21,15 +26,15 @@
 #include <util/feefrac.h>
 #include <util/strencodings.h>
 #include <util/time.h>
+#include <util/string.h>
 #include <util/translation.h>
 #include <validation.h>
 #include <versionbits.h>
 
 #include <test/util/setup_common.h>
 
-#include <limits>
+#include <future>
 #include <memory>
-#include <utility>
 #include <vector>
 
 #include <boost/test/unit_test.hpp>
@@ -70,6 +75,258 @@ struct MinerTestingSetup : public TestingSetup {
 } // namespace miner_tests
 
 BOOST_FIXTURE_TEST_SUITE(miner_tests, MinerTestingSetup)
+
+BOOST_FIXTURE_TEST_CASE(solution_rechecks_coinbase_witness, TestChain100Setup)
+{
+    auto mining = interfaces::MakeMining(m_node);
+    auto block_template = mining->createNewBlockLegacy();
+    BOOST_REQUIRE(block_template);
+    const auto original_tip = mining->getTip();
+    BOOST_REQUIRE(original_tip);
+
+    // Template validation has already cached the original coinbase's witness check.
+    const CBlock cached = block_template->getBlock();
+    BOOST_REQUIRE(cached.m_checked_witness_commitment);
+    CMutableTransaction coinbase{*block_template->getCoinbaseTransaction()};
+    BOOST_REQUIRE(!coinbase.vin[0].scriptWitness.IsNull());
+    coinbase.vin[0].scriptWitness.SetNull();
+    CBlock candidate{cached};
+    candidate.vtx[0] = MakeTransactionRef(coinbase);
+    candidate.hashMerkleRoot = BlockMerkleRoot(candidate);
+    while (!CheckProofOfWork(candidate.GetHash(), candidate.nBits, Params().GetConsensus())) ++candidate.nNonce;
+
+    BOOST_CHECK(!block_template->submitSolutionLegacy(candidate.nVersion, candidate.nTime, candidate.nNonce, candidate.vtx[0]));
+    BOOST_CHECK(mining->getTip()->hash == original_tip->hash);
+}
+
+BOOST_FIXTURE_TEST_CASE(core_template_wait_fee_threshold, TestChain100Setup)
+{
+    auto mining = interfaces::MakeMining(m_node);
+    auto original = mining->createNewBlock({}, false);
+    BOOST_REQUIRE(original);
+    BOOST_REQUIRE(original->waitNext(node::BlockWaitOptions{.timeout = MillisecondsDouble{0}, .fee_threshold = 0}));
+    const auto input = m_coinbase_txns.front();
+    const auto tx = CreateValidMempoolTransaction({input}, {COutPoint{input->GetHash(), 0}}, 1, {coinbaseKey},
+                                                 {CTxOut{input->vout[0].nValue - 10000, GetScriptForDestination(PKHash(coinbaseKey.GetPubKey()))}});
+    BOOST_CHECK(!original->waitNext(node::BlockWaitOptions{.timeout = MillisecondsDouble{0}, .fee_threshold = 10001}));
+    auto updated = original->waitNext(node::BlockWaitOptions{.timeout = MillisecondsDouble{1000}, .fee_threshold = 10000});
+    BOOST_REQUIRE(updated);
+    BOOST_CHECK(updated->getBlock().hashPrevBlock == original->getBlock().hashPrevBlock);
+    BOOST_REQUIRE_EQUAL(updated->getTxFees().size(), 1);
+    BOOST_CHECK_EQUAL(updated->getTxFees()[0], 10000);
+    BOOST_REQUIRE_EQUAL(updated->getTxSigops().size(), 1);
+    BOOST_CHECK(updated->getBlock().vtx[1]->GetHash() == tx.GetHash());
+    mining->interrupt();
+    BOOST_CHECK(!mining->createNewBlock({}, true));
+}
+
+BOOST_FIXTURE_TEST_CASE(structured_coinbase_fields, TestChain100Setup)
+{
+    auto mining = interfaces::MakeMining(m_node);
+    auto block_template = mining->createNewBlockLegacy();
+    BOOST_REQUIRE(block_template);
+    const auto raw = block_template->getCoinbaseTransaction();
+    const auto coinbase = block_template->getCoinbase();
+    BOOST_CHECK_EQUAL(coinbase.version, raw->version);
+    BOOST_CHECK_EQUAL(coinbase.sequence, raw->vin[0].nSequence);
+    BOOST_CHECK(coinbase.script_sig_prefix == (CScript() << 101));
+    BOOST_CHECK_EQUAL(coinbase.block_reward_remaining, raw->vout[0].nValue);
+    BOOST_CHECK(coinbase.required_outputs == std::vector<CTxOut>(raw->vout.begin() + 1, raw->vout.end()));
+    BOOST_REQUIRE(coinbase.witness);
+    BOOST_CHECK(*coinbase.witness == uint256{raw->vin[0].scriptWitness.stack[0]});
+    BOOST_CHECK_EQUAL(coinbase.lock_time, raw->nLockTime);
+}
+
+BOOST_FIXTURE_TEST_CASE(block_submission_results, TestChain100Setup)
+{
+    auto mining = interfaces::MakeMining(m_node);
+    auto block_template = mining->createNewBlockLegacy();
+    CBlock block = block_template->getBlock();
+    block.hashMerkleRoot = BlockMerkleRoot(block);
+    block.fChecked = block.m_checked_merkle_root = block.m_checked_witness_commitment = false;
+    while (!CheckProofOfWork(block.GetHash(), block.nBits, Params().GetConsensus())) ++block.nNonce;
+    std::string reason{"old reason"}, debug{"old debug"};
+    BOOST_CHECK(mining->submitBlock(block, reason, debug));
+    BOOST_CHECK(reason.empty());
+    BOOST_CHECK(debug.empty());
+    BOOST_CHECK(!mining->submitBlock(block, reason, debug));
+    BOOST_CHECK_EQUAL(reason, "duplicate");
+    BOOST_CHECK(debug.empty());
+
+    auto invalid_template = mining->createNewBlockLegacy();
+    CBlock invalid = invalid_template->getBlock();
+    CMutableTransaction coinbase{*invalid.vtx[0]};
+    coinbase.vin[0].scriptWitness.SetNull();
+    invalid.vtx[0] = MakeTransactionRef(coinbase);
+    invalid.hashMerkleRoot = BlockMerkleRoot(invalid);
+    invalid.fChecked = invalid.m_checked_merkle_root = invalid.m_checked_witness_commitment = true;
+    while (!CheckProofOfWork(invalid.GetHash(), invalid.nBits, Params().GetConsensus())) ++invalid.nNonce;
+    BOOST_CHECK(!mining->submitBlock(invalid, reason, debug));
+    BOOST_CHECK_EQUAL(reason, "bad-witness-nonce-size");
+    BOOST_CHECK(mining->getTip()->hash == block.GetHash());
+}
+
+BOOST_AUTO_TEST_CASE(batch_mempool_transaction_lookup)
+{
+    auto& pool = MakeMempool();
+    auto mining = MakeMining();
+    CMutableTransaction tx;
+    tx.vin.resize(1);
+    tx.vin[0].prevout = COutPoint{Txid::FromUint256(uint256{1}), 0};
+    tx.vin[0].scriptWitness.stack = {{1, 2, 3}};
+    tx.vout.emplace_back(1000, CScript() << OP_TRUE);
+    auto shared = MakeTransactionRef(tx);
+    TestMemPoolEntryHelper entry;
+    {
+        LOCK(pool.cs);
+        AddToMempool(pool, entry.FromTx(tx));
+    }
+    const auto missing = Txid::FromUint256(uint256{2});
+    const auto by_txid = mining->getTransactionsByTxID({shared->GetHash(), missing, shared->GetHash()});
+    BOOST_REQUIRE_EQUAL(by_txid.size(), 3);
+    BOOST_REQUIRE(by_txid[0]);
+    BOOST_CHECK(by_txid[0]->GetWitnessHash() == shared->GetWitnessHash());
+    BOOST_CHECK(!by_txid[1]);
+    BOOST_CHECK(by_txid[0] == by_txid[2]);
+    const auto by_wtxid = mining->getTransactionsByWitnessID({shared->GetWitnessHash(), Wtxid::FromUint256(shared->GetHash().ToUint256())});
+    BOOST_REQUIRE_EQUAL(by_wtxid.size(), 2);
+    BOOST_REQUIRE(by_wtxid[0]);
+    BOOST_CHECK(by_wtxid[0]->vin[0].scriptWitness.stack == tx.vin[0].scriptWitness.stack);
+    BOOST_CHECK(!by_wtxid[1]);
+    BOOST_CHECK(mining->getTransactionsByTxID({}).empty());
+    BOOST_CHECK(mining->getTransactionsByWitnessID({}).empty());
+}
+
+BOOST_FIXTURE_TEST_CASE(interrupt_mining_wait, TestChain100Setup)
+{
+    auto mining = interfaces::MakeMining(m_node);
+    auto independent = interfaces::MakeMining(m_node);
+    const auto tip = mining->getTip();
+    BOOST_REQUIRE(tip);
+    auto waiter = std::async(std::launch::async, [&] {
+        return mining->waitTipChanged(tip->hash, std::chrono::seconds{5});
+    });
+    mining->interrupt();
+    BOOST_CHECK(waiter.wait_for(std::chrono::seconds{1}) == std::future_status::ready);
+    BOOST_CHECK(!waiter.get());
+    BOOST_CHECK(!mining->createNewBlockLegacy());
+    BOOST_CHECK(independent->createNewBlockLegacy());
+}
+
+BOOST_FIXTURE_TEST_CASE(sv2_template_bridge, TestChain100Setup)
+{
+    mining::Sv2TemplateProvider provider{m_node};
+    DataStream outputs;
+    outputs << std::vector<CTxOut>{{0, CScript() << OP_TRUE}};
+    UniValue request{UniValue::VOBJ};
+    request.pushKV("op", "template");
+    request.pushKV("outputs", HexStr(outputs));
+    auto result = provider.Request(request);
+    BOOST_REQUIRE(result["ok"].get_bool());
+    BOOST_CHECK_EQUAL(result["height"].getInt<int>(), 101);
+    BOOST_CHECK_EQUAL(result["id"].getInt<uint64_t>(), provider.Request(request)["id"].getInt<uint64_t>());
+    BOOST_CHECK_EQUAL(result["transactions"].size(), result["wtxids"].size());
+    BOOST_CHECK(result["size"].getInt<uint64_t>() > 80);
+    request.pushKV("known_id", result["id"]);
+    const auto unchanged = provider.Request(request);
+    BOOST_CHECK(unchanged["unchanged"].get_bool());
+    BOOST_CHECK(unchanged["transactions"].isNull());
+
+    CMutableTransaction coinbase;
+    BOOST_REQUIRE(DecodeHexTx(coinbase, result["coinbase"].get_str(), true, true));
+    UniValue validate{UniValue::VOBJ};
+    validate.pushKV("op", "validate");
+    validate.pushKV("id", result["id"]);
+    validate.pushKV("coinbase", result["coinbase"]);
+    validate.pushKV("version", result["version"]);
+    validate.pushKV("ntime", result["ntime"]);
+    validate.pushKV("nonce", 0);
+    BOOST_CHECK(provider.Request(validate)["ok"].get_bool());
+    coinbase.vin[0].scriptWitness.SetNull();
+    DataStream invalid;
+    invalid << TX_WITH_WITNESS(coinbase);
+    validate.pushKV("coinbase", HexStr(invalid));
+    BOOST_CHECK(!provider.Request(validate)["ok"].get_bool());
+
+    auto callbacks = provider.Callbacks();
+    const auto encoded = request.write();
+    uint8_t* response{nullptr};
+    size_t length{0};
+    BOOST_REQUIRE_EQUAL(callbacks.request(callbacks.context, reinterpret_cast<const uint8_t*>(encoded.data()), encoded.size(), &response, &length), 0);
+    UniValue decoded;
+    BOOST_CHECK(decoded.read(std::string{reinterpret_cast<const char*>(response), length}));
+    callbacks.release(response, length);
+    BOOST_CHECK(decoded["ok"].get_bool());
+
+    request.pushKV("outputs", "00");
+    BOOST_CHECK(!provider.Request(request)["ok"].get_bool());
+    request.pushKV("outputs", "ff");
+    BOOST_CHECK(!provider.Request(request)["ok"].get_bool());
+    CScript expensive;
+    for (int i = 0; i < 50000; ++i) expensive << OP_CHECKSIG;
+    DataStream excessive;
+    excessive << std::vector<CTxOut>{{0, expensive}};
+    request.pushKV("outputs", HexStr(excessive));
+    BOOST_CHECK_EQUAL(provider.Request(request)["error"].get_str(), "coinbase-resources-exceeded");
+    provider.Interrupt();
+    request.pushKV("outputs", HexStr(outputs));
+    BOOST_CHECK(!provider.Request(request)["ok"].get_bool());
+}
+
+BOOST_FIXTURE_TEST_CASE(sv2_job_refresh_interval, TestChain100Setup)
+{
+    struct ResetClock {
+        ~ResetClock() { MockableSteadyClock::ClearMockTime(); }
+    } reset_clock;
+    size_t coinbase_index{0};
+    for (const int seconds : {30, 45, 60}) {
+        if (seconds != 30) m_node.args->ForceSetArg("-sv2jobinterval", util::ToString(seconds));
+        auto time = MockableSteadyClock::INITIAL_MOCK_TIME;
+        MockableSteadyClock::SetMockTime(time);
+        mining::Sv2TemplateProvider provider{m_node};
+        DataStream outputs;
+        outputs << std::vector<CTxOut>{{0, CScript() << OP_TRUE}};
+        UniValue request{UniValue::VOBJ};
+        request.pushKV("op", "template");
+        request.pushKV("outputs", HexStr(outputs));
+        const auto first = provider.Request(request);
+        BOOST_REQUIRE(first["ok"].get_bool());
+        request.pushKV("known_id", first["id"]);
+        auto tx = CreateValidMempoolTransaction(m_coinbase_txns[coinbase_index], 0, coinbase_index + 1,
+                                     coinbaseKey, GetScriptForDestination(PKHash{coinbaseKey.GetPubKey()}),
+                                     m_coinbase_txns[coinbase_index]->vout[0].nValue - 10000, false);
+        {
+            LOCK(cs_main);
+            const auto accepted = m_node.chainman->ProcessTransaction(MakeTransactionRef(tx));
+            BOOST_REQUIRE_MESSAGE(accepted.m_result_type == MempoolAcceptResult::ResultType::VALID, accepted.m_state.ToString());
+        }
+        ++coinbase_index;
+        for (int elapsed = 1; elapsed < seconds; ++elapsed) {
+            time += std::chrono::seconds{1};
+            MockableSteadyClock::SetMockTime(time);
+            m_node.mempool->AddTransactionsUpdated(1);
+            const auto unchanged = provider.Request(request);
+            BOOST_CHECK_MESSAGE((unchanged["unchanged"].isBool() && unchanged["unchanged"].get_bool()), "Transaction changes must not refresh or postpone the job deadline");
+        }
+        time += std::chrono::seconds{1};
+        MockableSteadyClock::SetMockTime(time);
+        const auto refreshed = provider.Request(request);
+        BOOST_REQUIRE(refreshed["ok"].get_bool());
+        BOOST_CHECK(refreshed["id"].getInt<uint64_t>() != first["id"].getInt<uint64_t>());
+        BOOST_CHECK_EQUAL(refreshed["transactions"].size(), first["transactions"].size() + 1);
+        request.pushKV("known_id", refreshed["id"]);
+        time += std::chrono::seconds{seconds};
+        MockableSteadyClock::SetMockTime(time);
+        const auto idle = provider.Request(request);
+        BOOST_REQUIRE(idle["ok"].get_bool());
+        BOOST_CHECK(idle["id"].getInt<uint64_t>() != refreshed["id"].getInt<uint64_t>());
+        request.pushKV("known_id", idle["id"]);
+        CreateAndProcessBlock({}, CScript() << OP_TRUE);
+        const auto new_tip = provider.Request(request);
+        BOOST_REQUIRE(new_tip["ok"].get_bool());
+        BOOST_CHECK(new_tip["previous_block_hash"].get_str() != idle["previous_block_hash"].get_str());
+    }
+}
 
 BOOST_AUTO_TEST_CASE(default_block_limits)
 {
@@ -162,7 +419,7 @@ void MinerTestingSetup::TestPackageSelection(const CScript& scriptPubKey, const 
     const auto high_fee_tx{entry.Fee(50000).Time(Now<NodeSeconds>()).SpendsCoinbase(false).FromTx(tx)};
     AddToMempool(tx_mempool, high_fee_tx);
 
-    std::unique_ptr<BlockTemplate> block_template = mining->createNewBlock(options);
+    std::unique_ptr<BlockTemplate> block_template = mining->createNewBlockLegacy(options);
     BOOST_REQUIRE(block_template);
     CBlock block{block_template->getBlock()};
     BOOST_REQUIRE_EQUAL(block.vtx.size(), 4U);
@@ -200,7 +457,7 @@ void MinerTestingSetup::TestPackageSelection(const CScript& scriptPubKey, const 
     tx.vout[0].nValue = 5000000000LL - 1000 - 50000 - feeToUse;
     Txid hashLowFeeTx = tx.GetHash();
     AddToMempool(tx_mempool, entry.Fee(feeToUse).FromTx(tx));
-    block_template = mining->createNewBlock(options);
+    block_template = mining->createNewBlockLegacy(options);
     BOOST_REQUIRE(block_template);
     block = block_template->getBlock();
     // Verify that the free tx and the low fee tx didn't get selected
@@ -216,7 +473,7 @@ void MinerTestingSetup::TestPackageSelection(const CScript& scriptPubKey, const 
     tx.vout[0].nValue -= 2; // Now we should be just over the min relay fee
     hashLowFeeTx = tx.GetHash();
     AddToMempool(tx_mempool, entry.Fee(feeToUse + 2).FromTx(tx));
-    block_template = mining->createNewBlock(options);
+    block_template = mining->createNewBlockLegacy(options);
     BOOST_REQUIRE(block_template);
     block = block_template->getBlock();
     BOOST_REQUIRE_EQUAL(block.vtx.size(), 6U);
@@ -244,7 +501,7 @@ void MinerTestingSetup::TestPackageSelection(const CScript& scriptPubKey, const 
     tx.vout[0].nValue = 5000000000LL - 100000000 - feeToUse;
     Txid hashLowFeeTx2 = tx.GetHash();
     AddToMempool(tx_mempool, entry.Fee(feeToUse).SpendsCoinbase(false).FromTx(tx));
-    block_template = mining->createNewBlock(options);
+    block_template = mining->createNewBlockLegacy(options);
     BOOST_REQUIRE(block_template);
     block = block_template->getBlock();
 
@@ -259,7 +516,7 @@ void MinerTestingSetup::TestPackageSelection(const CScript& scriptPubKey, const 
     tx.vin[0].prevout.n = 1;
     tx.vout[0].nValue = 100000000 - 10000; // 10k satoshi fee
     AddToMempool(tx_mempool, entry.Fee(10000).FromTx(tx));
-    block_template = mining->createNewBlock(options);
+    block_template = mining->createNewBlockLegacy(options);
     BOOST_REQUIRE(block_template);
     block = block_template->getBlock();
     BOOST_REQUIRE_EQUAL(block.vtx.size(), 9U);
@@ -290,7 +547,7 @@ void MinerTestingSetup::TestBasicMining(const CScript& scriptPubKey, const std::
         LOCK(tx_mempool.cs);
 
         // Just to make sure we can still make simple blocks
-        auto block_template{mining->createNewBlock(options)};
+        auto block_template{mining->createNewBlockLegacy(options)};
         BOOST_REQUIRE(block_template);
         CBlock block{block_template->getBlock()};
 
@@ -311,7 +568,7 @@ void MinerTestingSetup::TestBasicMining(const CScript& scriptPubKey, const std::
             tx.vin[0].prevout.hash = hash;
         }
 
-        BOOST_CHECK_EXCEPTION(mining->createNewBlock(options), std::runtime_error, HasReason("bad-blk-sigops"));
+        BOOST_CHECK_EXCEPTION(mining->createNewBlockLegacy(options), std::runtime_error, HasReason("bad-blk-sigops"));
     }
 
     {
@@ -328,7 +585,7 @@ void MinerTestingSetup::TestBasicMining(const CScript& scriptPubKey, const std::
             AddToMempool(tx_mempool, entry.Fee(LOWFEE).Time(Now<NodeSeconds>()).SpendsCoinbase(spendsCoinbase).SigOpsCost(80).FromTx(tx));
             tx.vin[0].prevout.hash = hash;
         }
-        BOOST_REQUIRE(mining->createNewBlock(options));
+        BOOST_REQUIRE(mining->createNewBlockLegacy(options));
     }
 
     {
@@ -352,7 +609,7 @@ void MinerTestingSetup::TestBasicMining(const CScript& scriptPubKey, const std::
             AddToMempool(tx_mempool, entry.Fee(LOWFEE).Time(Now<NodeSeconds>()).SpendsCoinbase(spendsCoinbase).FromTx(tx));
             tx.vin[0].prevout.hash = hash;
         }
-        BOOST_REQUIRE(mining->createNewBlock(options));
+        BOOST_REQUIRE(mining->createNewBlockLegacy(options));
     }
 
     {
@@ -362,7 +619,7 @@ void MinerTestingSetup::TestBasicMining(const CScript& scriptPubKey, const std::
         // orphan in tx_mempool, template creation fails
         hash = tx.GetHash();
         AddToMempool(tx_mempool, entry.Fee(LOWFEE).Time(Now<NodeSeconds>()).FromTx(tx));
-        BOOST_CHECK_EXCEPTION(mining->createNewBlock(options), std::runtime_error, HasReason("bad-txns-inputs-missingorspent"));
+        BOOST_CHECK_EXCEPTION(mining->createNewBlockLegacy(options), std::runtime_error, HasReason("bad-txns-inputs-missingorspent"));
     }
 
     {
@@ -383,7 +640,7 @@ void MinerTestingSetup::TestBasicMining(const CScript& scriptPubKey, const std::
         tx.vout[0].nValue = tx.vout[0].nValue + BLOCKSUBSIDY - HIGHERFEE; // First txn output + fresh coinbase - new txn fee
         hash = tx.GetHash();
         AddToMempool(tx_mempool, entry.Fee(HIGHERFEE).Time(Now<NodeSeconds>()).SpendsCoinbase(true).FromTx(tx));
-        BOOST_REQUIRE(mining->createNewBlock(options));
+        BOOST_REQUIRE(mining->createNewBlockLegacy(options));
     }
 
     {
@@ -399,7 +656,7 @@ void MinerTestingSetup::TestBasicMining(const CScript& scriptPubKey, const std::
         // give it a fee so it'll get mined
         AddToMempool(tx_mempool, entry.Fee(LOWFEE).Time(Now<NodeSeconds>()).SpendsCoinbase(false).FromTx(tx));
         // Should throw bad-cb-multiple
-        BOOST_CHECK_EXCEPTION(mining->createNewBlock(options), std::runtime_error, HasReason("bad-cb-multiple"));
+        BOOST_CHECK_EXCEPTION(mining->createNewBlockLegacy(options), std::runtime_error, HasReason("bad-cb-multiple"));
     }
 
     {
@@ -416,7 +673,7 @@ void MinerTestingSetup::TestBasicMining(const CScript& scriptPubKey, const std::
         tx.vout[0].scriptPubKey = CScript() << OP_2;
         hash = tx.GetHash();
         AddToMempool(tx_mempool, entry.Fee(HIGHFEE).Time(Now<NodeSeconds>()).SpendsCoinbase(true).FromTx(tx));
-        BOOST_CHECK_EXCEPTION(mining->createNewBlock(options), std::runtime_error, HasReason("bad-txns-inputs-missingorspent"));
+        BOOST_CHECK_EXCEPTION(mining->createNewBlockLegacy(options), std::runtime_error, HasReason("bad-txns-inputs-missingorspent"));
     }
 
     {
@@ -436,7 +693,7 @@ void MinerTestingSetup::TestBasicMining(const CScript& scriptPubKey, const std::
             next->BuildSkip();
             m_node.chainman->ActiveChain().SetTip(*next);
         }
-        BOOST_REQUIRE(mining->createNewBlock(options));
+        BOOST_REQUIRE(mining->createNewBlockLegacy(options));
         // Extend to a 210000-long block chain.
         while (m_node.chainman->ActiveChain().Tip()->nHeight < 210000) {
             CBlockIndex* prev = m_node.chainman->ActiveChain().Tip();
@@ -448,7 +705,7 @@ void MinerTestingSetup::TestBasicMining(const CScript& scriptPubKey, const std::
             next->BuildSkip();
             m_node.chainman->ActiveChain().SetTip(*next);
         }
-        BOOST_REQUIRE(mining->createNewBlock(options));
+        BOOST_REQUIRE(mining->createNewBlockLegacy(options));
 
         // invalid p2sh txn in tx_mempool, template creation fails
         tx.vin[0].prevout.hash = txFirst[0]->GetHash();
@@ -464,7 +721,7 @@ void MinerTestingSetup::TestBasicMining(const CScript& scriptPubKey, const std::
         tx.vout[0].nValue -= LOWFEE;
         hash = tx.GetHash();
         AddToMempool(tx_mempool, entry.Fee(LOWFEE).Time(Now<NodeSeconds>()).SpendsCoinbase(false).FromTx(tx));
-        BOOST_CHECK_EXCEPTION(mining->createNewBlock(options), std::runtime_error, HasReason("mandatory-script-verify-flag-failed"));
+        BOOST_CHECK_EXCEPTION(mining->createNewBlockLegacy(options), std::runtime_error, HasReason("mandatory-script-verify-flag-failed"));
 
         // Delete the dummy blocks again.
         while (m_node.chainman->ActiveChain().Tip()->nHeight > nHeight) {
@@ -566,7 +823,7 @@ void MinerTestingSetup::TestBasicMining(const CScript& scriptPubKey, const std::
     tx.vin[0].nSequence = CTxIn::SEQUENCE_LOCKTIME_TYPE_FLAG | 1;
     BOOST_CHECK(!TestSequenceLocks(CTransaction{tx}, tx_mempool)); // Sequence locks fail
 
-    auto block_template = mining->createNewBlock(options);
+    auto block_template = mining->createNewBlockLegacy(options);
     BOOST_REQUIRE(block_template);
 
     // None of the of the absolute height/time locked tx should have made
@@ -583,7 +840,7 @@ void MinerTestingSetup::TestBasicMining(const CScript& scriptPubKey, const std::
     m_node.chainman->ActiveChain().Tip()->nHeight++;
     SetMockTime(m_node.chainman->ActiveChain().Tip()->GetMedianTimePast() + 1);
 
-    block_template = mining->createNewBlock(options);
+    block_template = mining->createNewBlockLegacy(options);
     BOOST_REQUIRE(block_template);
     block = block_template->getBlock();
     BOOST_CHECK_EQUAL(block.vtx.size(), 5U);
@@ -658,7 +915,7 @@ void MinerTestingSetup::TestPrioritisedMining(const CScript& scriptPubKey, const
     Txid hashFreeGrandchild = tx.GetHash();
     AddToMempool(tx_mempool, entry.Fee(0).SpendsCoinbase(false).FromTx(tx));
 
-    auto block_template = mining->createNewBlock(options);
+    auto block_template = mining->createNewBlockLegacy(options);
     BOOST_REQUIRE(block_template);
     CBlock block{block_template->getBlock()};
     BOOST_REQUIRE_EQUAL(block.vtx.size(), 6U);
@@ -698,7 +955,7 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity)
         const int current_height{mining->getTip()->height};
 
         // Simple block creation, nothing special yet:
-        block_template = mining->createNewBlock(options);
+        block_template = mining->createNewBlockLegacy(options);
         BOOST_REQUIRE(block_template);
 
         CBlock block{block_template->getBlock()};
@@ -726,7 +983,7 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity)
         if (current_height % 2 == 0) {
             BOOST_REQUIRE(Assert(m_node.chainman)->ProcessNewBlock(shared_pblock, /*force_processing=*/true, /*min_pow_checked=*/true, nullptr));
         } else {
-            BOOST_REQUIRE(block_template->submitSolution(block.nVersion, block.nTime, block.nNonce, MakeTransactionRef(txCoinbase)));
+            BOOST_REQUIRE(block_template->submitSolutionLegacy(block.nVersion, block.nTime, block.nNonce, MakeTransactionRef(txCoinbase)));
         }
         {
             LOCK(cs_main);

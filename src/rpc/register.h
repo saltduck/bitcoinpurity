@@ -26,6 +26,9 @@ void RegisterStatsRPCCommands(CRPCTable&);
 #ifdef ENABLE_DATUM
 void RegisterDatumRPCCommands(CRPCTable&);
 #endif
+#ifdef ENABLE_SV2
+void RegisterSv2RPCCommands(CRPCTable&);
+#endif
 
 static inline void RegisterAllCoreRPCCommands(CRPCTable &t)
 {
@@ -45,6 +48,9 @@ static inline void RegisterAllCoreRPCCommands(CRPCTable &t)
     RegisterStatsRPCCommands(t);
 #ifdef ENABLE_DATUM
     RegisterDatumRPCCommands(t);
+#endif
+#ifdef ENABLE_SV2
+    RegisterSv2RPCCommands(t);
 #endif
 }
 

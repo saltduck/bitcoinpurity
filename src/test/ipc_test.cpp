@@ -2,17 +2,26 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <chainparams.h>
+#include <common/args.h>
+#include <consensus/merkle.h>
+#include <consensus/validation.h>
 #include <interfaces/init.h>
+#include <interfaces/mining.h>
 #include <ipc/capnp/protocol.h>
 #include <ipc/process.h>
 #include <ipc/protocol.h>
-#include <logging.h>
 #include <mp/proxy-types.h>
+#include <node/types.h>
+#include <pow.h>
+#include <rpc/server.h>
+#include <rpc/request.h>
+#include <consensus/consensus.h>
 #include <test/ipc_test.capnp.h>
 #include <test/ipc_test.capnp.proxy.h>
+#include <test/ipc_test.capnp.proxy-types.h>
 #include <test/ipc_test.h>
 #include <tinyformat.h>
-#include <validation.h>
 
 #include <future>
 #include <thread>
@@ -27,7 +36,11 @@
 class TestInit : public interfaces::Init
 {
 public:
+    explicit TestInit(node::NodeContext* node = nullptr) : m_node(node) {}
     std::unique_ptr<interfaces::Echo> makeEcho() override { return interfaces::MakeEcho(); }
+    std::unique_ptr<interfaces::Mining> makeMining() override { return m_node ? interfaces::MakeMining(*m_node) : nullptr; }
+    std::unique_ptr<interfaces::Rpc> makeRpc() override { return m_node ? interfaces::MakeRpc(*m_node) : nullptr; }
+    node::NodeContext* m_node;
 };
 
 //! Generate a temporary path with temp_directory_path and mkstemp
@@ -121,30 +134,180 @@ void IpcPipeTest()
     BOOST_CHECK_EQUAL(bs3.GetRejectReason(), bs4.GetRejectReason());
     BOOST_CHECK_EQUAL(bs3.GetDebugMessage(), bs4.GetDebugMessage());
 
+    node::BlockCreateOptions options;
+    options.use_mempool = false;
+    options.block_reserved_weight = 9000;
+    options.coinbase_output_max_additional_sigops = 42;
+    BOOST_CHECK(foo->passBlockOptions(options) == options);
+    BOOST_CHECK(foo->passBlockOptions(node::BlockCreateOptions{}) == node::BlockCreateOptions{});
+
+    capnp::MallocMessageBuilder legacy;
+    auto params = legacy.initRoot<gen::FooInterface::PassBlockOptionsParams>();
+    auto old_options = params.initArg();
+    old_options.setUseMempool(true);
+    old_options.setBlockReservedWeight(DEFAULT_BLOCK_RESERVED_WEIGHT);
+    old_options.setCoinbaseOutputMaxAdditionalSigops(400);
+    auto reader = params.asReader();
+    using Accessor = mp::Accessor<mp::ipc_test_fields::Arg, mp::FIELD_IN | mp::FIELD_BOXED>;
+    mp::InvokeContext context{*foo->m_context.connection};
+    node::BlockCreateOptions decoded;
+    mp::ReadField(mp::TypeList<node::BlockCreateOptions>{}, context,
+        mp::Make<mp::StructField, Accessor>(reader), mp::ReadDestUpdate(decoded));
+    const node::BlockCreateOptions defaults;
+    BOOST_CHECK_EQUAL(decoded.use_mempool, defaults.use_mempool);
+    BOOST_CHECK_EQUAL(decoded.block_reserved_size, defaults.block_reserved_size);
+    BOOST_CHECK_EQUAL(decoded.block_reserved_weight, defaults.block_reserved_weight);
+    BOOST_CHECK_EQUAL(decoded.coinbase_output_max_additional_sigops, defaults.coinbase_output_max_additional_sigops);
+    BOOST_CHECK(decoded.coinbase_output_script == defaults.coinbase_output_script);
+    BOOST_CHECK_EQUAL(decoded.nBlockMaxSize, defaults.nBlockMaxSize);
+    BOOST_CHECK_EQUAL(decoded.nBlockMaxWeight, defaults.nBlockMaxWeight);
+    BOOST_CHECK_EQUAL(decoded.blockMinFeeRate.GetFeePerK(), defaults.blockMinFeeRate.GetFeePerK());
+    BOOST_CHECK_EQUAL(decoded.test_block_validity, defaults.test_block_validity);
+    BOOST_CHECK_EQUAL(decoded.print_modified_fee, defaults.print_modified_fee);
+
     auto script1{CScript() << OP_11};
     auto script2{foo->passScript(script1)};
     BOOST_CHECK_EQUAL(HexStr(script1), HexStr(script2));
 
     // Test cleanup: disconnect pipe and join thread
     disconnect_client();
+    foo.reset();
     thread.join();
 }
 
 //! Test ipc::Protocol connect() and serve() methods connecting over a socketpair.
-void IpcSocketPairTest()
+void IpcSocketPairTest(node::NodeContext* node)
 {
     int fds[2];
     BOOST_CHECK_EQUAL(socketpair(AF_UNIX, SOCK_STREAM, 0, fds), 0);
-    std::unique_ptr<interfaces::Init> init{std::make_unique<TestInit>()};
+    std::unique_ptr<interfaces::Init> init{std::make_unique<TestInit>(node)};
     std::unique_ptr<ipc::Protocol> protocol{ipc::capnp::MakeCapnpProtocol()};
     std::promise<void> promise;
-    std::thread thread([&]() {
+    std::jthread thread([&]() {
         protocol->serve(fds[0], "test-serve", *init, [&] { promise.set_value(); });
     });
     promise.get_future().wait();
     std::unique_ptr<interfaces::Init> remote_init{protocol->connect(fds[1], "test-connect")};
     std::unique_ptr<interfaces::Echo> remote_echo{remote_init->makeEcho()};
     BOOST_CHECK_EQUAL(remote_echo->echo("echo test"), "echo test");
+    protocol->disconnectIncoming();
+    BOOST_CHECK_EQUAL(remote_echo->echo("parent remains connected"), "parent remains connected");
+    if (node) {
+        auto remote_mining = remote_init->makeMining();
+        auto local_mining = interfaces::MakeMining(*node);
+        BOOST_REQUIRE(remote_mining);
+        BOOST_CHECK(remote_mining->isTestChain());
+        auto local_tip = local_mining->getTip();
+        auto remote_tip = remote_mining->getTip();
+        BOOST_REQUIRE(local_tip);
+        BOOST_REQUIRE(remote_tip);
+        BOOST_CHECK(local_tip->hash == remote_tip->hash);
+        BOOST_CHECK_EQUAL(local_tip->height, remote_tip->height);
+        node::BlockCreateOptions options;
+        options.use_mempool = false;
+        options.block_reserved_weight = 9000;
+        auto local = local_mining->createNewBlock(options, false);
+        auto remote = remote_mining->createNewBlock(options, false);
+        BOOST_REQUIRE(local);
+        BOOST_REQUIRE(remote);
+        BOOST_CHECK(remote->getBlock().GetHash() == local->getBlock().GetHash());
+        const auto remote_complete = remote_mining->createNewBlock2(options);
+        BOOST_REQUIRE(remote_complete);
+        BOOST_CHECK(remote_complete->getBlock().GetHash() == remote->getBlock().GetHash());
+        BOOST_CHECK(remote->getBlockHeader().GetHash() == local->getBlockHeader().GetHash());
+        BOOST_CHECK(remote->getTxFees() == local->getTxFees());
+        BOOST_CHECK(remote->getTxSigops() == local->getTxSigops());
+        BOOST_CHECK_THROW(remote->getTxCoinAgePriorities(), std::runtime_error);
+        BOOST_CHECK_EQUAL(remote->getTxFees().size(), remote->getBlock().vtx.size() - 1);
+        BOOST_CHECK_EQUAL(remote->getTxSigops().size(), remote->getBlock().vtx.size() - 1);
+        const auto coinbase = remote->getCoinbaseTx();
+        BOOST_CHECK_EQUAL(coinbase.version, local->getCoinbaseTx().version);
+        BOOST_CHECK(coinbase.witness == local->getCoinbaseTx().witness);
+        BOOST_CHECK(coinbase.required_outputs == local->getCoinbaseTx().required_outputs);
+        BOOST_CHECK_EQUAL(coinbase.block_reward_remaining, local->getCoinbaseTx().block_reward_remaining);
+        BOOST_CHECK(remote->getCoinbaseTransaction()->GetHash() == local->getCoinbaseTransaction()->GetHash());
+        BOOST_CHECK_THROW(remote->getCoinbaseCommitment(), std::runtime_error);
+        BOOST_CHECK_THROW(remote->getWitnessCommitmentIndex(), std::runtime_error);
+        BOOST_CHECK(remote->getCoinbaseMerklePath() == local->getCoinbaseMerklePath());
+        auto local_default = local_mining->createNewBlockLegacy();
+        BOOST_REQUIRE(local_default);
+        auto remote_default = remote_mining->createNewBlockLegacy();
+        BOOST_REQUIRE(remote_default);
+        CBlock candidate = remote->getBlock();
+        CMutableTransaction payout{*candidate.vtx[0]};
+        payout.vout[0].nValue -= 1;
+        payout.vout.emplace_back(1, CScript() << OP_TRUE);
+        candidate.vtx[0] = MakeTransactionRef(payout);
+        candidate.hashMerkleRoot = BlockMerkleRoot(candidate);
+        while (!CheckProofOfWork(candidate.GetHash(), candidate.nBits, Params().GetConsensus())) ++candidate.nNonce;
+        std::string reason{"old"}, debug{"old"};
+        node::BlockCheckOptions check;
+        BOOST_CHECK(remote_mining->checkBlock(candidate, check, reason, debug));
+        BOOST_CHECK(reason.empty()); BOOST_CHECK(debug.empty());
+        CBlock invalid{candidate};
+        CMutableTransaction broken_coinbase{*candidate.vtx[0]};
+        broken_coinbase.vin[0].scriptWitness.SetNull();
+        invalid.vtx[0] = MakeTransactionRef(broken_coinbase);
+        check.check_pow = false;
+        CBlock bad_root{candidate}; bad_root.hashMerkleRoot = uint256{1};
+        BOOST_CHECK(!remote_mining->checkBlock(bad_root, check, reason, debug));
+        BOOST_CHECK_EQUAL(reason, "bad-txnmrklroot");
+        check.check_merkle_root = false;
+        BOOST_CHECK(remote_mining->checkBlock(bad_root, check, reason, debug));
+        check.check_merkle_root = true;
+        CBlock bad_parent{candidate}; bad_parent.hashPrevBlock = uint256{1};
+        BOOST_CHECK(!remote_mining->checkBlock(bad_parent, check, reason, debug));
+        BOOST_CHECK_EQUAL(reason, "inconclusive-not-best-prevblk");
+        BOOST_CHECK(!remote_mining->checkBlock(invalid, check, reason, debug));
+        BOOST_CHECK_EQUAL(reason, "bad-witness-nonce-size");
+        BOOST_CHECK(remote->submitSolution(candidate.nVersion, candidate.nTime, candidate.nNonce, candidate.vtx[0], reason, debug));
+        BOOST_CHECK(reason.empty()); BOOST_CHECK(debug.empty());
+        BOOST_CHECK(!remote->submitSolution(candidate.nVersion, candidate.nTime, candidate.nNonce, candidate.vtx[0], reason, debug));
+        BOOST_CHECK_EQUAL(reason, "duplicate");
+        BOOST_CHECK(!remote_mining->submitBlock(candidate, reason, debug));
+        BOOST_CHECK_EQUAL(reason, "duplicate");
+        BOOST_CHECK(remote->getBlock().GetHash() == candidate.GetHash());
+        BOOST_CHECK_EQUAL(remote->getCoinbaseTx().block_reward_remaining, coinbase.block_reward_remaining);
+        BOOST_CHECK(remote->getCoinbaseTx().required_outputs == coinbase.required_outputs);
+        BOOST_CHECK_EXCEPTION(remote->submitSolutionOld7(candidate.nVersion, candidate.nTime, candidate.nNonce, candidate.vtx[0]), std::exception,
+                              [](const std::exception& error) { return std::string{error.what()}.find("Old submitSolution (@7)") != std::string::npos; });
+        BOOST_CHECK_EXCEPTION(remote_init->makeMiningOld2(), std::exception,
+                              [](const std::exception& error) { return std::string{error.what()}.find("Old makeMining (@2)") != std::string::npos; });
+        auto updated = remote->waitNext(node::BlockWaitOptions{.timeout = MillisecondsDouble{0}});
+        BOOST_REQUIRE(updated);
+        BOOST_CHECK(updated->getBlock().hashPrevBlock == candidate.GetHash());
+        BOOST_CHECK(!updated->waitNext(node::BlockWaitOptions{.timeout = MillisecondsDouble{0}}));
+        auto waiting = std::async(std::launch::async, [&] { return updated->waitNext(); });
+        updated->interruptWait();
+        BOOST_REQUIRE(waiting.wait_for(std::chrono::seconds{2}) == std::future_status::ready);
+        BOOST_CHECK(!waiting.get());
+        auto fresh = remote_default->waitNext(node::BlockWaitOptions{.timeout = MillisecondsDouble{1000}});
+        BOOST_REQUIRE(fresh);
+        BOOST_CHECK(fresh->getBlock().hashPrevBlock == candidate.GetHash());
+        const auto txids = remote_mining->getTransactionsByTxID({Txid::FromUint256(uint256{1})});
+        BOOST_REQUIRE_EQUAL(txids.size(), 1);
+        BOOST_CHECK(!txids[0]);
+        const auto wtxids = remote_mining->getTransactionsByWitnessID({Wtxid::FromUint256(uint256{1})});
+        BOOST_REQUIRE_EQUAL(wtxids.size(), 1);
+        BOOST_CHECK(!wtxids[0]);
+        options.block_reserved_weight = MAX_BLOCK_WEIGHT + 1;
+        BOOST_CHECK_THROW(remote_mining->createNewBlock(options, false), std::exception);
+        if (RPCIsInWarmup(nullptr)) SetRPCWarmupFinished();
+        auto rpc = remote_init->makeRpc();
+        BOOST_REQUIRE(rpc);
+        UniValue request; BOOST_REQUIRE(request.read(R"({"jsonrpc":"2.0","id":1,"method":"getblockcount","params":[]})"));
+        gArgs.ForceSetArg("-ipcrpc", "0");
+        BOOST_CHECK_THROW(rpc->executeRpc(request, "/", "ipc-test"), std::exception);
+        gArgs.ForceSetArg("-ipcrpc", "1");
+        const auto response = rpc->executeRpc(request, "/", "ipc-test");
+        BOOST_CHECK(response["error"].isNull());
+        BOOST_CHECK_EQUAL(response["result"].getInt<int>(), local_tip->height + 1);
+        rpc.reset();
+        const auto submitted_tip = local_mining->getTip();
+        BOOST_REQUIRE(submitted_tip);
+        BOOST_CHECK(submitted_tip->hash == candidate.GetHash());
+        BOOST_CHECK_EQUAL(submitted_tip->height, local_tip->height + 1);
+    }
     remote_echo.reset();
     remote_init.reset();
     thread.join();
@@ -176,6 +339,8 @@ void IpcSocketTest(const fs::path& datadir)
         std::unique_ptr<interfaces::Init> remote_init{protocol->connect(connect_fd, "test-connect")};
         std::unique_ptr<interfaces::Echo> remote_echo{remote_init->makeEcho()};
         BOOST_CHECK_EQUAL(remote_echo->echo("echo test"), "echo test");
+        protocol->disconnectIncoming();
+        BOOST_CHECK_THROW(remote_echo->echo("disconnected"), std::exception);
     }};
 
     // Need to specify explicit socket addresses outside the data directory, because the data
@@ -197,3 +362,42 @@ void IpcSocketTest(const fs::path& datadir)
         connect_and_test(addresses[i]);
     }
 }
+
+namespace mp {
+void CustomBuildMessage(InvokeContext& invoke_context,
+                        const BlockValidationState& src,
+                        gen::BlockValidationState::Builder&& builder)
+{
+    if (src.IsValid()) {
+        builder.setMode(0);
+    } else if (src.IsInvalid()) {
+        builder.setMode(1);
+    } else if (src.IsError()) {
+        builder.setMode(2);
+    } else {
+        assert(false);
+    }
+    builder.setResult(static_cast<int>(src.GetResult()));
+    builder.setRejectReason(src.GetRejectReason());
+    builder.setDebugMessage(src.GetDebugMessage());
+}
+
+void CustomReadMessage(InvokeContext& invoke_context,
+                       const gen::BlockValidationState::Reader& reader,
+                       BlockValidationState& dest)
+{
+    if (reader.getMode() == 0) {
+        assert(reader.getResult() == 0);
+        assert(reader.getRejectReason().size() == 0);
+        assert(reader.getDebugMessage().size() == 0);
+    } else if (reader.getMode() == 1) {
+        dest.Invalid(static_cast<BlockValidationResult>(reader.getResult()), reader.getRejectReason(), reader.getDebugMessage());
+    } else if (reader.getMode() == 2) {
+        assert(reader.getResult() == 0);
+        dest.Error(reader.getRejectReason());
+        assert(reader.getDebugMessage().size() == 0);
+    } else {
+        assert(false);
+    }
+}
+} // namespace mp

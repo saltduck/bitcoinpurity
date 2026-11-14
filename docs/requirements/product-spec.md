@@ -403,3 +403,106 @@ concurrent clients need separate base datadirs and listener overrides.
 See [TASK-PS-008](../tasks/TASK-PS-008.md) for conversion and acceptance.
 
 Complete audit and actual evidence: [Signet source review](../purity-signet-review.md).
+
+## Embedded Stratum V2 pooled mining
+
+Provide an in-process gateway from existing Stratum V1 miners to a Purity-chain
+SV2 pool using locally selected transactions and Full-Template Job Declaration.
+Support mainnet and regtest, daemon and Qt on Linux, macOS and Windows. Preserve
+DATUM Solo and make the two runtimes mutually exclusive. Default BUILD_SV2 to ON
+and runtime sv2 to false. BUILD_SV2=OFF must require no Rust dependencies.
+
+Use Bitcoin Core v32.1 mining semantics and assess PRs #33819, #34568, #34184,
+#34644, #34672, #34020 and #33745. Preserve Purity consensus, Knots transaction
+selection. Use the Core v32.1 IPC wire contract (TASK-038). Use unmodified SRI protocol libraries
+pinned to d1d30f3e755b0a5108633e1be7012034a8caaecd; implement lifecycle and policy
+in this repository using a Rust static library and C ABI. Pin Rust 1.96.0 and
+commit Cargo.lock for reproducible dependency resolution.
+
+Authenticate Mining and JDS connections using configured authority public keys.
+Declare local templates, supply missing witness-encoded transactions, and wait
+for pool acknowledgement before publishing work. Allocate unique extranonces;
+separate local-valid, upstream-accepted, rejected and pending share counters.
+Submit network-target solutions locally through normal validation and to the
+pool. Preserve ASERT, RDTS, mandatory version bits and complete coinbase witness.
+
+On remote failure disconnect miners, invalidate outstanding work and retry the
+same pool with bounded backoff. Never fall back to Solo or pool-selected work.
+Interrupt and join gateway work before node dependencies stop. Default the V1
+listener to 127.0.0.1:23334 and limits to 32 total / 4 per IP. Provide optional
+local authentication, one Mining/JDS endpoint pair and upstream identity.
+Passwords must not enter settings.json; status must not expose miner identities
+or credentials. Add getsv2info and Qt mode, configuration and backend status.
+Configuration changes require restart.
+
+Use TDD and reviewable commits under TASK-048 and TASK-031 through TASK-033, TASK-049 and TASK-051. Acceptance
+requires an independent local test pool/JDS, actual external V1 proof of work,
+upstream share acknowledgement and block propagation to a second regtest node.
+Cover faults, reorgs, shutdown, protocol/FFI fuzzing and three-platform ON/OFF
+builds. Real pool interoperability and production deployment are separate gates.
+No native downstream SV2, backup pool or Signet signer integration is included.
+
+
+## Restore optional IPC builds
+
+Restore WITH_MULTIPROCESS as a default-OFF option. Reproduce enabled compiler
+failures and fix only this project's integration. Use the unmodified libmultiprocess snapshot from Core v32.1 and
+Cap'n Proto 1.2.0. Align IPC with Core v32.1 while preserving Purity
+consensus, single-process binaries and embedded SV2 behavior. Reference Core
+v32.1 where useful. Validate enabled daemon/Qt, actual IPC/mining calls, disabled
+build and SV2 compatibility. Track concrete failures and evidence in TASK-050.
+
+
+## TASK-049 hosted acceptance and release archives
+
+Validate the pushed SV2 branch on native Linux/macOS/Windows, including MSVC/Qt,
+ON/OFF builds and extracted release binaries/application bundles. Manual release
+runs create artifacts only. Change project integration and packaging sources
+only; dependency sources remain unchanged. Account-level CI restrictions are
+external blockers, not successful acceptance.
+
+Pre-release review follow-up: [TASK-037](../tasks/TASK-037.md) tracks F1–F4 correctness fixes.
+PR #44 remains draft. Existing local fixture results do not establish independent
+CKPool interoperability or native Windows acceptance.
+
+The 2026-11-02 decision supersedes preservation of the inherited IPC wire layout:
+Core v32.1 is the single target contract (TASK-038). Existing IPC clients must
+regenerate bindings and update calls; no parallel legacy socket is planned.
+Purity consensus and in-process SV2 behavior remain project-owned. CKPool's
+v31-era binding must be updated externally; its current layout is not the target.
+
+### Generic SV2 interoperability corrections (2026-11-02)
+
+- Implement TASK-039 through TASK-046 as separate commits, with failing tests
+  before each correction. Retain existing F1-F4 and Core v32.1 IPC behavior.
+- Separate production/test Cargo outputs; expose bounded, sanitized stage/error
+  diagnostics through the shared RPC/Qt snapshot; retain failures until recovery.
+- Reset reconnect backoff after a session has ever obtained confirmed custom work.
+- Build BIP34 + optional pool/miner pushes + negotiated extranonce data push.
+  Tags default empty; UTF-8 encoded tags including push bytes total at most 59.
+  Validate actual scriptSig <=100 bytes. Preserve witness, payouts and templates.
+- Add sv2pooltag/sv2minertag to CLI/configuration/Qt, effective after restart.
+- Unavailable subscribe receives error 20, flushed before close. Preserve client
+  limits, deadlines and disconnect of subscribed miners when work disappears.
+- Retain generic empty-tag and 12/16/32-byte cases. Do not implement fixed PUSH12
+  or a named-pool mode. Independent pool/native Windows acceptance remains open.
+
+External pool operators' own source, configuration, patches, scripts, binaries
+and raw logs must stay outside this repository; retain only generic changes
+and project-owned acceptance conclusions.
+
+### Periodic SV2 job refresh (2026-11-03)
+
+`sv2jobinterval` is available through CLI, configuration files and Qt. It defaults
+to 30 seconds and accepts integer seconds from 30 through 60 inclusive; invalid
+values fail startup when SV2 is enabled. Changes require restart and retain
+normal command-line/configuration precedence. Ordinary mempool changes are
+coalesced until the next refresh deadline, without postponing that deadline.
+Even an unchanged mempool gets periodic fresh work. New chain tips/reorgs and
+invalid work are handled immediately; upstream target changes retain their
+existing immediate job installation and per-job difficulty rules. Work is only
+published after a valid Custom Job acknowledgement. Same-parent refreshes retain
+valid past work and use clean_jobs=false; parent changes invalidate old work.
+The monotonic template refresh interval is not a hard delivery guarantee during
+upstream latency or failure. No miner-model detection or pool-specific behavior
+is introduced. See TASK-047 for regression evidence.
