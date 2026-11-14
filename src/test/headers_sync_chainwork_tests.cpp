@@ -62,7 +62,7 @@ BOOST_FIXTURE_TEST_SUITE(headers_sync_chainwork_tests, HeadersGeneratorSetup)
 
 BOOST_AUTO_TEST_CASE(signet_presync_pins_and_shared_prefix)
 {
-    const CBlockIndex* start = m_node.chainman->ActiveChain().Tip();
+    const CBlockIndex* start = WITH_LOCK(::cs_main, return m_node.chainman->ActiveChain().Tip());
     std::vector<CBlockHeader> headers;
     GenerateHeaders(headers, 11, start->GetBlockHash(), 0x20000000, start->nTime, uint256::ONE, start->nBits);
     auto params = Params().GetConsensus();

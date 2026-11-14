@@ -41,9 +41,12 @@
 
 #include "datum_conf.h"
 
-#ifndef JSON_INTEGER_IS_LONG_LONG
+/* Autotools builds of Jansson define JSON_INTEGER_IS_LONG_LONG. CMake builds
+ * (such as vcpkg's) never define it and pick a 64-bit json_int_t instead. */
+#if !defined(JSON_INTEGER_IS_LONG_LONG) && !defined(JANSSON_USING_CMAKE)
 #       error "Jansson 2.0 with long long support required!"
 #endif
+_Static_assert(sizeof(json_int_t) >= 8, "Jansson with 64-bit json_int_t required");
 #if JANSSON_MAJOR_VERSION >= 2
 #define JSON_LOADS(str, err_ptr) json_loads((str), 0, (err_ptr))
 #else

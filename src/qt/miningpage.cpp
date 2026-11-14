@@ -69,7 +69,7 @@ QString DurationText(uint64_t milliseconds)
 
 QString AgeText(uint64_t milliseconds, uint64_t now)
 {
-    return milliseconds && now >= milliseconds ? DurationText(now - milliseconds) + QObject::tr(" ago") : QStringLiteral("—");
+    return milliseconds && now >= milliseconds ? QObject::tr("%1 ago").arg(DurationText(now - milliseconds)) : QStringLiteral("—");
 }
 
 void AddRow(QFormLayout* form, const QString& name, QLabel*& value)
@@ -723,7 +723,7 @@ void MiningPage::refresh()
     QString mapping = status.mapping_requested ? (status.mapping_active ? tr("Active") : tr("Not active")) : tr("Not requested");
     if (!status.mapping_protocol.empty()) mapping += QStringLiteral(" · ") + QString::fromStdString(status.mapping_protocol);
     if (!status.mapping_external.empty()) mapping += QStringLiteral(" · ") + QString::fromStdString(status.mapping_external);
-    if (status.mapping_lifetime) mapping += tr(" · lifetime %1s").arg(status.mapping_lifetime);
+    if (status.mapping_lifetime) mapping += QStringLiteral(" · ") + tr("lifetime %1s").arg(status.mapping_lifetime);
     if (!status.mapping_error.empty()) mapping += QStringLiteral(" · ") + QString::fromStdString(status.mapping_error);
     m_mapping->setText(mapping);
     m_payout->setText(status.payout_address.empty() ? QStringLiteral("—") : QString::fromStdString(status.payout_address));
@@ -738,7 +738,7 @@ void MiningPage::refresh()
 
     m_difficulty->setText(QString::number(status.share_difficulty));
     m_clients->setText(tr("%1 connected · %2 subscribed · %3 authorized").arg(status.clients).arg(status.subscribed_clients).arg(status.authorized_clients));
-    m_hashrate->setText(hashrate.hashrate_ths ? MiningHashrateText(*hashrate.hashrate_ths) + tr(" · rolling estimate over up to 5 minutes") : QStringLiteral("—"));
+    m_hashrate->setText(hashrate.hashrate_ths ? MiningHashrateText(*hashrate.hashrate_ths) + QStringLiteral(" · ") + tr("rolling estimate over up to 5 minutes") : QStringLiteral("—"));
     const uint64_t total = status.session_accepted_shares + status.session_rejected_shares;
     const double reject_rate = total ? 100.0 * status.session_rejected_shares / total : 0.0;
     m_shares->setText(tr("%1 accepted · %2 rejected · %3% rejected").arg(status.session_accepted_shares).arg(status.session_rejected_shares).arg(reject_rate, 0, 'f', 2));
@@ -763,7 +763,7 @@ void MiningPage::refresh()
     QString rejection = status.last_rejected_share_time_ms ? TimeText(status.last_rejected_share_time_ms) : QStringLiteral("—");
     if (!status.last_rejected_share_reason.empty()) rejection += QStringLiteral(" · ") + QString::fromStdString(status.last_rejected_share_reason);
     const uint64_t rejection_count = status.rejected_unknown_work + status.rejected_high_hash + status.rejected_stale + status.rejected_duplicate + status.rejected_other;
-    if (rejection_count) rejection += tr(" · unknown %1, high hash %2, stale %3, duplicate %4, other %5")
+    if (rejection_count) rejection += QStringLiteral(" · ") + tr("unknown %1, high hash %2, stale %3, duplicate %4, other %5")
         .arg(status.rejected_unknown_work).arg(status.rejected_high_hash).arg(status.rejected_stale).arg(status.rejected_duplicate).arg(status.rejected_other);
     m_rejection->setText(rejection);
 

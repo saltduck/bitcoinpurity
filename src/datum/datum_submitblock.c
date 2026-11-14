@@ -137,6 +137,7 @@ void *datum_submitblock_thread(void *ptr) {
 		pthread_mutex_unlock(&submitblock_mutex);
 	}
 	
+	curl_easy_cleanup(tcurl);
 	return NULL;
 }
 
