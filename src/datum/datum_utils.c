@@ -176,6 +176,16 @@ uint64_t monotonic_time_seconds(void) {
 #endif
 }
 
+uint64_t monotonic_time_millis(void) {
+#ifdef _WIN32
+	return GetTickCount64();
+#else
+	struct timespec ts;
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	return ((uint64_t)ts.tv_sec * 1000ULL) + ((uint64_t)ts.tv_nsec / 1000000ULL);
+#endif
+}
+
 uint64_t current_time_millis(void) {
 #ifdef _WIN32
 	FILETIME ft;
