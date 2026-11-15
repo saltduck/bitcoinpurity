@@ -77,14 +77,19 @@ if(SV2_VENDOR_DIR)
   list(APPEND sv2_cargo_env "CARGO_HOME=${sv2_cargo_home}")
   if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux" AND DEFINED ENV{GUIX_ENVIRONMENT})
     # Cargo builds and runs build scripts for the build machine. Inside a Guix
-    # container their libgcc_s.so.1 is only in the environment's lib
-    # directory, which the dynamic loader does not search. This only affects
-    # programs run during the build, not the archive.
-    set(sv2_ld_library_path "$ENV{GUIX_ENVIRONMENT}/lib")
-    if(DEFINED ENV{LD_LIBRARY_PATH} AND NOT "$ENV{LD_LIBRARY_PATH}" STREQUAL "")
-      string(APPEND sv2_ld_library_path ":$ENV{LD_LIBRARY_PATH}")
-    endif()
-    list(APPEND sv2_cargo_env "LD_LIBRARY_PATH=${sv2_ld_library_path}")
+    # container the build machine's gcc finds the C runtime start files and
+    # libraries only through LIBRARY_PATH, which the Guix build script unsets
+    # for darwin hosts once depends is built, and the dynamic loader does not
+    # search the environment's lib directory for their libgcc_s.so.1. Point
+    # both at it. This only affects programs linked and run during the build:
+    # the archive is not linked, and the target's C code is only compiled.
+    foreach(sv2_path_var IN ITEMS LIBRARY_PATH LD_LIBRARY_PATH)
+      set(sv2_path "$ENV{GUIX_ENVIRONMENT}/lib")
+      if(DEFINED ENV{${sv2_path_var}} AND NOT "$ENV{${sv2_path_var}}" STREQUAL "")
+        string(APPEND sv2_path ":$ENV{${sv2_path_var}}")
+      endif()
+      list(APPEND sv2_cargo_env "${sv2_path_var}=${sv2_path}")
+    endforeach()
   endif()
   # Keep build paths out of the archive so release builds are reproducible.
   string(APPEND sv2_rustflags " --remap-path-prefix=${SV2_VENDOR_DIR}=/purity-sv2-vendor --remap-path-prefix=${sv2_cargo_dir}=/purity-sv2")
