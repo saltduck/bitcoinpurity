@@ -70,27 +70,29 @@ if(SV2_VENDOR_DIR)
     "[net]\n"
     "offline = true\n")
   if(SV2_BUILD_LINKER AND SV2_RUST_BUILD_TARGET)
+    set(sv2_build_linker "${SV2_BUILD_LINKER}")
+    if(SV2_BUILD_LIBRARY_PATH)
+      # Cargo links build scripts and proc macros for the build machine and
+      # runs them during the build. In Guix the build machine's gcc finds its
+      # C runtime and libraries only through LIBRARY_PATH (unset for darwin
+      # hosts after depends), and the loader does not search that directory
+      # for libgcc_s at run time. Link them through a wrapper that supplies
+      # the directory for linking and as a runpath, so rustc and the archive
+      # are unaffected. Use only the toolchain's own lib directory: the merged
+      # Guix profile mixes libraries of more than one glibc.
+      set(sv2_build_linker "${sv2_cargo_home}/build-linker")
+      file(WRITE "${sv2_build_linker}"
+        "#!/bin/sh\n"
+        "LIBRARY_PATH=\"${SV2_BUILD_LIBRARY_PATH}\${LIBRARY_PATH:+:\$LIBRARY_PATH}\"\n"
+        "export LIBRARY_PATH\n"
+        "exec ${SV2_BUILD_LINKER} -Wl,-rpath,${SV2_BUILD_LIBRARY_PATH} \"\$@\"\n")
+      file(CHMOD "${sv2_build_linker}" PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE)
+    endif()
     file(APPEND "${sv2_cargo_home}/config.toml"
       "\n[target.${SV2_RUST_BUILD_TARGET}]\n"
-      "linker = \"${SV2_BUILD_LINKER}\"\n")
+      "linker = \"${sv2_build_linker}\"\n")
   endif()
   list(APPEND sv2_cargo_env "CARGO_HOME=${sv2_cargo_home}")
-  if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux" AND DEFINED ENV{GUIX_ENVIRONMENT})
-    # Cargo builds and runs build scripts for the build machine. Inside a Guix
-    # container the build machine's gcc finds the C runtime start files and
-    # libraries only through LIBRARY_PATH, which the Guix build script unsets
-    # for darwin hosts once depends is built, and the dynamic loader does not
-    # search the environment's lib directory for their libgcc_s.so.1. Point
-    # both at it. This only affects programs linked and run during the build:
-    # the archive is not linked, and the target's C code is only compiled.
-    foreach(sv2_path_var IN ITEMS LIBRARY_PATH LD_LIBRARY_PATH)
-      set(sv2_path "$ENV{GUIX_ENVIRONMENT}/lib")
-      if(DEFINED ENV{${sv2_path_var}} AND NOT "$ENV{${sv2_path_var}}" STREQUAL "")
-        string(APPEND sv2_path ":$ENV{${sv2_path_var}}")
-      endif()
-      list(APPEND sv2_cargo_env "${sv2_path_var}=${sv2_path}")
-    endforeach()
-  endif()
   # Keep build paths out of the archive so release builds are reproducible.
   string(APPEND sv2_rustflags " --remap-path-prefix=${SV2_VENDOR_DIR}=/purity-sv2-vendor --remap-path-prefix=${sv2_cargo_dir}=/purity-sv2")
   set(sv2_cargo_mode --offline)
