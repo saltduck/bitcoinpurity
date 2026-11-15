@@ -62,20 +62,29 @@ endef
 
 # The official Linux binaries expect an FHS dynamic loader. Inside the Guix
 # container there is none, so point them at the loader and libraries of the
-# Guix build environment.
+# Guix build environment. Every ELF object needs the environment's library
+# directory in its runpath, not only the executables: a runpath only applies
+# to the object's own dependencies, and libLLVM, whose name doesn't end in .so,
+# is the one that needs libz. Append it to the runpath each object already has,
+# which for rust-lld also points at libLLVM in a different directory. Run the
+# tools once, so that a missing library fails here and names itself.
 ifeq ($(build_os),linux)
 $(package)_loader_x86_64=ld-linux-x86-64.so.2
 $(package)_loader_aarch64=ld-linux-aarch64.so.1
 define $(package)_preprocess_cmds
   if test -n "$(GUIX_ENVIRONMENT)"; then \
-    for f in $$$$(find rustc cargo -type f \( -path '*/bin/*' -o -name '*.so' \)); do \
+    for f in $$$$(find rustc cargo -type f \( -path '*/bin/*' -o -name '*.so*' \)); do \
       if head -c 4 "$$$$f" | grep -q ELF; then \
-        if test -x "$$$$f" && ! case "$$$$f" in *.so) true;; *) false;; esac; then \
+        if test -x "$$$$f" && ! case "$$$$f" in *.so|*.so.*) true;; *) false;; esac; then \
           patchelf --set-interpreter "$(GUIX_ENVIRONMENT)/lib/$($(package)_loader_$(build_arch))" "$$$$f"; \
         fi; \
-        patchelf --set-rpath '$$$$ORIGIN/../lib:$(GUIX_ENVIRONMENT)/lib' "$$$$f"; \
+        rpath="$$$$(patchelf --print-rpath "$$$$f")" && \
+        patchelf --set-rpath "$$$${rpath:+$$$$rpath:}$(GUIX_ENVIRONMENT)/lib" "$$$$f"; \
       fi; \
-    done; \
+    done && \
+    rustc/bin/rustc --version && \
+    rustc/lib/rustlib/$($(package)_rust_build)/bin/rust-lld -flavor gnu --version && \
+    cargo/bin/cargo --version; \
   fi
 endef
 endif

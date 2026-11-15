@@ -563,8 +563,11 @@ inspecting signatures in Mach-O binaries.")
         cmake-minimal
         gnu-make
         pkg-config
-        ;; Runs the prebuilt Rust toolchain from depends (embedded SV2)
+        ;; Runs the prebuilt Rust toolchain from depends (embedded SV2):
+        ;; patchelf points it at this environment, whose lib directory must
+        ;; provide the shared libraries it links against (rustc needs zlib).
         patchelf
+        zlib
         imagemagick
         libicns
         librsvg-2.40
