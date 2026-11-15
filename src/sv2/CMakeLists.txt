@@ -75,6 +75,17 @@ if(SV2_VENDOR_DIR)
       "linker = \"${SV2_BUILD_LINKER}\"\n")
   endif()
   list(APPEND sv2_cargo_env "CARGO_HOME=${sv2_cargo_home}")
+  if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux" AND DEFINED ENV{GUIX_ENVIRONMENT})
+    # Cargo builds and runs build scripts for the build machine. Inside a Guix
+    # container their libgcc_s.so.1 is only in the environment's lib
+    # directory, which the dynamic loader does not search. This only affects
+    # programs run during the build, not the archive.
+    set(sv2_ld_library_path "$ENV{GUIX_ENVIRONMENT}/lib")
+    if(DEFINED ENV{LD_LIBRARY_PATH} AND NOT "$ENV{LD_LIBRARY_PATH}" STREQUAL "")
+      string(APPEND sv2_ld_library_path ":$ENV{LD_LIBRARY_PATH}")
+    endif()
+    list(APPEND sv2_cargo_env "LD_LIBRARY_PATH=${sv2_ld_library_path}")
+  endif()
   # Keep build paths out of the archive so release builds are reproducible.
   string(APPEND sv2_rustflags " --remap-path-prefix=${SV2_VENDOR_DIR}=/purity-sv2-vendor --remap-path-prefix=${sv2_cargo_dir}=/purity-sv2")
   set(sv2_cargo_mode --offline)
