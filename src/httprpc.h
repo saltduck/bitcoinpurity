@@ -5,9 +5,14 @@
 #ifndef BITCOIN_HTTPRPC_H
 #define BITCOIN_HTTPRPC_H
 
+#include <rpc/protocol.h>
 #include <any>
 #include <set>
 #include <string>
+
+class UniValue;
+class JSONRPCRequest;
+UniValue ExecuteHTTPRPC(const UniValue& request, JSONRPCRequest& context, HTTPStatusCode& status);
 
 /** Start HTTP RPC subsystem.
  * Precondition; HTTP and RPC has been started.

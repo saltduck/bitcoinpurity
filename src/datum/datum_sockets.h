@@ -67,6 +67,11 @@ typedef void (*DATUM_ThreadPool_ClientNew_Func)(T_DATUM_CLIENT_DATA *);
 typedef struct T_DATUM_CLIENT_DATA {
 	bool new_connection;
 	_Atomic(datum_socket_t) fd;
+	// A connection the listener assigned to this slot that its pool thread
+	// has not initialized yet. The pool thread moves it into fd under
+	// thread_data_lock once the slot's state is reset, so no code that walks
+	// slots by fd sees a new client with a previous client's state.
+	_Atomic(datum_socket_t) pending_fd;
 	int cid;
 	
 	char buffer[CLIENT_BUFFER];

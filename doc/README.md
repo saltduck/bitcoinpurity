@@ -17,6 +17,9 @@ Running
 ---------------------
 The following are some helpful notes on how to run Bitcoin Purity on your native platform.
 
+- [Connect miners to a Stratum V2 pool through Purity Node](sv2-mining.md)
+- [Core v32.1 IPC migration and client requirements](ipc-core32-migration.md)
+
 ### Unix
 
 Unpack the files into a directory and run:

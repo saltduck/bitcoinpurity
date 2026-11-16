@@ -129,6 +129,11 @@ void *datum_threadpool_thread(void *arg) {
 					my->client_data[i].in_buf = 0;
 					my->client_data[i].out_buf = 0;
 					my->client_data[i].proxy_line_read = 0;
+					my->client_data[i].kill_request = false;
+					// The slot's state is reset, so expose the connection to the
+					// rest of this loop (still under thread_data_lock).
+					my->client_data[i].fd = my->client_data[i].pending_fd;
+					my->client_data[i].pending_fd = 0;
 					
 					// call new client handler, if any
 					if (my->app->new_client_func) my->app->new_client_func(&my->client_data[i]);
@@ -311,6 +316,14 @@ void *datum_threadpool_thread(void *arg) {
 	}
 	
 	for (i = 0; i < my->app->max_clients_thread; ++i) {
+		pthread_mutex_lock(&my->thread_data_lock);
+		if (my->client_data[i].pending_fd != 0) {
+			datum_socket_close(my->client_data[i].pending_fd);
+			my->client_data[i].pending_fd = 0;
+			my->client_data[i].new_connection = false;
+			datum_socket_thread_client_count_decrement(my, i, false);
+		}
+		pthread_mutex_unlock(&my->thread_data_lock);
 		if (my->client_data[i].fd != 0) {
 			if (my->app->closed_client_func) my->app->closed_client_func(&my->client_data[i], "DATUM shutdown");
 			datum_socket_thread_close_client(my, i);
@@ -331,6 +344,7 @@ void clean_thread_data(T_DATUM_THREAD_DATA *d, T_DATUM_SOCKET_APP *app) {
 	for(i=0;i<app->max_clients_thread;i++) {
 		d->client_data[i].new_connection = false;
 		d->client_data[i].fd = 0;
+		d->client_data[i].pending_fd = 0;
 		d->client_data[i].in_buf = 0;
 		d->client_data[i].out_buf = 0;
 	}
@@ -378,9 +392,11 @@ int assign_to_thread(T_DATUM_SOCKET_APP *app, datum_socket_t fd) {
 		// even reused for an unrelated socket, between reading and peeking it.
 		pthread_mutex_lock(&app->datum_threads[i].thread_data_lock);
 		for (j = 0; j < app->max_clients_thread; ++j) {
-			if (app->datum_threads[i].client_data[j].fd > 0 &&
+			const datum_socket_t slot_fd = app->datum_threads[i].client_data[j].fd > 0 ?
+				app->datum_threads[i].client_data[j].fd : app->datum_threads[i].client_data[j].pending_fd;
+			if (slot_fd > 0 &&
 				!strcmp(app->datum_threads[i].client_data[j].rem_host, remote_ip) &&
-				!datum_client_peer_closed(app->datum_threads[i].client_data[j].fd)) ++per_ip;
+				!datum_client_peer_closed(slot_fd)) ++per_ip;
 		}
 		pthread_mutex_unlock(&app->datum_threads[i].thread_data_lock);
 	}
@@ -474,13 +490,13 @@ int assign_to_thread(T_DATUM_SOCKET_APP *app, datum_socket_t fd) {
 	cid = app->datum_threads[tid].next_open_client_index;
 	
 	// sanity check: confirm this cid is usable
-	if (app->datum_threads[tid].client_data[cid].fd != 0) {
+	if (app->datum_threads[tid].client_data[cid].fd != 0 || app->datum_threads[tid].client_data[cid].pending_fd != 0) {
 		DLOG_ERROR("Possible bug: Desync with next_open_client_index.  Expected open client slot @ %d on non-maxed thread %d! (shows fd = %" PRIuPTR ")", cid, tid, (uintptr_t)app->datum_threads[tid].client_data[cid].fd);
 		
 		// let's try the hard way to find an open slot
 		cid = -1;
 		for(i=0;i<app->max_clients_thread;i++) {
-			if (app->datum_threads[tid].client_data[i].fd == 0) {
+			if (app->datum_threads[tid].client_data[i].fd == 0 && app->datum_threads[tid].client_data[i].pending_fd == 0) {
 				cid = i;
 				break;
 			}
@@ -501,7 +517,7 @@ int assign_to_thread(T_DATUM_SOCKET_APP *app, datum_socket_t fd) {
 	
 	// prep the next open CID
 	for(i=app->datum_threads[tid].next_open_client_index; i != cid;) {
-		if (app->datum_threads[tid].client_data[i].fd == 0) {
+		if (app->datum_threads[tid].client_data[i].fd == 0 && app->datum_threads[tid].client_data[i].pending_fd == 0) {
 			// i is good
 			app->datum_threads[tid].next_open_client_index = i;
 			break;
@@ -522,7 +538,8 @@ int assign_to_thread(T_DATUM_SOCKET_APP *app, datum_socket_t fd) {
 	app->datum_threads[tid].connected_clients++;
 	
 	// clear up and prep slot's client data without clobbering app_client_data
-	app->datum_threads[tid].client_data[cid].fd = fd;
+	// The pool thread exposes the connection as fd after initializing the slot.
+	app->datum_threads[tid].client_data[cid].pending_fd = fd;
 	app->datum_threads[tid].client_data[cid].cid = cid;
 	app->datum_threads[tid].client_data[cid].new_connection = true;
 	app->datum_threads[tid].client_data[cid].datum_thread = (void *)&app->datum_threads[tid];

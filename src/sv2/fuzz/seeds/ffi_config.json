@@ -1,0 +1,1 @@
+{"listen":"127.0.0.1:23334","pool":"pool.example:3333","jds":"pool.example:3334","pool_key":"79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798","jds_key":"79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798","identity":"test-account","auth":true,"user":"miner","password":"test-only-password","max_clients":32,"max_per_ip":4}

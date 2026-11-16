@@ -14,11 +14,15 @@
 #include <uint256.h>                // for uint256
 #include <util/time.h>              // for MillisecondsDouble
 
+#include <atomic>
 #include <memory>   // for unique_ptr, shared_ptr
 #include <optional> // for optional
+#include <stdexcept>
+#include <string>
 #include <vector>   // for vector
 
 namespace node {
+struct CBlockTemplate;
 struct NodeContext;
 } // namespace node
 
@@ -33,23 +37,26 @@ class BlockTemplate
 public:
     virtual ~BlockTemplate() = default;
 
-    virtual const CBlockHeader& getBlockHeader() const = 0;
-    virtual const CBlock& getBlock() const = 0;
+    virtual CBlockHeader getBlockHeader() = 0;
+    virtual CBlock getBlock() = 0;
 
-    virtual const std::vector<CAmount>& getTxFees() const = 0;
-    virtual const std::vector<int64_t>& getTxSigops() const = 0;
-    virtual const std::vector<double>& getTxCoinAgePriorities() const = 0;
+    virtual std::vector<CAmount> getTxFees() = 0;
+    virtual std::vector<int64_t> getTxSigops() = 0;
+    virtual std::vector<double> getTxCoinAgePriorities() { throw std::runtime_error("Coin-age priorities are not part of Core v32.1 IPC"); }
 
-    virtual CTransactionRef getCoinbaseTx() const = 0;
-    virtual const std::vector<unsigned char>& getCoinbaseCommitment() const = 0;
-    virtual int getWitnessCommitmentIndex() const = 0;
+    virtual CTransactionRef getCoinbaseTransaction() { return getBlock().vtx.at(0); }
+    //! Structured coinbase fields exposed as getCoinbaseTx on the Core IPC wire.
+    virtual node::CoinbaseTx getCoinbaseTx();
+    node::CoinbaseTx getCoinbase() { return getCoinbaseTx(); }
+    virtual std::vector<unsigned char> getCoinbaseCommitment() { throw std::runtime_error("Use structured coinbase outputs on Core v32.1 IPC"); }
+    virtual int getWitnessCommitmentIndex() { throw std::runtime_error("Use structured coinbase outputs on Core v32.1 IPC"); }
 
     /**
      * Compute merkle path to the coinbase transaction
      *
      * @return merkle path ordered from the deepest
      */
-    virtual std::vector<uint256> getCoinbaseMerklePath() const = 0;
+    virtual std::vector<uint256> getCoinbaseMerklePath() = 0;
 
     /**
      * Construct a block from a copy of this template and submit it for processing.
@@ -69,12 +76,22 @@ public:
      *       coinbase witness. The caller must supply the witness reserved value
      *       that the coinbase commitment commits to.
      *
-     * @returns whether the block was processed. That does not necessarily mean
-     *          the block is valid or that it became the active chain tip.
-     *          Returns true when the block is already known, which can happen
-     *          if several nodes construct and broadcast the same solution.
+     * @returns true only for a newly accepted block. Duplicate submissions fail.
+     * This in-process convenience method retains the original template snapshot.
+     * Core submitSolution updates the stored block and reports reason/debug.
      */
-    virtual bool submitSolution(uint32_t version, uint32_t timestamp, uint32_t nonce, CTransactionRef coinbase) = 0;
+    virtual bool submitSolutionLegacy(uint32_t version, uint32_t timestamp, uint32_t nonce, CTransactionRef coinbase)
+    {
+        std::string reason, debug;
+        return submitSolution(version, timestamp, nonce, std::move(coinbase), reason, debug);
+    }
+    virtual bool submitSolution(uint32_t version, uint32_t timestamp, uint32_t nonce, CTransactionRef coinbase, std::string& reason, std::string& debug) = 0;
+    virtual bool submitSolutionOld7(uint32_t, uint32_t, uint32_t, CTransactionRef)
+    {
+        throw std::runtime_error("Old submitSolution (@7) not supported. Please update your client!");
+    }
+    virtual std::unique_ptr<BlockTemplate> waitNext(node::BlockWaitOptions options = {}) = 0;
+    virtual void interruptWait() = 0;
 };
 
 //! Interface giving clients (RPC, Stratum v2 Template Provider in the future)
@@ -110,16 +127,35 @@ public:
      * @param[in] options options for creating the block
      * @returns a block template
      */
-    virtual std::unique_ptr<BlockTemplate> createNewBlock(const node::BlockCreateOptions& options = {}) = 0;
-    virtual std::unique_ptr<BlockTemplate> createNewBlock2(const node::BlockCreateOptions& assemble_options) = 0;
+    virtual std::unique_ptr<BlockTemplate> createNewBlockLegacy(const node::BlockCreateOptions& options = {}) { return createNewBlock(options, false); }
+    virtual std::unique_ptr<BlockTemplate> createNewBlock(const node::BlockCreateOptions& options = {}, bool cooldown = true) = 0;
+    virtual std::unique_ptr<BlockTemplate> createNewBlock2(const node::BlockCreateOptions& options) { return createNewBlock(options, false); }
+
+    //! Mempool lookup. Results preserve input order, with nullptr for missing entries.
+    virtual std::vector<CTransactionRef> getTransactionsByTxID(const std::vector<Txid>& txids);
+    virtual std::vector<CTransactionRef> getTransactionsByWitnessID(const std::vector<Wtxid>& wtxids);
+
+    //! Submit a complete block, including coinbase witness.
+    //! Returns true only for a new accepted block, with reason/debug initialized on every call.
+    virtual bool submitBlock(const CBlock& block, std::string& reason, std::string& debug);
+
+    //! Permanently interrupt this client's waits without stopping other clients.
+    virtual void interrupt();
+    virtual bool checkBlock(const CBlock& block, const node::BlockCheckOptions& options, std::string& reason, std::string& debug);
 
     //! Get internal node context. Useful for RPC and testing,
     //! but not accessible across processes.
     virtual node::NodeContext* context() { return nullptr; }
+
+protected:
+    std::atomic<bool> m_interrupted{false};
 };
 
 //! Return implementation of Mining interface.
 std::unique_ptr<Mining> MakeMining(node::NodeContext& node);
+
+//! Wrap an in-process block template in the mining interface.
+std::unique_ptr<BlockTemplate> MakeBlockTemplate(std::shared_ptr<node::CBlockTemplate> block_template, node::NodeContext& node);
 
 } // namespace interfaces
 

@@ -5,6 +5,9 @@
 #include <bitcoin-build-config.h> // IWYU pragma: keep
 
 #include <qt/optionsdialog.h>
+#ifdef ENABLE_SV2
+#include <qt/sv2settings.h>
+#endif
 #include <qt/forms/ui_optionsdialog.h>
 
 #include <qt/bitcoinamountfield.h>
@@ -821,6 +824,20 @@ OptionsDialog::OptionsDialog(QWidget* parent, bool enableWallet)
 
     verticalLayout_Datum->addItem(new QSpacerItem(20, 40, QSizePolicy::Minimum, QSizePolicy::Expanding));
 #endif // ENABLE_DATUM
+#ifdef ENABLE_SV2
+    sv2Settings = new Sv2SettingsWidget(this);
+    ui->tabWidget->insertTab(ui->tabWidget->indexOf(ui->tabWindow), ModScrollArea::fromWidget(this, sv2Settings), tr("Stratum V2"));
+#ifdef ENABLE_DATUM
+    connect(sv2Settings->ModeControl(), qOverload<int>(&QComboBox::currentIndexChanged), this, [this] {
+        datumEnable->setChecked(sv2Settings->Mode() == 1);
+    });
+    connect(datumEnable, &QCheckBox::toggled, this, [this](bool enabled) {
+        if (enabled) sv2Settings->SetMode(1);
+        else if (sv2Settings->Mode() == 1) sv2Settings->SetMode(0);
+    });
+#endif
+#endif
+
 
     /* Window elements init */
 #ifdef Q_OS_MACOS
@@ -1447,6 +1464,13 @@ bool OptionsDialog::saveDatumSettings()
 
 void OptionsDialog::on_okButton_clicked()
 {
+#ifdef ENABLE_SV2
+    QString sv2_error;
+    if (!sv2Settings->Validate(sv2_error)) {
+        QMessageBox::critical(this, tr("Invalid SV2 setting"), sv2_error);
+        return;
+    }
+#endif
     for (int i = 0; i < ui->tabWidget->count(); ++i) {
         QWidget * const tab = ui->tabWidget->widget(i);
         Q_FOREACH(QObject* o, tab->children()) {
@@ -1493,6 +1517,9 @@ void OptionsDialog::on_okButton_clicked()
 
 #ifdef ENABLE_DATUM
     if (!saveDatumSettings()) return;
+#endif
+#ifdef ENABLE_SV2
+    if (sv2Settings->Save() && model) model->setRestartRequired(true);
 #endif
 
     mapper->submit();
