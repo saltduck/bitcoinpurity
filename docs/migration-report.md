@@ -1,5 +1,13 @@
 # Embedded DATUM Migration Report
 
+## Default RPC binding without IPv6 (TASK-20261116-0125-01)
+
+Since #44 a node on a host without the IPv6 address family does not start with
+default RPC settings. The fix skips the default `::1` endpoint there; rebuild
+and restart. No configuration, data directory or RPC change. Hosts with IPv6
+loopback and nodes with explicit `-rpcbind` behave as before. A workaround for
+unfixed builds is `-rpcbind=127.0.0.1 -rpcallowip=127.0.0.1`.
+
 ## Guix release manifest artifacts (TASK-030)
 
 The old release generator recognizes only `bitcoin-purity-` and cannot extract

@@ -79,6 +79,8 @@ numbers.
 
 - [TASK-036: Verified-only Purity peer preference](TASK-036.md)
 
+- [TASK-20261116-0125-01: Default RPC binding without IPv6](TASK-20261116-0125-01.md)
+
 ## Purity Signet
 
 - [TASK-PS-000: Baseline and requirement amendments](TASK-PS-000.md)

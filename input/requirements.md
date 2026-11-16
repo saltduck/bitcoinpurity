@@ -1,5 +1,19 @@
 # Embedded DATUM Solo Mining
 
+## Default RPC binding without IPv6 (2026-11-16)
+
+Since the embedded SV2 change (#44) resolves numeric RPC bind addresses without
+`AI_ADDRCONFIG`, a host whose kernel has no IPv6 address family (for example
+`ipv6.disable=1`, or a container without it) cannot start with default RPC
+settings: creating the `::1` socket fails with `EAFNOSUPPORT`, which is counted
+as a bind failure. Skip a default loopback endpoint whose address family is
+unsupported, as for other unavailable default endpoints, and log that it was
+ignored. Hosts with IPv6 loopback keep binding both `::1` and `127.0.0.1`.
+Explicitly configured `-rpcbind` endpoints that cannot be bound still fail
+startup. Use the Windows error code on Windows. Add the regression test to
+`test/functional/rpc_bind.py` before the fix; its bind-address helper must not
+require `/proc/net/tcp6`, which such hosts lack. Tracked in TASK-20261116-0125-01.
+
 ## TASK-049 hosted acceptance and release archives
 
 Push the current SV2 branch and run native Linux/macOS/Windows CI, including
