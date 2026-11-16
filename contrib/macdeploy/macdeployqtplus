@@ -209,9 +209,27 @@ def getFrameworks(binaryPath: str, verbose: int) -> list[FrameworkInfo]:
     
     libraries = []
     for line in lines:
-        line = line.replace("@loader_path", os.path.dirname(binaryPath))
         info = FrameworkInfo.fromLibraryLine(line.strip())
         if info is not None:
+            install_name = info.installName
+            source_path = install_name.replace("@loader_path", os.path.dirname(binaryPath))
+            if source_path.startswith("@rpath/"):
+                headers = run([objdump, "--macho", "--private-headers", binaryPath],
+                              stdout=PIPE, stderr=PIPE, text=True, check=True).stdout
+                for rpath in re.findall(r"cmd LC_RPATH\s+cmdsize \d+\s+path (.+) \(offset \d+\)", headers):
+                    rpath = rpath.replace("@loader_path", os.path.dirname(binaryPath))
+                    candidate = os.path.normpath(os.path.join(rpath, source_path[len("@rpath/"):]))
+                    if os.path.isfile(candidate):
+                        source_path = candidate
+                        break
+                else:
+                    raise RuntimeError(f"Could not resolve {install_name} in {binaryPath}")
+            if source_path != install_name:
+                info = FrameworkInfo.fromLibraryLine(line.strip().replace(install_name, source_path, 1))
+                if info is None:
+                    continue
+                # Rewrite the original load command, not the resolved filesystem path.
+                info.installName = install_name
             if verbose:
                 print("Found framework:")
                 print(info)
@@ -251,6 +269,7 @@ def copyFramework(framework: FrameworkInfo, path: str, verbose: int) -> Optional
         fromPath = f"/Library/Frameworks/{framework.sourceFilePath}"
     else:
         fromPath = framework.sourceFilePath
+    framework.sourceFilePath = fromPath
     toDir = os.path.join(path, framework.destinationDirectory)
     toPath = os.path.join(toDir, framework.binaryName)
 
@@ -329,7 +348,7 @@ def deployFrameworks(frameworks: list[FrameworkInfo], bundlePath: str, binaryPat
         # install_name_tool it a new id.
         changeIdentification(framework.deployedInstallName, deployedBinaryPath, verbose)
         # Check for framework dependencies
-        dependencies = getFrameworks(deployedBinaryPath, verbose)
+        dependencies = getFrameworks(framework.sourceFilePath, verbose)
         
         for dependency in dependencies:
             changeInstallName(dependency.installName, dependency.deployedInstallName, deployedBinaryPath, verbose)
@@ -383,7 +402,7 @@ def deployPlugins(appBundleInfo: ApplicationBundleInfo, deploymentInfo: Deployme
         if strip:
             runStrip(destinationPath, verbose)
         
-        dependencies = getFrameworks(destinationPath, verbose)
+        dependencies = getFrameworks(sourcePath, verbose)
         
         for dependency in dependencies:
             changeInstallName(dependency.installName, dependency.deployedInstallName, destinationPath, verbose)

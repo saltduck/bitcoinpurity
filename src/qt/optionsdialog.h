@@ -5,6 +5,8 @@
 #ifndef BITCOIN_QT_OPTIONSDIALOG_H
 #define BITCOIN_QT_OPTIONSDIALOG_H
 
+#include <bitcoin-build-config.h> // IWYU pragma: keep
+
 #include <QDialog>
 #include <QScrollArea>
 #include <QValidator>
@@ -12,6 +14,7 @@
 class BitcoinAmountField;
 class ClientModel;
 class OptionsModel;
+class Sv2SettingsWidget;
 class QValidatedLineEdit;
 
 QT_BEGIN_NAMESPACE
@@ -173,6 +176,9 @@ private:
 
     BitcoinAmountField *blockmintxfee;
     QSpinBox *blockmaxsize, *blockprioritysize, *blockmaxweight;
+#ifdef ENABLE_SV2
+    Sv2SettingsWidget* sv2Settings{nullptr};
+#endif
 
 #ifdef ENABLE_DATUM
     QCheckBox *datumEnable{nullptr};

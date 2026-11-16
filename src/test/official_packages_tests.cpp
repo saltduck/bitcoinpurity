@@ -210,7 +210,7 @@ uint32_t Crc32(std::string_view data)
     for (unsigned char c : data) {
         crc ^= c;
         for (int i = 0; i < 8; ++i) {
-            crc = (crc >> 1) ^ (0xedb88320u & (0u - (crc & 1u)));
+            crc = (crc >> 1) ^ ((crc & 1u) ? 0xedb88320u : 0u);
         }
     }
     return ~crc;

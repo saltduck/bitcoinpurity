@@ -200,10 +200,22 @@ Default local policy:
 - Parking is enabled on mainnet (`-parkdeepreorg=1`) and disabled by default
   on test chains.
 - The default threshold is **3** (`-parkreorgdepth=3`).
-- If connecting a competing chain would rewind the active chain by **more
-  than 3** blocks (`rewind > 3`), mark the competing chain **parked** and do
-  not reorg automatically.
-- Reorgs of 3 blocks or fewer proceed under normal most-work chain selection.
+- If connecting a competing chain would rewind **more than 3 protected**
+  active blocks, mark the competing chain **parked** and do not reorg
+  automatically.
+- Reorgs of 3 protected blocks or fewer proceed under normal most-work chain
+  selection.
+- A block is *protected* (`BLOCK_PARK_PROTECTED`, persisted) only if it was
+  connected after this run's catch-up ended. Catch-up begins at every start and
+  ends once: not in IBD, at least `-parkcatchuppeers` (default 3) qualifying
+  outbound/manual peers report our tip, and none reports more work. Blocks
+  connected while catching up (after a restart or in IBD) are not protected,
+  so an attacker who quickly extends a lagging node's tip cannot make it park
+  the longer honest chain. Protection does not depend on elapsed time, so a
+  synced node keeps the full depth-3 protection against majority-hashrate
+  reorgs; blocks protected before a restart stay protected.
+- While a parked branch has more work than the active tip a node warning is
+  raised (RPC warnings, GUI, `-alertnotify`).
 
 Operators may override the threshold with `-parkreorgdepth=<n>` (minimum 1).
 For example, `parkreorgdepth=4` means reorg depths 1–4 may activate

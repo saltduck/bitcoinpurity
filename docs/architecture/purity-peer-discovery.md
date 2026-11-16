@@ -5,24 +5,19 @@ The trailing dot preserves an absolute DNS name. DNS lookup and service-bit
 filtering use the existing connection code; other networks' DNS seeds,
 AddrMan and explicit peer configuration are unchanged.
 
-Mainnet fixed seeds are the 11 endpoints in `contrib/seeds/nodes_main.txt`,
-serialized as BIP155 address/port tuples in `src/chainparamsseeds.h` using the
-existing generator. Hostnames cannot be stored in this format: node0 and node1
-use the numeric addresses resolved on 2026-10-12, documented in the source
-list. They are not resolved dynamically at node startup. Other networks' fixed
-seeds and the existing fallback/AddrMan behavior are unchanged.
-
 Local services flow from init to CConnman, PeerManager VERSION and local
 CAddress advertisements. VERSION updates AddrMan with SetServices; addr/addrv2
 gossip adds advertised flags with Add. Existing uint64/CompactSize encodings
 and peers.dat retain bit 25 without a format change.
 
 ThreadOpenConnections requests a service preference for the first 20 attempts
-of automatic non-anchor, non-feeler selection. AddrMan scans its existing
-records for matching service hints within the selected networks/table. It
-randomly samples matches using the existing GetChance penalty, new-record
-multiplicity, and the 50% new/tried split. When no hints match, it immediately
-uses its original bucket selector. No persistent index/database is added.
+of automatic non-anchor, non-feeler selection. AddrMan counts tried records
+whose handshake-confirmed services match within the selected networks. When
+there is at least one, it walks random tried buckets/positions as usual and
+accepts only matching records, with the existing GetChance penalty. New-table
+(gossip-only) claims are never preferred, so an addr flood cannot bypass
+bucket dilution. When no tried record matches, it immediately uses its
+original bucket selector. No persistent index/database is added.
 The scan is linear in AddrMan size and only occurs during these connection
 attempts; normal selection/feelers retain the original path.
 

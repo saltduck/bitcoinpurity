@@ -16,6 +16,12 @@ BOOST_AUTO_TEST_CASE(ipc_tests)
     IpcSocketTest(m_args.GetDataDirNet());
 }
 
+BOOST_FIXTURE_TEST_CASE(mining_interface, TestChain100Setup)
+{
+    SetMockTime(1700000000);
+    IpcSocketPairTest(&m_node);
+}
+
 // Test address parsing.
 BOOST_AUTO_TEST_CASE(parse_address_test)
 {
