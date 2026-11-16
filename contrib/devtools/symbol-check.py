@@ -175,6 +175,10 @@ PE_ALLOWED_LIBRARIES = {libname.lower() for libname in (
 'bcrypt.dll',   # Windows CNG cryptography
 'CRYPT32.dll',  # Windows certificate and cryptography APIs
 'Secur32.dll',  # Windows SSPI / Schannel
+# embedded SV2 gateway (Rust standard library, Windows 10+)
+'ntdll.dll', # NT native file and I/O APIs
+'api-ms-win-core-synch-l1-2-0.dll', # WaitOnAddress / WakeByAddress
+'bcryptprimitives.dll', # ProcessPrng random numbers
 )}
 
 def check_version(max_versions, version, arch) -> bool:

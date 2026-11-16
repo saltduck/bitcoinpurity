@@ -291,7 +291,7 @@ std::optional<std::string> ParsePurityCliDatadirStatus(const SettingsValue& valu
     if (!schema.isNum() || schema.getValStr() != "1") return std::nullopt;
     const SettingsValue& status = value.find_value("status");
     if (!status.isStr()) return std::nullopt;
-    const std::string status_str{status.get_str()};
+    const std::string& status_str{status.get_str()};
     if (status_str != "created" && status_str != "approved") return std::nullopt;
     return status_str;
 }

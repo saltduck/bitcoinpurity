@@ -6,6 +6,7 @@
 
 import json
 import socket
+import time
 
 from test_framework.address import ADDRESS_BCRT1_UNSPENDABLE
 from test_framework.test_framework import BitcoinTestFramework, SkipTest
@@ -180,6 +181,34 @@ class DatumTest(BitcoinTestFramework):
         previous_height = node.getdatuminfo()["current_height"]
         self.generatetoaddress(node, 1, ADDRESS_BCRT1_UNSPENDABLE)
         self.wait_until(lambda: node.getdatuminfo()["current_height"] == previous_height + 1, timeout=5)
+
+        self.log.info("Refresh the job every work update period even when the template is unchanged")
+        # The block above triggers an immediate burst of notifies. With an empty mempool the template does not
+        # change afterwards, so the next notify must come from the periodic 30s refresh (plus up to ~27s of notify
+        # pacing, depending on the client's thread slot). When the refresh counted fixed-size sleeps instead of
+        # using a deadline, it could slip to minutes on platforms with coarse sleep granularity, letting miners'
+        # work go stale and stratum proxies drop the connection.
+        block_height = node.getdatuminfo()["current_height"]
+        block_time = time.monotonic()
+        block_notify = None
+        client.socket.settimeout(65)
+        while True:
+            message = client.receive()
+            if message.get("method") != "mining.notify":
+                continue
+            if time.monotonic() - block_time < 5:
+                block_notify = message["params"]
+                continue
+            break
+        refresh_elapsed = time.monotonic() - block_time
+        client.socket.settimeout(3)
+        assert block_notify is not None
+        assert refresh_elapsed < 60, f"job refresh took {refresh_elapsed:.1f}s"
+        refresh = message["params"]
+        assert refresh[0] != block_notify[0]  # new job id
+        assert_equal(refresh[1], block_notify[1])  # same previous block
+        assert_equal(refresh[8], False)  # not a clean job
+        assert_equal(node.getdatuminfo()["current_height"], block_height)
         client.close()
 
         self.log.info("Reject wrong credentials and accept the base username")

@@ -13,6 +13,7 @@ enum class Warning {
     UNKNOWN_NEW_RULES_SIGNAL_VBITS,
     UNKNOWN_NEW_RULES_SIGNAL_INTVER,
     SOFTWARE_EXPIRY,
+    PARKED_CHAIN,
 };
 } // namespace kernel
 #endif // BITCOIN_KERNEL_WARNING_H

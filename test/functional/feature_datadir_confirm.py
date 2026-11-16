@@ -6,7 +6,6 @@
 
 import json
 import os
-import pty
 import select
 import shutil
 import signal
@@ -16,11 +15,18 @@ from pathlib import Path
 
 from test_framework.test_framework import BitcoinTestFramework
 
+if os.name == "posix":
+    import pty  # Unavailable on Windows; the test is skipped there.
+
 
 class DatadirConfirmTest(BitcoinTestFramework):
     def set_test_params(self):
         self.setup_clean_chain = True
         self.num_nodes = 1
+
+    def skip_test_if_missing_module(self):
+        # The confirmation prompt is driven through a pseudo-terminal.
+        self.skip_if_platform_not_posix()
 
     def setup_network(self):
         self.add_nodes(self.num_nodes, self.extra_args)

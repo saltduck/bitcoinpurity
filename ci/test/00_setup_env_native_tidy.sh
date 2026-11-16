@@ -17,6 +17,8 @@ export RUN_FUNCTIONAL_TESTS=false
 export RUN_FUZZ_TESTS=false
 export RUN_CHECK_DEPS=true
 export RUN_TIDY=true
+# Bound concurrent analysis processes on shared runners.
+export MAKEJOBS="${MAKEJOBS:--j4}"
 export GOAL="install"
 export BITCOIN_CONFIG="\
  -DWITH_ZMQ=ON -DBUILD_GUI=ON -DBUILD_BENCH=ON -DWITH_MINIUPNPC=ON -DWITH_USDT=ON -DWITH_BDB=ON -DWARN_INCOMPATIBLE_BDB=OFF \
