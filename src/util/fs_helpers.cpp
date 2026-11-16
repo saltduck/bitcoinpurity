@@ -444,7 +444,10 @@ bool IsDirWritable(const fs::path& dir_path)
     // Attempt to create a tmp file in the directory
     if (!fs::is_directory(dir_path)) throw std::runtime_error(strprintf("Path %s is not a directory", fs::PathToString(dir_path)));
     FastRandomContext rng;
-    const auto tmp = dir_path / fs::PathFromString(strprintf(".tmp_%d", rng.rand64()));
+    // Keep the probe name no longer than the files a wallet creates here
+    // (e.g. "wallet.dat-journal"): on Windows a longer name can exceed
+    // MAX_PATH in a directory that is otherwise usable.
+    const auto tmp = dir_path / fs::PathFromString(strprintf(".tmp%08x", rng.rand32()));
 
     if (const auto created{fsbridge::fopen(tmp, "wbx")}) {
         std::fclose(created);

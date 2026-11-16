@@ -47,6 +47,9 @@
 #ifdef ENABLE_DATUM
 #include <mining/datum_bridge.h>
 #endif
+#ifdef ENABLE_SV2
+#include <mining/sv2_bridge.h>
+#endif
 #include <mapport.h>
 #include <net.h>
 #include <net_permissions.h>
@@ -288,6 +291,9 @@ void Interrupt(NodeContext& node)
 #ifdef ENABLE_DATUM
     mining::InterruptDatum();
 #endif
+#ifdef ENABLE_SV2
+    mining::InterruptSv2();
+#endif
     // Wake any threads that may be waiting for the tip to change.
     if (node.notifications) WITH_LOCK(node.notifications->m_tip_block_mutex, node.notifications->m_tip_block_cv.notify_all());
     InterruptHTTPServer();
@@ -321,10 +327,16 @@ void Shutdown(NodeContext& node)
 #ifdef ENABLE_DATUM
     mining::StopDatum(&node);
 #endif
+#ifdef ENABLE_SV2
+    mining::StopSv2();
+#endif
     StopHTTPRPC();
     StopREST();
     StopRPC();
     StopHTTPServer();
+    if (node.init) {
+        if (auto* ipc = node.init->ipc()) ipc->disconnectIncoming();
+    }
     for (const auto& client : node.chain_clients) {
         client->flush();
     }
@@ -699,7 +711,8 @@ void SetupServerArgs(ArgsManager& argsman, bool can_listen_ipc)
     argsman.AddArg("-checkmempool=<n>", strprintf("Run mempool consistency checks every <n> transactions. Use 0 to disable. (default: %u, regtest: %u)", defaultChainParams->DefaultConsistencyChecks(), regtestChainParams->DefaultConsistencyChecks()), ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::DEBUG_TEST);
     argsman.AddArg("-checkpoints", strprintf("Enable rejection of any forks from the known historical chain until block %s (default: %u)", defaultChainParams->Checkpoints().GetHeight(), DEFAULT_CHECKPOINTS_ENABLED), ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::DEBUG_TEST);
     argsman.AddArg("-parkdeepreorg", "Park a competing chain instead of activating it automatically when doing so would require a reorganization deeper than -parkreorgdepth. Local chain-selection policy, not a consensus rule. Enabled by default on mainnet (default: 1 on mainnet, 0 on test chains)", ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
-    argsman.AddArg("-parkreorgdepth=<n>", strprintf("Maximum number of active-chain blocks that may be automatically rewound before a competing chain is parked for manual review. Reorgs of this depth or less proceed normally; deeper reorgs are parked. Local policy, not consensus. (default: %i)", DEFAULT_PARK_REORG_DEPTH), ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
+    argsman.AddArg("-parkreorgdepth=<n>", strprintf("Maximum number of protected active-chain blocks that may be automatically rewound before a competing chain is parked for manual review. Blocks connected while the node is catching up after start are not protected. Reorgs of this depth or less proceed normally; deeper reorgs are parked. Local policy, not consensus. (default: %i)", DEFAULT_PARK_REORG_DEPTH), ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
+    argsman.AddArg("-parkcatchuppeers=<n>", strprintf("Number of outbound or manual peers that must report our chain tip, with none reporting a valid unparked chain with more work, before newly connected blocks are protected by deep-reorg parking (1 to %d, default: %d)", MAX_PARK_CATCHUP_PEERS, DEFAULT_PARK_CATCHUP_PEERS), ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
     argsman.AddArg("-deprecatedrpc=<method>", "Allows deprecated RPC method(s) to be used", ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::DEBUG_TEST);
     argsman.AddArg("-stopafterblockimport", strprintf("Stop running after importing blocks from disk (default: %u)", DEFAULT_STOPAFTERBLOCKIMPORT), ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::DEBUG_TEST);
     argsman.AddArg("-stopatheight", strprintf("Stop running after reaching the given height in the main chain (default: %u). Blocks after target height may be processed during shutdown.", DEFAULT_STOPATHEIGHT), ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::DEBUG_TEST);
@@ -808,6 +821,9 @@ void SetupServerArgs(ArgsManager& argsman, bool can_listen_ipc)
 #ifdef ENABLE_DATUM
     mining::SetupDatumArgs(argsman);
 #endif
+#ifdef ENABLE_SV2
+    mining::SetupSv2Args(argsman);
+#endif
 
     argsman.AddArg("-rest", strprintf("Accept public REST requests (default: %u)", DEFAULT_REST_ENABLE), ArgsManager::ALLOW_ANY, OptionsCategory::RPC);
     argsman.AddArg("-rpcallowip=<ip>", "Allow JSON-RPC connections from specified source. Valid values for <ip> are a single IP (e.g. 1.2.3.4), a network/netmask (e.g. 1.2.3.4/255.255.255.0), a network/CIDR (e.g. 1.2.3.4/24), all ipv4 (0.0.0.0/0), or all ipv6 (::/0). RFC4193 is allowed only if -cjdnsreachable=0. This option can be specified multiple times", ArgsManager::ALLOW_ANY, OptionsCategory::RPC);
@@ -835,6 +851,7 @@ void SetupServerArgs(ArgsManager& argsman, bool can_listen_ipc)
     argsman.AddArg("-server", "Accept command line and JSON-RPC commands", ArgsManager::ALLOW_ANY, OptionsCategory::RPC);
     if (can_listen_ipc) {
         argsman.AddArg("-ipcbind=<address>", "Bind to Unix socket address and listen for incoming connections. Valid address values are \"unix\" to listen on the default path, <datadir>/node.sock, or \"unix:/custom/path\" to specify a custom path. Can be specified multiple times to listen on multiple paths. Default behavior is not to listen on any path. If relative paths are specified, they are interpreted relative to the network data directory. If paths include any parent directory components and the parent directories do not exist, they will be created.", ArgsManager::ALLOW_ANY, OptionsCategory::IPC);
+        argsman.AddArg("-ipcrpc", "Allow processes connected through -ipcbind to execute any RPC method as a user name of their choosing, bypassing RPC authentication and -rpcwhitelist (default: 0)", ArgsManager::ALLOW_ANY, OptionsCategory::IPC);
     }
 
 #if HAVE_DECL_FORK
@@ -1417,7 +1434,15 @@ static void SyncCoinsTipAfterChainSync(const NodeContext& node)
     }
 
     LogDebug(BCLog::COINDB, "Finished syncing to tip, syncing chainstate to disk\n");
-    node.chainman->ActiveChainstate().CoinsTip().Sync();
+    // Go through FlushStateToDisk rather than syncing the coins cache directly:
+    // the coins database may refer to blocks that are only known to the block
+    // index once it has been written, so the block files and the block index
+    // must be on disk first. Otherwise a crash while the coins are being
+    // written leaves a chainstate that ReplayBlocks() cannot recover from.
+    BlockValidationState state;
+    if (!node.chainman->ActiveChainstate().FlushStateToDisk(state, FlushStateMode::FORCE_SYNC)) {
+        LogWarning("Failed to sync chainstate to disk (%s)", state.ToString());
+    }
 }
 
 bool AppInitInterfaces(NodeContext& node)
@@ -1710,17 +1735,6 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
         (void)UserProtocolRulesConsent();
     }
 
-    if (interfaces::Ipc* ipc = node.init->ipc()) {
-        for (std::string address : gArgs.GetArgs("-ipcbind")) {
-            try {
-                ipc->listenAddress(address);
-            } catch (const std::exception& e) {
-                return InitError(Untranslated(strprintf("Unable to bind to IPC address '%s'. %s", address, e.what())));
-            }
-            LogPrintf("Listening for IPC requests on address %s\n", address);
-        }
-    }
-
     /* Register RPC commands regardless of -server setting so they will be
      * available in the GUI RPC console even if external calls are disabled.
      */
@@ -1734,6 +1748,13 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
 
     // Check port numbers
     if (!CheckHostPortOptions(args)) return false;
+#ifdef ENABLE_SV2
+    {
+        bilingual_str sv2_error;
+        if (!mining::ValidateSv2Options(args, sv2_error)) return InitError(sv2_error);
+    }
+#endif
+
 #ifdef ENABLE_DATUM
     {
         bilingual_str datum_error;
@@ -2299,6 +2320,18 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
         return true;
     }
 
+    // Expose mining capabilities only after chainstate and its first tip exist.
+    if (interfaces::Ipc* ipc = node.init->ipc()) {
+        for (std::string address : gArgs.GetArgs("-ipcbind")) {
+            try {
+                ipc->listenAddress(address);
+            } catch (const std::exception& e) {
+                return InitError(Untranslated(strprintf("Unable to bind to IPC address '%s'. %s", address, e.what())));
+            }
+            LogPrintf("Listening for IPC requests on address %s\n", address);
+        }
+    }
+
     // ********************************************************* Step 12: start node
 
     int64_t best_block_time{};
@@ -2532,12 +2565,20 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
     // cannot yet be called. Before we make it callable, we need to make sure
     // that the RPC's view of the best block is valid and consistent with
     // ChainstateManager's active tip.
+    WITH_LOCK(cs_main, chainman.UpdateParkedChainWarning());
     SetRPCWarmupFinished();
 
 #ifdef ENABLE_DATUM
     {
         bilingual_str datum_error;
         if (!mining::StartDatum(node, datum_error)) return InitError(datum_error);
+    }
+#endif
+
+#ifdef ENABLE_SV2
+    {
+        bilingual_str sv2_error;
+        if (!mining::StartSv2(node, sv2_error)) return InitError(sv2_error);
     }
 #endif
 
@@ -2575,7 +2616,12 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
     StartupNotify(args);
 #endif
 
-    if (node.chainman->IsInitialBlockDownload()) {
+    // -dbcrashratio simulates crashes while blocks are being connected, so a
+    // test can tell which block a node was processing when it went down. The
+    // post-IBD sync runs from the scheduler at an arbitrary time instead, and a
+    // simulated crash there takes the node down while it is idle, between the
+    // blocks the test submits. Skip it when crashes are being simulated.
+    if (node.chainman->IsInitialBlockDownload() && !args.IsArgSet("-dbcrashratio")) {
         node.scheduler->scheduleFromNow([&node] {
             SyncCoinsTipAfterChainSync(node);
         }, SYNC_CHECK_INTERVAL);

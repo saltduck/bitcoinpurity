@@ -6,16 +6,15 @@
 #include <util/fs.h>
 #include <util/syserror.h>
 
-#ifndef WIN32
 #include <cstring>
 #include <fcntl.h>
+
+#ifndef WIN32
 #include <sys/file.h>
 #include <sys/utsname.h>
 #include <unistd.h>
 #else
 #include <codecvt>
-#include <cstring>
-#include <fcntl.h>
 #include <io.h>
 #include <limits>
 #include <locale>

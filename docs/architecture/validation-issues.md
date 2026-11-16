@@ -22,8 +22,29 @@ clock offset continues to keep it in IBD after the minimum work is reached.
 `ChainstateManager::AcceptBlock` evaluates the active-chain fork depth after
 contextual checks and successful block storage, immediately before
 `ReceivedBlockTransactions`. It marks the first competing header index
-`BLOCK_PARKED` when the rewind exceeds the configured depth (default 3),
-even if that ancestor's body is missing, and dirties the index.
+`BLOCK_PARKED` when the number of `BLOCK_PARK_PROTECTED` active blocks above
+the fork exceeds the configured depth (default 3), even if that ancestor's
+body is missing, and dirties the index.
+
+`Chainstate::ConnectTip` sets `BLOCK_PARK_PROTECTED` when the block is
+connected outside catch-up and clears it during catch-up. The bit is a normal
+nStatus bit (2048) and is persisted with the index; absence means unprotected.
+`ChainstateManager` holds the catch-up latch, true at start. PeerManager ends
+it once per run when the node is out of IBD, at least `-parkcatchuppeers`
+qualifying outbound/manual peers (excluding demoted stale-consensus peers)
+report the tip as best known, and none reports a non-failed, non-parked block
+with more work. While latched and out of IBD, a qualifying peer whose best
+known block is not our tip gets a headers request at most every 5 seconds
+(a peer that learned our blocks from us never announces them back), so
+agreement is observable on a quiet chain. Peers whose chain-sync eviction
+timer is running are left to `ConsiderEviction`, which keeps its own
+getheaders slot. Existing nodes start with no protected blocks after the
+upgrade; protection resumes with blocks connected after the first catch-up. Blocks
+connected while catching up therefore cannot shield a short attacker extension
+from the honest chain, while history accepted before a restart stays protected.
+`TryAddBlockIndexCandidate` raises `kernel::Warning::PARKED_CHAIN` when a parked
+block has more work than the tip; `UpdateParkedChainWarning` rescans at startup
+and after the park/unpark/invalidate/reconsider RPCs.
 `TryAddBlockIndexCandidate` excludes parked ancestry and records descendant
 `BLOCK_PARKED_CHILD`; `FindMostWorkChain` retains its ancestor exclusion.
 `UnparkBlock` clears relevant descendants and ancestors before restoring
@@ -57,3 +78,26 @@ reading semantic fields. No dependency parser or general JSON-RPC changes.
 
 Update download redirect approval uses the same artifact URI predicate as
 manifest parsing, with an additional final-URL check before verification.
+
+## Headers presync ASERT difficulty check
+
+`PermittedDifficultyTransition` accepted any `nBits` from the Purity activation
+height, so presync accepted `powLimit` headers costing about 2^32 hashes each.
+`HeadersSyncState` now keeps, per phase, the ASERT anchor `nBits` and the
+anchor-parent time: from `m_chain_start->GetAncestor(nAsertAnchorHeight)` when
+the sync starts at or above the anchor, otherwise captured from the received
+header at the anchor height and its predecessor. From the activation height the
+required bits are `CalculateASERT` (or `CalculateSignetASERT`) of the anchor
+target, the previous header's time minus the anchor-parent time, and the
+previous height minus the anchor height; `CheckDifficultyBits` then applies the
+same activation-height rule as full validation.
+
+ASERT difficulty falls with timestamp age, so the check alone would still let a
+peer lower difficulty with far-future timestamps. Presync and redownload
+therefore reject headers more than `MAX_FUTURE_BLOCK_TIME` ahead of
+`NodeClock::now()`, which full validation also rejects (`time-too-new`). With
+times capped near now, keeping difficulty low requires timestamps to keep
+advancing, so the cheap prefix of a fork is bounded by its real elapsed time.
+Networks with `fPowAllowMinDifficultyBlocks` or `fPowNoRetargeting` keep the
+previous behavior.
+
