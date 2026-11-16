@@ -5,13 +5,6 @@ The trailing dot preserves an absolute DNS name. DNS lookup and service-bit
 filtering use the existing connection code; other networks' DNS seeds,
 AddrMan and explicit peer configuration are unchanged.
 
-Mainnet fixed seeds are the 11 endpoints in `contrib/seeds/nodes_main.txt`,
-serialized as BIP155 address/port tuples in `src/chainparamsseeds.h` using the
-existing generator. Hostnames cannot be stored in this format: node0 and node1
-use the numeric addresses resolved on 2026-10-12, documented in the source
-list. They are not resolved dynamically at node startup. Other networks' fixed
-seeds and the existing fallback/AddrMan behavior are unchanged.
-
 Local services flow from init to CConnman, PeerManager VERSION and local
 CAddress advertisements. VERSION updates AddrMan with SetServices; addr/addrv2
 gossip adds advertised flags with Add. Existing uint64/CompactSize encodings
