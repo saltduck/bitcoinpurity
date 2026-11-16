@@ -15,6 +15,7 @@
 #include <util/hasher.h>
 
 #include <deque>
+#include <optional>
 #include <vector>
 
 // A compressed CBlockHeader, which leaves out the prevhash
@@ -207,6 +208,17 @@ private:
     /** Return a set of headers that satisfy our proof-of-work threshold */
     std::vector<CBlockHeader> PopHeadersReadyForAcceptance();
 
+    /** ASERT anchor values needed to compute post-activation nBits. */
+    struct AsertAnchor {
+        uint32_t bits;
+        int64_t parent_time;
+    };
+
+    /** Check next's nBits (exact ASERT from activation) and time, recording
+     * the anchor of this phase when next is at the anchor height. */
+    bool PermittedNextHeader(std::optional<AsertAnchor>& anchor, int64_t next_height,
+            uint32_t prev_bits, int64_t prev_time, const CBlockHeader& next) const;
+
 private:
     /** NodeId of the peer (used for log messages) **/
     const NodeId m_id;
@@ -235,6 +247,11 @@ private:
      * Any peer giving us more headers than this will have its sync aborted. This serves as a
      * memory bound on m_header_commitments. */
     uint64_t m_max_commitments{0};
+
+    /** ASERT anchor of the chain seen in PRESYNC and REDOWNLOAD respectively
+     * (from m_chain_start's ancestry when it is at or above the anchor). */
+    std::optional<AsertAnchor> m_presync_asert_anchor;
+    std::optional<AsertAnchor> m_redownload_asert_anchor;
 
     /** Store the latest header received while in PRESYNC (initialized to m_chain_start) */
     CBlockHeader m_last_header_received;

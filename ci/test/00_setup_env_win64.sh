@@ -12,6 +12,8 @@ export CI_IMAGE_PLATFORM="linux/amd64"
 export HOST=x86_64-w64-mingw32
 export DPKG_ADD_ARCH="i386"
 export PACKAGES="nsis g++-mingw-w64-x86-64-posix wine-binfmt wine64 wine32 file"
+# MinGW compilation can exhaust memory when it uses every available CPU.
+export MAKEJOBS="${MAKEJOBS:--j4}"
 # Install wine, but do not run unit tests, as they surface frequent
 # false-positives.
 export RUN_UNIT_TESTS=${RUN_UNIT_TESTS:-false}

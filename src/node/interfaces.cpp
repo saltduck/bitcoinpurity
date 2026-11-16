@@ -20,6 +20,8 @@
 #include <interfaces/handler.h>
 #include <interfaces/mining.h>
 #include <interfaces/node.h>
+#include <interfaces/rpc.h>
+#include <httprpc.h>
 #include <interfaces/types.h>
 #include <interfaces/wallet.h>
 #include <kernel/chain.h>
@@ -73,6 +75,7 @@
 #include <any>
 #include <memory>
 #include <optional>
+#include <numeric>
 #include <utility>
 
 #include <boost/signals2/signal.hpp>
@@ -932,55 +935,67 @@ public:
     explicit BlockTemplateImpl(std::shared_ptr<CBlockTemplate> block_template, NodeContext& node) : m_block_template(std::move(block_template)), m_node(node)
     {
         assert(m_block_template);
+        m_coinbase_tx = BlockTemplate::getCoinbaseTx();
     }
 
-    const CBlockHeader& getBlockHeader() const override
+    node::CoinbaseTx getCoinbaseTx() override { return m_coinbase_tx; }
+
+    CBlockHeader getBlockHeader() override
     {
         return m_block_template->block;
     }
 
-    const CBlock& getBlock() const override
+    CBlock getBlock() override
     {
         return m_block_template->block;
     }
 
-    const std::vector<CAmount>& getTxFees() const override
+    std::vector<CAmount> getTxFees() override
     {
-        return m_block_template->vTxFees;
+        return {m_block_template->vTxFees.begin() + 1, m_block_template->vTxFees.end()};
     }
 
-    const std::vector<int64_t>& getTxSigops() const override
+    std::vector<int64_t> getTxSigops() override
     {
-        return m_block_template->vTxSigOpsCost;
+        return {m_block_template->vTxSigOpsCost.begin() + 1, m_block_template->vTxSigOpsCost.end()};
     }
 
-    const std::vector<double>& getTxCoinAgePriorities() const override
+    std::vector<double> getTxCoinAgePriorities() override
     {
         return m_block_template->vTxPriorities;
     }
 
-    CTransactionRef getCoinbaseTx() const override
+    CTransactionRef getCoinbaseTransaction() override
     {
         return m_block_template->block.vtx[0];
     }
 
-    const std::vector<unsigned char>& getCoinbaseCommitment() const override
+    std::vector<unsigned char> getCoinbaseCommitment() override
     {
         return m_block_template->vchCoinbaseCommitment;
     }
 
-    int getWitnessCommitmentIndex() const override
+    int getWitnessCommitmentIndex() override
     {
         return GetWitnessCommitmentIndex(m_block_template->block);
     }
 
-    std::vector<uint256> getCoinbaseMerklePath() const override
+    std::vector<uint256> getCoinbaseMerklePath() override
     {
         return TransactionMerklePath(m_block_template->block, 0);
     }
 
-    bool submitSolution(uint32_t version, uint32_t timestamp, uint32_t nonce, CTransactionRef coinbase) override
+    bool submitSolutionLegacy(uint32_t version, uint32_t timestamp, uint32_t nonce, CTransactionRef coinbase) override
     {
+        BlockTemplateImpl copy{std::make_shared<CBlockTemplate>(*m_block_template), m_node};
+        std::string reason, debug;
+        return copy.submitSolution(version, timestamp, nonce, std::move(coinbase), reason, debug);
+    }
+
+    bool submitSolution(uint32_t version, uint32_t timestamp, uint32_t nonce, CTransactionRef coinbase, std::string& reason, std::string& debug) override
+    {
+        reason.clear(); debug.clear();
+        if (!coinbase) { reason = "bad-cb-missing"; return false; }
         CBlock block{m_block_template->block};
 
         if (block.vtx.size() == 0) {
@@ -1001,10 +1016,49 @@ public:
         block.m_checked_merkle_root = false;
         block.fChecked = false;
 
-        auto block_ptr = std::make_shared<const CBlock>(block);
-        return chainman().ProcessNewBlock(block_ptr, /*force_processing=*/true, /*min_pow_checked=*/true, /*new_block=*/nullptr);
+        m_block_template->block = block;
+        return node::SubmitBlock(chainman(), std::make_shared<const CBlock>(std::move(block)), reason, debug);
     }
 
+    std::unique_ptr<BlockTemplate> waitNext(BlockWaitOptions options) override
+    {
+        const auto duration = std::min(options.timeout, MillisecondsDouble{std::chrono::years{100}});
+        const auto deadline = std::chrono::steady_clock::now() + duration;
+        while (!chainman().m_interrupt) {
+            if (m_interrupt_wait.exchange(false)) return {};
+            bool new_tip;
+            {
+                LOCK(cs_main);
+                const auto* tip = chainman().ActiveChain().Tip();
+                new_tip = tip->GetBlockHash() != m_block_template->block.hashPrevBlock;
+                if (chainman().GetConsensus().fPowAllowMinDifficultyBlocks && GetTime() > tip->GetBlockTime() + 20 * 60) new_tip = true;
+            }
+            if (new_tip || options.fee_threshold < MAX_MONEY) {
+                auto candidate = BlockAssembler{chainman().ActiveChainstate(), m_node.mempool.get(), m_block_template->create_options, m_node}.CreateNewBlock();
+                const auto fees = -candidate->vTxFees.at(0);
+                const auto old_fees = -m_block_template->vTxFees.at(0);
+                if (new_tip || fees - old_fees >= options.fee_threshold) {
+                    return std::make_unique<BlockTemplateImpl>(std::move(candidate), m_node);
+                }
+            }
+            if (std::chrono::steady_clock::now() >= deadline) return {};
+            auto& notifications = *Assert(m_node.notifications);
+            WAIT_LOCK(notifications.m_tip_block_mutex, lock);
+            notifications.m_tip_block_cv.wait_until(lock, std::min(deadline, std::chrono::steady_clock::now() + MillisecondsDouble{1000}));
+        }
+        return {};
+    }
+
+    void interruptWait() override
+    {
+        m_interrupt_wait = true;
+        auto& notifications = *Assert(m_node.notifications);
+        LOCK(notifications.m_tip_block_mutex);
+        notifications.m_tip_block_cv.notify_all();
+    }
+
+    std::atomic<bool> m_interrupt_wait{false};
+    node::CoinbaseTx m_coinbase_tx{};
     const std::shared_ptr<CBlockTemplate> m_block_template;
 
     ChainstateManager& chainman() { return *Assert(m_node.chainman); }
@@ -1045,24 +1099,26 @@ public:
             // always returns valid tip information when possible and only
             // returns null when shutting down, not when timing out.
             notifications().m_tip_block_cv.wait(lock, [&]() EXCLUSIVE_LOCKS_REQUIRED(notifications().m_tip_block_mutex) {
-                return notifications().TipBlock() || chainman().m_interrupt;
+                return notifications().TipBlock() || chainman().m_interrupt || m_interrupted;
             });
-            if (chainman().m_interrupt) return {};
+            if (chainman().m_interrupt || m_interrupted) return {};
             // At this point TipBlock is set, so continue to wait until it is
             // different then `current_tip` provided by caller.
             notifications().m_tip_block_cv.wait_until(lock, deadline, [&]() EXCLUSIVE_LOCKS_REQUIRED(notifications().m_tip_block_mutex) {
-                return Assume(notifications().TipBlock()) != current_tip || chainman().m_interrupt;
+                return Assume(notifications().TipBlock()) != current_tip || chainman().m_interrupt || m_interrupted;
             });
         }
 
-        if (chainman().m_interrupt) return {};
+        if (chainman().m_interrupt || m_interrupted) return {};
 
         // Must release m_tip_block_mutex before getTip() locks cs_main, to
         // avoid deadlocks.
         return getTip();
     }
 
-    std::unique_ptr<BlockTemplate> createNewBlock(const BlockCreateOptions& options) override
+    std::unique_ptr<BlockTemplate> createNewBlock(const BlockCreateOptions& options, bool cooldown) override;
+
+    std::unique_ptr<BlockTemplate> createNewBlockLegacy(const BlockCreateOptions& options) override
     {
         // Ensure m_tip_block is set so consumers of BlockTemplate can rely on that.
         if (!waitTipChanged(uint256::ZERO, MillisecondsDouble::max())) return {};
@@ -1074,12 +1130,32 @@ public:
 
     std::unique_ptr<BlockTemplate> createNewBlock2(const BlockCreateOptions& assemble_options) override
     {
-        return std::make_unique<BlockTemplateImpl>(BlockAssembler{chainman().ActiveChainstate(), context()->mempool.get(), assemble_options, m_node}.CreateNewBlock(), m_node);
+        return interfaces::MakeBlockTemplate(BlockAssembler{chainman().ActiveChainstate(), context()->mempool.get(), assemble_options, m_node}.CreateNewBlock(), m_node);
     }
 
     NodeContext* context() override { return &m_node; }
     ChainstateManager& chainman() { return *Assert(m_node.chainman); }
     KernelNotifications& notifications() { return *Assert(m_node.notifications); }
+    NodeContext& m_node;
+};
+class RpcImpl : public interfaces::Rpc
+{
+public:
+    explicit RpcImpl(NodeContext& node) : m_node(node) {}
+    UniValue executeRpc(UniValue request, std::string uri, std::string user) override
+    {
+        // The IPC peer chooses `user`, so this interface bypasses RPC
+        // authentication and the per-user -rpcwhitelist. Require explicit opt-in.
+        if (!m_node.args || !m_node.args->GetBoolArg("-ipcrpc", false)) {
+            throw std::runtime_error("RPC over IPC is disabled; start the node with -ipcrpc=1 to allow it");
+        }
+        JSONRPCRequest req;
+        req.context = &m_node;
+        req.URI = std::move(uri);
+        req.authUser = std::move(user);
+        HTTPStatusCode status;
+        return ExecuteHTTPRPC(request, req, status);
+    }
     NodeContext& m_node;
 };
 } // namespace
@@ -1089,4 +1165,132 @@ namespace interfaces {
 std::unique_ptr<Node> MakeNode(node::NodeContext& context) { return std::make_unique<node::NodeImpl>(context); }
 std::unique_ptr<Chain> MakeChain(node::NodeContext& context) { return std::make_unique<node::ChainImpl>(context); }
 std::unique_ptr<Mining> MakeMining(node::NodeContext& context) { return std::make_unique<node::MinerImpl>(context); }
+std::unique_ptr<Rpc> MakeRpc(node::NodeContext& context) { return std::make_unique<node::RpcImpl>(context); }
+std::unique_ptr<BlockTemplate> MakeBlockTemplate(std::shared_ptr<node::CBlockTemplate> block_template, node::NodeContext& context)
+{
+    return std::make_unique<node::BlockTemplateImpl>(std::move(block_template), context);
+}
+
+node::CoinbaseTx BlockTemplate::getCoinbaseTx()
+{
+    const auto tx = getCoinbaseTransaction();
+    CHECK_NONFATAL(tx && tx->vin.size() == 1 && !tx->vout.empty());
+    auto prefix_end = tx->vin[0].scriptSig.begin();
+    opcodetype opcode;
+    CHECK_NONFATAL(tx->vin[0].scriptSig.GetOp(prefix_end, opcode));
+    std::optional<uint256> witness;
+    const auto& stack = tx->vin[0].scriptWitness.stack;
+    if (!stack.empty()) {
+        CHECK_NONFATAL(stack.size() == 1 && stack[0].size() == 32);
+        witness = uint256{stack[0]};
+    }
+    return {static_cast<uint32_t>(tx->version), tx->vin[0].nSequence,
+            CScript{tx->vin[0].scriptSig.begin(), prefix_end}, witness,
+            tx->vout[0].nValue, {tx->vout.begin() + 1, tx->vout.end()}, tx->nLockTime};
+}
+
+std::vector<CTransactionRef> Mining::getTransactionsByTxID(const std::vector<Txid>& txids)
+{
+    auto* pool = CHECK_NONFATAL(context())->mempool.get();
+    if (!pool) return {};
+    LOCK(pool->cs);
+    std::vector<CTransactionRef> result;
+    result.reserve(txids.size());
+    for (const auto& txid : txids) result.push_back(pool->info(GenTxid::Txid(txid)).tx);
+    return result;
+}
+
+std::vector<CTransactionRef> Mining::getTransactionsByWitnessID(const std::vector<Wtxid>& wtxids)
+{
+    auto* pool = CHECK_NONFATAL(context())->mempool.get();
+    if (!pool) return {};
+    LOCK(pool->cs);
+    std::vector<CTransactionRef> result;
+    result.reserve(wtxids.size());
+    for (const auto& wtxid : wtxids) result.push_back(pool->info(GenTxid::Wtxid(wtxid)).tx);
+    return result;
+}
+
+bool Mining::submitBlock(const CBlock& block_in, std::string& reason, std::string& debug)
+{
+    CBlock block{block_in};
+    // In-process callers may supply blocks copied from previously validated templates.
+    block.fChecked = false;
+    block.m_checked_merkle_root = false;
+    block.m_checked_witness_commitment = false;
+    return node::SubmitBlock(*CHECK_NONFATAL(CHECK_NONFATAL(context())->chainman),
+                             std::make_shared<const CBlock>(std::move(block)), reason, debug);
+}
+
+void Mining::interrupt()
+{
+    auto& notifications = *CHECK_NONFATAL(CHECK_NONFATAL(context())->notifications);
+    LOCK(notifications.m_tip_block_mutex);
+    m_interrupted = true;
+    notifications.m_tip_block_cv.notify_all();
+}
+} // namespace interfaces
+
+namespace node {
+std::unique_ptr<interfaces::BlockTemplate> MinerImpl::createNewBlock(const BlockCreateOptions& options, bool cooldown)
+{
+    if (options.block_reserved_weight < MINIMUM_BLOCK_RESERVED_WEIGHT || options.block_reserved_weight > MAX_BLOCK_WEIGHT || options.coinbase_output_max_additional_sigops > MAX_BLOCK_SIGOPS_COST) {
+        throw std::invalid_argument("Block template resource reservation out of range");
+    }
+    if (!waitTipChanged(uint256::ZERO, MillisecondsDouble::max())) return {};
+    while (cooldown && isInitialBlockDownload()) {
+        const auto tip = getTip();
+        if (!tip || !waitTipChanged(tip->hash, MillisecondsDouble{1000}) || m_interrupted) return {};
+    }
+    if (cooldown) {
+        auto& chainman = *CHECK_NONFATAL(CHECK_NONFATAL(context())->chainman);
+        // The best header can stay ahead indefinitely (for example a parked
+        // branch, or a header whose block never arrives), so bound the wait
+        // the same way the embedded SV2 template provider does: 3-20 seconds
+        // depending on how many blocks the header chain leads by.
+        std::optional<std::chrono::steady_clock::time_point> deadline;
+        while (true) {
+            bool ahead;
+            int lead{0};
+            {
+                LOCK(cs_main);
+                const auto* best = chainman.m_best_header;
+                const auto* tip = chainman.ActiveChain().Tip();
+                ahead = best && tip && best->nChainWork > tip->nChainWork;
+                if (ahead) lead = best->nHeight - tip->nHeight;
+            }
+            if (!ahead) break;
+            if (!deadline) deadline = std::chrono::steady_clock::now() + std::chrono::seconds{std::clamp(lead, 3, 20)};
+            if (std::chrono::steady_clock::now() >= *deadline) break;
+            const auto tip = getTip();
+            if (!tip || !waitTipChanged(tip->hash, MillisecondsDouble{1000}) || m_interrupted) return {};
+        }
+    }
+    if (m_interrupted) return {};
+    auto& node = *CHECK_NONFATAL(context());
+    node::BlockAssembler::Options merged{options};
+    node::ApplyArgsManOptions(*CHECK_NONFATAL(node.args), merged);
+    merged.block_reserved_weight = std::max(merged.block_reserved_weight, options.block_reserved_weight);
+    return createNewBlock2(merged);
+}
+} // namespace node
+
+namespace interfaces {
+bool Mining::checkBlock(const CBlock& input, const node::BlockCheckOptions& options, std::string& reason, std::string& debug)
+{
+    auto& chainman = *CHECK_NONFATAL(CHECK_NONFATAL(context())->chainman);
+    CBlock block{input};
+    block.fChecked = block.m_checked_merkle_root = block.m_checked_witness_commitment = false;
+    LOCK(cs_main);
+    reason.clear(); debug.clear();
+    if (block.hashPrevBlock != chainman.ActiveChain().Tip()->GetBlockHash()) {
+        reason = "inconclusive-not-best-prevblk";
+        return false;
+    }
+    BlockValidationState state;
+    TestBlockValidity(state, chainman.GetParams(), chainman.ActiveChainstate(), block, chainman.ActiveChain().Tip(), options.check_pow, options.check_merkle_root,
+                      options.check_pow ? BlockValidationMode::Full : BlockValidationMode::UnsignedTemplate);
+    reason = state.GetRejectReason(); debug = state.GetDebugMessage();
+    return state.IsValid();
+}
 } // namespace interfaces

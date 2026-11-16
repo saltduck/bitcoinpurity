@@ -85,6 +85,9 @@ EXTENDED_SCRIPTS = [
     'feature_purity_signet_reference.py',
     # These tests are not run by default.
     # Longest test should go first, to favor running tests in parallel
+    'feature_sv2.py',
+    'feature_ipc_gui.py',
+    'feature_ipc_lifecycle.py',
     'feature_pruning.py',
     'feature_dbcrash.py',
     'feature_index_prune.py',
@@ -103,6 +106,7 @@ BASE_SCRIPTS = [
     'feature_purity_rdts_grandfather.py',
     'feature_rdts_ignore_rejects.py',
     'feature_park_deep_reorg.py',
+    'feature_park_catchup.py',
     'feature_parked_chain.py --scenario=active-park-rejected',
     'feature_parked_chain.py --scenario=state-a',
     'feature_parked_chain.py --scenario=state-b',
