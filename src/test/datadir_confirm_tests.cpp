@@ -72,17 +72,6 @@ node::DataDirPromptIo Io(bool terminal, std::string response = "", bool systemd 
     return io;
 }
 
-fs::path NetDir(const fs::path& base, ChainType chain)
-{
-    SelectBaseParams(chain);
-    switch (chain) {
-    case ChainType::TESTNET: return base / "testnet3";
-    case ChainType::REGTEST: return base / "regtest";
-    case ChainType::MAIN: return base;
-    default: return base;
-    }
-}
-
 } // namespace
 
 BOOST_FIXTURE_TEST_SUITE(datadir_confirm_tests, BasicTestingSetup)
@@ -172,13 +161,13 @@ BOOST_AUTO_TEST_CASE(non_empty_directory_requires_explicit_confirmation)
     BOOST_CHECK(declined.error->message.original.find("not been confirmed") != std::string::npos);
     BOOST_CHECK(!declined.persist_status);
 
-    for (const std::string& answer : {"n", "", "nope", "yes", "EOF"}) {
+    for (const char* answer : {"n", "", "nope", "yes", "EOF"}) {
         const auto result{node::ConfirmDataDirFirstUse(args, Io(true, answer))};
         BOOST_CHECK_MESSAGE(result.error, answer);
         BOOST_CHECK(result.error->message.original.find("not accepted") != std::string::npos);
         BOOST_CHECK(!result.persist_status);
     }
-    for (const std::string& answer : {"y", "Y", " y "}) {
+    for (const char* answer : {"y", "Y", " y "}) {
         const auto result{node::ConfirmDataDirFirstUse(args, Io(true, answer))};
         BOOST_CHECK(!result.error);
         BOOST_CHECK_EQUAL(result.persist_status.value_or(""), "approved");

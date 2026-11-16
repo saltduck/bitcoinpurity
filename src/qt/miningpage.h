@@ -40,13 +40,13 @@ class MiningHashrateTracker
 public:
     void resume();
     void pause(uint64_t now_ms);
-    MiningHashrateResult update(uint64_t now_ms, bool enabled, bool running, uint64_t session_started_ms, uint32_t authorized_miners, uint64_t accepted_difficulty);
+    MiningHashrateResult update(uint64_t now_ms, bool enabled, bool running, uint64_t session_started_ms, uint32_t authorized_miners, long double accepted_difficulty);
     const QVector<MiningHashrateSample>& history() const { return m_history; }
 
 private:
     struct WorkCheckpoint {
         uint64_t timestamp_ms;
-        uint64_t accepted_difficulty;
+        long double accepted_difficulty;
     };
 
     void resetWindow();

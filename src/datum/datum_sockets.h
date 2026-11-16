@@ -67,6 +67,11 @@ typedef void (*DATUM_ThreadPool_ClientNew_Func)(T_DATUM_CLIENT_DATA *);
 typedef struct T_DATUM_CLIENT_DATA {
 	bool new_connection;
 	_Atomic(datum_socket_t) fd;
+	// A connection the listener assigned to this slot that its pool thread
+	// has not initialized yet. The pool thread moves it into fd under
+	// thread_data_lock once the slot's state is reset, so no code that walks
+	// slots by fd sees a new client with a previous client's state.
+	_Atomic(datum_socket_t) pending_fd;
 	int cid;
 	
 	char buffer[CLIENT_BUFFER];
@@ -136,6 +141,11 @@ typedef struct T_DATUM_THREAD_DATA {
 	
 	bool is_active;
 	
+	// Set by the listener once pthread_create succeeds and never cleared, so
+	// the owner can join every started worker on shutdown. Unlike is_active,
+	// the worker thread does not write it.
+	bool pthread_started;
+	
 	bool has_new_clients;
 	
 	bool empty_request;
@@ -186,6 +196,18 @@ static inline void datum_socket_thread_client_count_decrement(T_DATUM_THREAD_DAT
 	}
 	my->client_data[cid_who_left].fd = 0;
 	if (not_already_locked) pthread_mutex_unlock(&my->thread_data_lock);
+}
+
+
+// Close a client's socket and free its slot. Both happen under
+// thread_data_lock, because assign_to_thread reads and peeks the fds of all
+// slots under that lock to count connections per IP: closing first and
+// clearing the slot later would let it peek a closed, or already reused, fd.
+static inline void datum_socket_thread_close_client(T_DATUM_THREAD_DATA *my, int cid) {
+	pthread_mutex_lock(&my->thread_data_lock);
+	datum_socket_close(my->client_data[cid].fd);
+	datum_socket_thread_client_count_decrement(my, cid, false);
+	pthread_mutex_unlock(&my->thread_data_lock);
 }
 
 #endif

@@ -31,6 +31,50 @@
 
 namespace node {
 
+namespace {
+class SubmitBlockStateCatcher final : public CValidationInterface
+{
+public:
+    explicit SubmitBlockStateCatcher(const uint256& hash) : m_hash{hash} {}
+    const uint256 m_hash;
+    bool m_found{false};
+    BlockValidationState m_state;
+
+protected:
+    void BlockChecked(const CBlock& block, const BlockValidationState& state) override
+    {
+        if (block.GetHash() != m_hash) return;
+        // BlockChecked is synchronous; ProcessNewBlock completes before these fields are read.
+        m_found = true;
+        m_state = state;
+    }
+};
+} // namespace
+
+bool SubmitBlock(ChainstateManager& chainman, const std::shared_ptr<const CBlock>& block, std::string& reason, std::string& debug)
+{
+    reason.clear();
+    debug.clear();
+    auto catcher = std::make_shared<SubmitBlockStateCatcher>(block->GetHash());
+    auto& signals = *CHECK_NONFATAL(chainman.m_options.signals);
+    signals.RegisterSharedValidationInterface(catcher);
+    bool new_block{false};
+    const bool accepted = chainman.ProcessNewBlock(block, /*force_processing=*/true, /*min_pow_checked=*/true, &new_block);
+    signals.UnregisterSharedValidationInterface(catcher);
+
+    if (!new_block && accepted) {
+        reason = "duplicate";
+    } else if (!accepted && (!catcher->m_found || catcher->m_state.IsValid())) {
+        reason = "inconclusive";
+    } else if (!catcher->m_found) {
+        reason = "inconclusive";
+    } else if (!catcher->m_state.IsValid()) {
+        reason = catcher->m_state.GetRejectReason();
+        debug = catcher->m_state.GetDebugMessage();
+    }
+    return accepted && new_block && reason.empty();
+}
+
 int64_t GetMinimumTime(const CBlockIndex* pindexPrev, const int64_t difficulty_adjustment_interval)
 {
     int64_t min_time{pindexPrev->GetMedianTimePast() + 1};
@@ -158,6 +202,7 @@ std::shared_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock()
     resetBlock();
 
     pblocktemplate.reset(new CBlockTemplate());
+    pblocktemplate->create_options = m_options;
     CBlock* const pblock = &pblocktemplate->block; // pointer for convenience
 
     // Add dummy coinbase tx as first transaction

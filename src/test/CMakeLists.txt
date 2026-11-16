@@ -62,6 +62,7 @@ add_executable(test_bitcoin
   mempool_tests.cpp
   merkle_tests.cpp
   merkleblock_tests.cpp
+  miner_cached_validation_tests.cpp
   miner_tests.cpp
   miniminer_tests.cpp
   miniscript_tests.cpp
@@ -174,6 +175,7 @@ endif()
 if(WITH_MULTIPROCESS)
   target_link_libraries(bitcoin_ipc_test
     PRIVATE
+      Boost::headers
       core_interface
       univalue
   )
@@ -183,6 +185,9 @@ if(WITH_MULTIPROCESS)
       ipc_tests.cpp
   )
   target_link_libraries(test_bitcoin bitcoin_ipc_test bitcoin_ipc)
+  add_test(NAME ipc_schema_contract
+    COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/test/util/check_ipc_schema.py
+  )
 endif()
 
 function(add_boost_test source_file)

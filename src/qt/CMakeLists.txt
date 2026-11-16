@@ -243,8 +243,10 @@ add_library(bitcoinqt STATIC EXCLUDE_FROM_ALL
   blockview.h
   clientmodel.cpp
   clientmodel.h
-  $<$<BOOL:${BUILD_DATUM}>:miningpage.cpp>
-  $<$<BOOL:${BUILD_DATUM}>:miningpage.h>
+  $<$<OR:$<BOOL:${BUILD_DATUM}>,$<BOOL:${BUILD_SV2}>>:miningpage.cpp>
+  $<$<OR:$<BOOL:${BUILD_DATUM}>,$<BOOL:${BUILD_SV2}>>:miningpage.h>
+  $<$<BOOL:${BUILD_SV2}>:sv2settings.cpp>
+  $<$<BOOL:${BUILD_SV2}>:sv2settings.h>
   $<$<BOOL:${BUILD_DATUM}>:datumcoinbasetag.cpp>
   $<$<BOOL:${BUILD_DATUM}>:datumcoinbasetag.h>
   csvmodelwriter.cpp
@@ -320,6 +322,14 @@ target_include_directories(bitcoinqt
 set_property(SOURCE macnotificationhandler.mm
   # Ignore warnings "'NSUserNotificationCenter' is deprecated: first deprecated in macOS 11.0".
   APPEND PROPERTY COMPILE_OPTIONS -Wno-deprecated-declarations
+)
+set_property(SOURCE packagedownloader.cpp softwareupdater.cpp
+  # Q_OBJECT classes local to these files get an unused trUtf8() under Qt 5.
+  APPEND PROPERTY COMPILE_OPTIONS $<$<CXX_COMPILER_ID:Clang,AppleClang>:-Wno-unused-member-function>
+)
+set_property(SOURCE quirc/decode.c quirc/identify.c quirc/quirc.c quirc/version_db.c
+  # Vendored third-party quirc sources.
+  APPEND PROPERTY COMPILE_OPTIONS -Wno-sign-compare
 )
 target_link_libraries(bitcoinqt
   PUBLIC

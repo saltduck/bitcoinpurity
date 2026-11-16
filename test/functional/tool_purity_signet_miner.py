@@ -163,7 +163,8 @@ class PuritySignetMinerTest(PuritySignetTest):
 
         self.log.info("Three configured signers tolerate any single daemon outage without changing the config")
         config["signer_clis"] = [clis[i + 1] + [f"-rpcwallet=authority-{i}"] for i in range(3)]
-        config["signer_timeout_seconds"] = 3
+        # The miner only accepts a whole number of seconds; timeout_factor is a float.
+        config["signer_timeout_seconds"] = int(3 * self.options.timeout_factor)
         config_path.write_text(json.dumps(config))
         for missing, pair in ((1, "2+3"), (2, "1+3"), (3, "1+2")):
             self.stop_node(missing)
@@ -171,7 +172,7 @@ class PuritySignetMinerTest(PuritySignetTest):
             self.advance_mining_time(previous["time"] + 600)
             expected_bits = node.getblocktemplate({"rules": ["segwit", "signet"]})["bits"]
             result = subprocess.run([sys.executable, str(miner), "--config", str(config_path), "--once"],
-                                    capture_output=True, text=True, timeout=90)
+                                    capture_output=True, text=True, timeout=90 * self.options.timeout_factor)
             assert result.returncode == 0, result.stderr
             assert_equal(json.loads(result.stdout)["height"], previous["height"] + 1)
             assert_equal(json.loads(result.stdout)["bits"], expected_bits)
@@ -187,7 +188,7 @@ class PuritySignetMinerTest(PuritySignetTest):
         self.advance_mining_time(previous["time"] + 600)
         try:
             result = subprocess.run([sys.executable, str(miner), "--config", str(config_path), "--once"],
-                                    capture_output=True, text=True, timeout=90)
+                                    capture_output=True, text=True, timeout=90 * self.options.timeout_factor)
             assert result.returncode == 0, result.stderr
             assert "Signing request failed" in result.stderr, result.stderr
             assert "signers=2+3" in result.stderr, result.stderr
@@ -203,7 +204,7 @@ class PuritySignetMinerTest(PuritySignetTest):
         previous = node.getblockheader(node.getbestblockhash())
         self.advance_mining_time(previous["time"] + 600)
         result = subprocess.run([sys.executable, str(miner), "--config", str(config_path), "--once"],
-                                capture_output=True, text=True, timeout=90)
+                                capture_output=True, text=True, timeout=90 * self.options.timeout_factor)
         assert result.returncode == 0, result.stderr
         assert "signers=2+3" in result.stderr, result.stderr
         assert_equal(json.loads(result.stdout)["height"], previous["height"] + 1)
@@ -216,7 +217,7 @@ class PuritySignetMinerTest(PuritySignetTest):
         previous = node.getblockheader(node.getbestblockhash())
         self.advance_mining_time(previous["time"] + 600)
         result = subprocess.run([sys.executable, str(miner), "--config", str(config_path), "--once"],
-                                capture_output=True, text=True, timeout=90)
+                                capture_output=True, text=True, timeout=90 * self.options.timeout_factor)
         assert result.returncode == 0, result.stderr
         assert "signers=1+3" in result.stderr, result.stderr
         assert_equal(json.loads(result.stdout)["height"], previous["height"] + 1)

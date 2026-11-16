@@ -7,6 +7,7 @@
 
 #include <chainparamsbase.h>
 #include <common/args.h>
+#include <common/system.h>
 #include <consensus/params.h>
 #include <deploymentinfo.h>
 #include <kernel/chainparams.h>
@@ -137,6 +138,11 @@ void ReadSigNetArgs(const ArgsManager& args, CChainParams::SigNetOptions& option
     fork.historical_seed_nodes = list(json, "historical_seed_nodes");
     VectorWriter seeds{fork.fixed_seeds, 0};
     ParamsStream seed_writer{seeds, CAddress::V2_NETWORK};
+    // Chain parameters are read while parsing the configuration, before
+    // AppInitBasicSetup() initializes Winsock. LookupNumeric() relies on
+    // getaddrinfo(), which fails on Windows until WSAStartup() has run.
+    // WSAStartup() is reference counted, so calling it again later is fine.
+    if (!SetupNetworking()) throw std::runtime_error("Could not initialize networking to parse Signet fixed seeds");
     for (const auto& seed : list(json, "fixed_seed_nodes")) {
         const CService endpoint = LookupNumeric(seed);
         if (!endpoint.IsValid() || endpoint.GetPort() == 0) throw std::runtime_error("Signet fixed seed must be a numeric address with a port");
