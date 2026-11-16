@@ -22,6 +22,14 @@ void ApplyArgsManOptions(const ArgsManager& argsman, PeerManager::Options& optio
         }
     }
 
+    if (auto value{argsman.GetIntArg("-parkcatchuppeers")}) {
+        options.park_catchup_peers = static_cast<int>(std::clamp<int64_t>(*value, 1, MAX_PARK_CATCHUP_PEERS));
+        if (options.park_catchup_peers != *value) {
+            InitWarning(strprintf(_("-parkcatchuppeers must be between %d and %d; using %d."),
+                                  1, MAX_PARK_CATCHUP_PEERS, options.park_catchup_peers));
+        }
+    }
+
     if (auto value{argsman.GetBoolArg("-txreconciliation")}) options.reconcile_txs = *value;
 
     if (auto value{argsman.GetIntArg("-maxorphantx")}) {

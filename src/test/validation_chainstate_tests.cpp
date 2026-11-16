@@ -156,10 +156,24 @@ BOOST_FIXTURE_TEST_CASE(chainstate_update_tip, TestChain100Setup)
 
 
 struct DeepReorgTestingSetup : TestChain100Setup {
-    DeepReorgTestingSetup(const char* depth = "-parkreorgdepth=6", bool enabled = true)
+    //! Whether the 100 setup blocks count as history accepted after catch-up.
+    const bool m_protected;
+
+    DeepReorgTestingSetup(const char* depth = "-parkreorgdepth=6", bool enabled = true, bool protect = true)
         : TestChain100Setup(ChainType::REGTEST, {.extra_args={
               enabled ? "-parkdeepreorg=1" : "-parkdeepreorg=0",
-              depth}}) {}
+              depth}}),
+          m_protected{protect}
+    {
+        if (!m_protected) return;
+        // The setup chain was connected during catch-up. Treat it as history
+        // accepted after catch-up so these tests exercise the depth rule.
+        m_node.chainman->EndParkCatchup();
+        LOCK(cs_main);
+        for (CBlockIndex* index{m_node.chainman->ActiveChain().Tip()}; index; index = index->pprev) {
+            index->nStatus |= BLOCK_PARK_PROTECTED;
+        }
+    }
 
     std::pair<CBlockIndex*, CBlockIndex*> AcceptFork(int rewind, bool ancestor_last = false, CBlock* withheld = nullptr)
     {
@@ -194,7 +208,7 @@ struct DeepReorgTestingSetup : TestChain100Setup {
             LOCK(cs_main);
             BOOST_REQUIRE_MESSAGE(chainman.AcceptBlock(std::make_shared<const CBlock>(block), state, nullptr, true, nullptr, nullptr, true), state.ToString());
             // Acceptance must park before candidate propagation, without ABC.
-            if (chainman.m_options.park_deep_reorg && rewind > chainman.m_options.park_reorg_depth) {
+            if (m_protected && chainman.m_options.park_deep_reorg && rewind > chainman.m_options.park_reorg_depth) {
                 BOOST_CHECK(first->nStatus & BLOCK_PARKED);
                 BOOST_CHECK(!chainstate.setBlockIndexCandidates.contains(prev));
             }
@@ -254,6 +268,30 @@ struct CustomDepthTestingSetup : DeepReorgTestingSetup {
 struct ParkingDisabledTestingSetup : DeepReorgTestingSetup {
     ParkingDisabledTestingSetup() : DeepReorgTestingSetup("-parkreorgdepth=6", false) {}
 };
+
+struct CatchupTestingSetup : DeepReorgTestingSetup {
+    CatchupTestingSetup() : DeepReorgTestingSetup("-parkreorgdepth=6", true, /*protect=*/false) {}
+};
+
+BOOST_FIXTURE_TEST_CASE(deep_reorg_catchup_blocks_unprotected, CatchupTestingSetup)
+{
+    auto& chainman = *m_node.chainman;
+    BOOST_CHECK(chainman.InParkCatchup());
+    BOOST_CHECK(!(WITH_LOCK(cs_main, return chainman.ActiveChain().Tip()->nStatus) & BLOCK_PARK_PROTECTED));
+    // Rewinding 7 blocks connected during catch-up is ordinary most-work selection.
+    auto [root, tip] = AcceptFork(7);
+    BOOST_CHECK(!(WITH_LOCK(cs_main, return root->nStatus) & BLOCK_PARKED_MASK));
+    BlockValidationState state;
+    BOOST_REQUIRE(chainman.ActiveChainstate().ActivateBestChain(state, nullptr));
+    BOOST_CHECK(WITH_LOCK(cs_main, return chainman.ActiveChain().Tip()) == tip);
+    BOOST_CHECK(!(WITH_LOCK(cs_main, return tip->nStatus) & BLOCK_PARK_PROTECTED));
+
+    // Blocks connected after catch-up ends are protected and persist the bit.
+    chainman.EndParkCatchup();
+    BOOST_CHECK(!chainman.InParkCatchup());
+    mineBlocks(1);
+    BOOST_CHECK(WITH_LOCK(cs_main, return chainman.ActiveChain().Tip()->nStatus) & BLOCK_PARK_PROTECTED);
+}
 
 BOOST_FIXTURE_TEST_CASE(deep_reorg_acceptance_threshold, DeepReorgTestingSetup)
 {

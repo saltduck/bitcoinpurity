@@ -86,7 +86,8 @@ if [ "$USE_BUSY_BOX" = "true" ]; then
   echo "Setup to use BusyBox utils"
   # tar excluded for now because it requires passing in the exact archive type in ./depends (fixed in later BusyBox version)
   # ar excluded for now because it does not recognize the -q option in ./depends (unknown if fixed)
-  for util in $(busybox --list | grep -v "^ar$" | grep -v "^tar$" ); do ln -s "$(command -v busybox)" "${BINS_SCRATCH_DIR}/$util"; done
+  # Use the system xz for the official Rust archives unpacked by tar.
+  for util in $(busybox --list | grep -Exv 'ar|tar|xz'); do ln -s "$(command -v busybox)" "${BINS_SCRATCH_DIR}/$util"; done
   # Print BusyBox version
   patch --help
 fi
@@ -126,7 +127,7 @@ BASE_BUILD_DIR=${BASE_BUILD_DIR:-$BASE_SCRATCH_DIR/build-$HOST}
 mkdir -p "${BASE_BUILD_DIR}"
 cd "${BASE_BUILD_DIR}"
 
-BITCOIN_CONFIG_ALL="$BITCOIN_CONFIG_ALL -DENABLE_EXTERNAL_SIGNER=ON -DCMAKE_INSTALL_PREFIX=$BASE_OUTDIR"
+BITCOIN_CONFIG_ALL="$BITCOIN_CONFIG_ALL -DENABLE_EXTERNAL_SIGNER=ON -DBUILD_SV2=OFF -DCMAKE_INSTALL_PREFIX=$BASE_OUTDIR"
 
 if [[ "${RUN_TIDY}" == "true" ]]; then
   BITCOIN_CONFIG_ALL="$BITCOIN_CONFIG_ALL -DCMAKE_EXPORT_COMPILE_COMMANDS=ON"
