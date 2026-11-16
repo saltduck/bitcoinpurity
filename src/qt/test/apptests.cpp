@@ -2,6 +2,8 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <bitcoin-build-config.h> // IWYU pragma: keep
+
 #include <qt/test/apptests.h>
 
 #include <chainparams.h>
@@ -103,6 +105,8 @@ void AppTests::guiTests(BitcoinGUI* window)
 {
     HandleCallback callback{"guiTests", *this};
 
+    // The navigation toolbar and its pages only exist with a wallet.
+#ifdef ENABLE_WALLET
     QToolBar* navigation = window->findChild<QToolBar*>(QStringLiteral("mainNavigation"));
     QVERIFY(navigation);
     QCOMPARE(navigation->orientation(), Qt::Vertical);
@@ -174,7 +178,8 @@ void AppTests::guiTests(BitcoinGUI* window)
     for (const QAction* action : window_menu->actions()) {
         QVERIFY(action->text().remove(QLatin1Char('&')) != QStringLiteral("DATUM"));
     }
-#endif
+#endif // ENABLE_DATUM
+#endif // ENABLE_WALLET
     connect(window, &BitcoinGUI::consoleShown, this, &AppTests::consoleTests);
     expectCallback("consoleTests");
     QAction* action = window->findChild<QAction*>("openRPCConsoleAction");

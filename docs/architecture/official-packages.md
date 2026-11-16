@@ -22,3 +22,21 @@ an exclusively created destination, preserving existing files. The generator
 accepts no private keys and invokes no subprocesses or signing tools. No
 network requests or client trust-policy changes are introduced. See
 [CLI contract](../api/official-packages.md).
+
+## Software release manifest generator
+
+`generate-releases-manifest.py` recursively scans local artifacts in
+`./guix-build-<version>/output` relative to the working directory, using
+`--version` without the leading `v`, or an explicit `--artifacts-dir`. An anchored
+filename match captures the version, supported host, variant and extension
+from Guix `bitcoinpurity-` or legacy `bitcoin-purity-` names. Platform-specific
+extension/variant rules admit only Linux binary tarballs, macOS application
+ZIPs and Windows ZIPs, excluding source, debug, codesigning and installer files.
+Filter the requested version before grouping by platform. Within a platform,
+prefer final ZIPs over macOS unsigned or Windows pgpverifiable ZIPs. For multiple
+candidates of the selected priority, merge copies only when filenames, byte
+sizes and SHA256 digests all match, selecting the first sorted path. Conflicts
+fail. This allows a `release-upload-<version>` staging directory alongside
+original Guix outputs. Preserve unsigned schema 1 output and GitHub asset URLs. No archive
+extraction, signature validation or publishing is performed. See
+[TASK-030](../tasks/TASK-030.md).

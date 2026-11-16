@@ -1,0 +1,156 @@
+name: Embedded Stratum V2
+
+on:
+  pull_request:
+  push:
+    branches: [master, 'codex/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  unix:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15, macos-15-intel]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    env:
+      RUSTUP_TOOLCHAIN: 1.96.0
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build pkg-config libboost-dev libevent-dev libsqlite3-dev libcurl4-openssl-dev libjansson-dev qtbase5-dev qttools5-dev-tools libqrencode-dev librsvg2-bin imagemagick libcapnp-dev capnproto
+      - name: Install macOS dependencies
+        if: runner.os == 'macOS'
+        run: |
+          brew install ninja pkgconf boost libevent sqlite curl jansson qt@5 qrencode librsvg imagemagick libicns capnp
+          echo "CMAKE_PREFIX_PATH=$(brew --prefix qt@5)" >> "$GITHUB_ENV"
+          echo "QT_QPA_PLATFORM=minimal" >> "$GITHUB_ENV"
+      - name: Install pinned Rust
+        run: rustup toolchain install 1.96.0 --profile minimal
+      - uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: sv2-cargo-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('src/sv2/Cargo.lock') }}
+      - name: Build pinned IPC dependencies without source patches
+        run: sh contrib/devtools/build-ipc-deps.sh "$RUNNER_TEMP/ipc-deps" "$RUNNER_TEMP/ipc-prefix" 3
+      - name: Configure SV2 and Qt
+        run: cmake -S . -B build -G Ninja "-DCMAKE_PREFIX_PATH=$RUNNER_TEMP/ipc-prefix;$CMAKE_PREFIX_PATH" -DWITH_MULTIPROCESS=ON -DCMAKE_BUILD_TYPE=Release -DBUILD_SV2=ON -DBUILD_DATUM=ON -DBUILD_GUI=ON -DBUILD_TESTS=ON -DWITH_BDB=OFF -DWITH_ZMQ=OFF -DWITH_USDT=OFF -DWERROR=OFF
+      - name: Build daemon, Qt and independent pool
+        run: cmake --build build --target bitcoind bitcoin-cli bitcoin-qt bitcoin-node bitcoin-gui test_bitcoin test_bitcoin-qt sv2_test_pool -j 3
+      - name: Rust protocol and lifecycle tests
+        run: cargo test --locked --manifest-path src/sv2/Cargo.toml --features test-pool
+      - name: Mining and Qt regression
+        run: |
+          python3 test/util/check_ipc_schema.py
+          build/bin/test_bitcoin --run_test=ipc_tests,miner_tests --log_level=test_suite
+          build/bin/test_bitcoin-qt
+      - name: Full local chain and DATUM regression
+        run: |
+          export BITCOIND="$PWD/build/bin/bitcoin-node"
+          python3 test/functional/feature_ipc_gui.py --configfile="$PWD/build/test/config.ini" --cachedir="$RUNNER_TEMP/sv2-cache" --portseed=728
+          python3 test/functional/feature_ipc_lifecycle.py --configfile="$PWD/build/test/config.ini" --cachedir="$RUNNER_TEMP/sv2-cache" --portseed=732
+          python3 test/functional/rpc_misc.py --configfile="$PWD/build/test/config.ini" --cachedir="$RUNNER_TEMP/sv2-cache" --portseed=729
+          python3 test/functional/feature_sv2.py --configfile="$PWD/build/test/config.ini" --cachedir="$RUNNER_TEMP/sv2-cache" --portseed=730
+          python3 test/functional/feature_sv2.py --configfile="$PWD/build/test/config.ini" --cachedir="$RUNNER_TEMP/sv2-cache" --portseed=733 --extranonce-size=12 --coinbase-tags
+          python3 test/functional/feature_sv2.py --configfile="$PWD/build/test/config.ini" --cachedir="$RUNNER_TEMP/sv2-cache" --portseed=734 --extranonce-size=32 --coinbase-tags
+          python3 test/functional/feature_datum.py --configfile="$PWD/build/test/config.ini" --cachedir="$RUNNER_TEMP/datum-cache" --portseed=731
+      - name: Build with SV2 and DATUM disabled without Rust
+        run: |
+          cmake -S . -B build-off -G Ninja -DWITH_MULTIPROCESS=OFF -DCMAKE_BUILD_TYPE=Release -DBUILD_SV2=OFF -DBUILD_DATUM=OFF -DBUILD_GUI=ON -DBUILD_TESTS=OFF -DWITH_BDB=OFF -DWITH_ZMQ=OFF -DWITH_USDT=OFF -DWERROR=OFF -DSV2_CARGO=/nonexistent/cargo -DSV2_RUSTC=/nonexistent/rustc
+          cmake --build build-off --target bitcoind bitcoin-qt -j 3
+          if grep -q 'cargo.*build.*locked' build-off/build.ninja; then exit 1; fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sv2-${{ runner.os }}-${{ runner.arch }}-logs
+          path: |
+            build/CMakeFiles/CMakeConfigureLog.yaml
+            build-off/CMakeFiles/CMakeConfigureLog.yaml
+
+  windows:
+    runs-on: windows-2022
+    timeout-minutes: 180
+    env:
+      RUSTUP_TOOLCHAIN: 1.96.0
+      CMAKE_POLICY_VERSION_MINIMUM: "3.5"
+      QT_QPA_PLATFORM: minimal
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set MSVC environment
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vsPath = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          cmd /c "`"$vsPath\Common7\Tools\VsDevCmd.bat`" -arch=x64 -host_arch=x64 && set" | ForEach-Object {
+            if ($_ -match '^([^=]+)=(.*)$') { "$($Matches[1])=$($Matches[2])" | Out-File $env:GITHUB_ENV -Append -Encoding utf8 }
+          }
+      - name: Install Rust and SVG renderer
+        shell: pwsh
+        run: |
+          rustup toolchain install 1.96.0 --profile minimal
+          choco install msys2 --yes --no-progress
+          C:/tools/msys64/usr/bin/bash -lc "pacman -Sy --noconfirm mingw-w64-x86_64-librsvg"
+          "C:\tools\msys64\mingw64\bin" | Out-File $env:GITHUB_PATH -Append -Encoding utf8
+      - uses: actions/cache@v5
+        with:
+          path: |
+            C:/vcpkg/downloads
+            C:/Users/runneradmin/AppData/Local/vcpkg/archives
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: sv2-windows-static-${{ hashFiles('vcpkg.json', 'depends/vcpkg-triplets/*.cmake', 'src/sv2/Cargo.lock') }}
+      - name: Configure native static CRT build
+        shell: pwsh
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=cl -DCMAKE_CXX_COMPILER=cl -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake -DVCPKG_TARGET_TRIPLET=x64-windows-static "-DVCPKG_OVERLAY_TRIPLETS=$PWD/depends/vcpkg-triplets" -DVCPKG_MANIFEST_NO_DEFAULT_FEATURES=ON "-DVCPKG_MANIFEST_FEATURES=qt5;sqlite;tests" -DBUILD_SV2=ON -DBUILD_DATUM=ON -DBUILD_GUI=ON -DBUILD_TESTS=ON -DWITH_BDB=OFF -DWITH_ZMQ=OFF -DWITH_USDT=OFF -DWERROR=OFF
+      - name: Build daemon, Qt and independent pool
+        run: cmake --build build --target bitcoind bitcoin-cli bitcoin-qt test_bitcoin test_bitcoin-qt sv2_test_pool -j 3
+      - name: Native unit, GUI and real PoW tests
+        shell: pwsh
+        run: |
+          cargo test --locked --manifest-path src/sv2/Cargo.toml --features test-pool
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          build/bin/test_bitcoin.exe --run_test=miner_tests --log_level=test_suite
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          build/bin/test_bitcoin-qt.exe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python test/functional/feature_ipc_gui.py --configfile="$PWD/build/test/config.ini" --cachedir="$env:RUNNER_TEMP/gui-cache" --gui-binary="$PWD/build/bin/bitcoin-qt.exe" --portseed=739
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python test/functional/feature_sv2.py --configfile="$PWD/build/test/config.ini" --cachedir="$env:RUNNER_TEMP/sv2-cache" --portseed=740
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python test/functional/feature_datum.py --configfile="$PWD/build/test/config.ini" --cachedir="$env:RUNNER_TEMP/datum-cache" --portseed=741
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Build without Rust or DATUM
+        shell: pwsh
+        run: |
+          cmake -S . -B build-off -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=cl -DCMAKE_CXX_COMPILER=cl -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake -DVCPKG_TARGET_TRIPLET=x64-windows-static "-DVCPKG_OVERLAY_TRIPLETS=$PWD/depends/vcpkg-triplets" -DVCPKG_MANIFEST_NO_DEFAULT_FEATURES=ON "-DVCPKG_MANIFEST_FEATURES=qt5;sqlite" -DBUILD_SV2=OFF -DBUILD_DATUM=OFF -DBUILD_GUI=ON -DBUILD_TESTS=OFF -DWITH_BDB=OFF -DWITH_ZMQ=OFF -DWITH_USDT=OFF -DWERROR=OFF -DSV2_CARGO=C:/nonexistent/cargo.exe -DSV2_RUSTC=C:/nonexistent/rustc.exe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cmake --build build-off --target bitcoind bitcoin-qt -j 3
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+  fuzz:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned fuzz tools
+        run: |
+          rustup toolchain install nightly-2026-09-22 --profile minimal
+          cargo +nightly-2026-09-22 install cargo-fuzz --version 0.13.2 --locked
+      - name: AddressSanitizer protocol and FFI fuzzing
+        working-directory: src/sv2
+        run: |
+          cargo +nightly-2026-09-22 fetch --locked --manifest-path fuzz/Cargo.toml
+          mkdir -p fuzz/corpus/ffi_config
+          cp fuzz/seeds/ffi_config.json fuzz/corpus/ffi_config/seed
+          cargo +nightly-2026-09-22 fuzz run frame -- -max_total_time=60 -max_len=65536
+          cargo +nightly-2026-09-22 fuzz run ffi_config -- -max_total_time=60 -max_len=65536

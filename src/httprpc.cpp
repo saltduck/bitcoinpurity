@@ -149,6 +149,118 @@ static bool RPCAuthorized(const std::string& strAuth, std::string& strAuthUserna
     return multiUserAuthorized(strUserPass, out_wallet_restriction);
 }
 
+static UniValue IPCJSONErrorReply(UniValue objError, const JSONRPCRequest& jreq, HTTPStatusCode& nStatus)
+{
+    // HTTP errors should never be returned if JSON-RPC v2 was requested. This
+    // function should only be called when a v1 request fails or when a request
+    // cannot be parsed, so the version is unknown.
+    Assume(jreq.m_json_version != JSONRPCVersion::V2);
+
+    // Send error reply from json-rpc error object
+    nStatus = HTTP_INTERNAL_SERVER_ERROR;
+    int code = objError.find_value("code").getInt<int>();
+
+    if (code == RPC_INVALID_REQUEST)
+        nStatus = HTTP_BAD_REQUEST;
+    else if (code == RPC_METHOD_NOT_FOUND)
+        nStatus = HTTP_NOT_FOUND;
+
+    return JSONRPCReplyObj(NullUniValue, std::move(objError), jreq.id, jreq.m_json_version);
+}
+
+UniValue ExecuteHTTPRPC(const UniValue& valRequest, JSONRPCRequest& jreq, HTTPStatusCode& status)
+{
+    status = HTTP_OK;
+    try {
+        bool user_has_whitelist = g_rpc_whitelist.contains(jreq.authUser);
+        if (!user_has_whitelist && g_rpc_whitelist_default) {
+            LogWarning("RPC User %s not allowed to call any methods", jreq.authUser);
+            status = HTTP_FORBIDDEN;
+            return {};
+
+        // singleton request
+        } else if (valRequest.isObject()) {
+            jreq.parse(valRequest);
+            if (user_has_whitelist && !g_rpc_whitelist[jreq.authUser].contains(jreq.strMethod)) {
+                LogWarning("RPC User %s not allowed to call method %s", jreq.authUser, jreq.strMethod);
+                status = HTTP_FORBIDDEN;
+                return {};
+            }
+
+            // Legacy 1.0/1.1 behavior is for failed requests to throw
+            // exceptions which return HTTP errors and RPC errors to the client.
+            // 2.0 behavior is to catch exceptions and return HTTP success with
+            // RPC errors, as long as there is not an actual HTTP server error.
+            const bool catch_errors{jreq.m_json_version == JSONRPCVersion::V2};
+            UniValue reply{JSONRPCExec(jreq, catch_errors)};
+            if (jreq.IsNotification()) {
+                // Even though we do execute notifications, we do not respond to them
+                status = HTTP_NO_CONTENT;
+                return {};
+            }
+            return reply;
+        // array of requests
+        } else if (valRequest.isArray()) {
+            // Check authorization for each request's method
+            if (user_has_whitelist) {
+                for (unsigned int reqIdx = 0; reqIdx < valRequest.size(); reqIdx++) {
+                    if (!valRequest[reqIdx].isObject()) {
+                        throw JSONRPCError(RPC_INVALID_REQUEST, "Invalid Request object");
+                    } else {
+                        const UniValue& request = valRequest[reqIdx].get_obj();
+                        // Parse method
+                        std::string strMethod = request.find_value("method").get_str();
+                        if (!g_rpc_whitelist[jreq.authUser].contains(strMethod)) {
+                            LogWarning("RPC User %s not allowed to call method %s", jreq.authUser, strMethod);
+                            status = HTTP_FORBIDDEN;
+                            return {};
+                        }
+                    }
+                }
+            }
+
+            // Execute each request
+            UniValue reply = UniValue::VARR;
+            for (size_t i{0}; i < valRequest.size(); ++i) {
+                // Batches never throw HTTP errors, they are always just included
+                // in "HTTP OK" responses. Notifications never get any response.
+                UniValue response;
+                try {
+                    jreq.parse(valRequest[i]);
+                    response = JSONRPCExec(jreq, /*catch_errors=*/true);
+                } catch (UniValue& e) {
+                    response = JSONRPCReplyObj(NullUniValue, std::move(e), jreq.id, jreq.m_json_version);
+                } catch (const std::exception& e) {
+                    response = JSONRPCReplyObj(NullUniValue, JSONRPCError(RPC_PARSE_ERROR, e.what()), jreq.id, jreq.m_json_version);
+                }
+                if (!jreq.IsNotification()) {
+                    reply.push_back(std::move(response));
+                }
+            }
+            // Return no response for an all-notification batch, but only if the
+            // batch request is non-empty. Technically according to the JSON-RPC
+            // 2.0 spec, an empty batch request should also return no response,
+            // However, if the batch request is empty, it means the request did
+            // not contain any JSON-RPC version numbers, so returning an empty
+            // response could break backwards compatibility with old RPC clients
+            // relying on previous behavior. Return an empty array instead of an
+            // empty response in this case to favor being backwards compatible
+            // over complying with the JSON-RPC 2.0 spec in this case.
+            if (reply.size() == 0 && valRequest.size() > 0) {
+                status = HTTP_NO_CONTENT;
+                return {};
+            }
+            return reply;
+        }
+        else
+            throw JSONRPCError(RPC_PARSE_ERROR, "Top-level object parse error");
+    } catch (UniValue& e) {
+        return IPCJSONErrorReply(std::move(e), jreq, status);
+    } catch (const std::exception& e) {
+        return IPCJSONErrorReply(JSONRPCError(RPC_PARSE_ERROR, e.what()), jreq, status);
+    }
+}
+
 static bool HTTPReq_JSONRPC(const std::any& context, HTTPRequest* req)
 {
     // JSONRPC handles only POST
@@ -189,92 +301,14 @@ static bool HTTPReq_JSONRPC(const std::any& context, HTTPRequest* req)
         // Set the URI
         jreq.URI = req->GetURI();
 
-        UniValue reply;
-        bool user_has_whitelist = g_rpc_whitelist.count(jreq.authUser);
-        if (!user_has_whitelist && g_rpc_whitelist_default) {
-            LogWarning("RPC User %s not allowed to call any methods", jreq.authUser);
-            req->WriteReply(HTTP_FORBIDDEN);
-            return false;
-
-        // singleton request
-        } else if (valRequest.isObject()) {
-            jreq.parse(valRequest);
-            if (user_has_whitelist && !g_rpc_whitelist[jreq.authUser].count(jreq.strMethod)) {
-                LogWarning("RPC User %s not allowed to call method %s", jreq.authUser, jreq.strMethod);
-                req->WriteReply(HTTP_FORBIDDEN);
-                return false;
-            }
-
-            // Legacy 1.0/1.1 behavior is for failed requests to throw
-            // exceptions which return HTTP errors and RPC errors to the client.
-            // 2.0 behavior is to catch exceptions and return HTTP success with
-            // RPC errors, as long as there is not an actual HTTP server error.
-            const bool catch_errors{jreq.m_json_version == JSONRPCVersion::V2};
-            reply = JSONRPCExec(jreq, catch_errors);
-
-            if (jreq.IsNotification()) {
-                // Even though we do execute notifications, we do not respond to them
-                req->WriteReply(HTTP_NO_CONTENT);
-                return true;
-            }
-
-        // array of requests
-        } else if (valRequest.isArray()) {
-            // Check authorization for each request's method
-            if (user_has_whitelist) {
-                for (unsigned int reqIdx = 0; reqIdx < valRequest.size(); reqIdx++) {
-                    if (!valRequest[reqIdx].isObject()) {
-                        throw JSONRPCError(RPC_INVALID_REQUEST, "Invalid Request object");
-                    } else {
-                        const UniValue& request = valRequest[reqIdx].get_obj();
-                        // Parse method
-                        std::string strMethod = request.find_value("method").get_str();
-                        if (!g_rpc_whitelist[jreq.authUser].count(strMethod)) {
-                            LogWarning("RPC User %s not allowed to call method %s", jreq.authUser, strMethod);
-                            req->WriteReply(HTTP_FORBIDDEN);
-                            return false;
-                        }
-                    }
-                }
-            }
-
-            // Execute each request
-            reply = UniValue::VARR;
-            for (size_t i{0}; i < valRequest.size(); ++i) {
-                // Batches never throw HTTP errors, they are always just included
-                // in "HTTP OK" responses. Notifications never get any response.
-                UniValue response;
-                try {
-                    jreq.parse(valRequest[i]);
-                    response = JSONRPCExec(jreq, /*catch_errors=*/true);
-                } catch (UniValue& e) {
-                    response = JSONRPCReplyObj(NullUniValue, std::move(e), jreq.id, jreq.m_json_version);
-                } catch (const std::exception& e) {
-                    response = JSONRPCReplyObj(NullUniValue, JSONRPCError(RPC_PARSE_ERROR, e.what()), jreq.id, jreq.m_json_version);
-                }
-                if (!jreq.IsNotification()) {
-                    reply.push_back(std::move(response));
-                }
-            }
-            // Return no response for an all-notification batch, but only if the
-            // batch request is non-empty. Technically according to the JSON-RPC
-            // 2.0 spec, an empty batch request should also return no response,
-            // However, if the batch request is empty, it means the request did
-            // not contain any JSON-RPC version numbers, so returning an empty
-            // response could break backwards compatibility with old RPC clients
-            // relying on previous behavior. Return an empty array instead of an
-            // empty response in this case to favor being backwards compatible
-            // over complying with the JSON-RPC 2.0 spec in this case.
-            if (reply.size() == 0 && valRequest.size() > 0) {
-                req->WriteReply(HTTP_NO_CONTENT);
-                return true;
-            }
+        HTTPStatusCode status;
+        UniValue reply{ExecuteHTTPRPC(valRequest, jreq, status)};
+        if (reply.isNull()) {
+            req->WriteReply(status);
+            return status == HTTP_NO_CONTENT;
         }
-        else
-            throw JSONRPCError(RPC_PARSE_ERROR, "Top-level object parse error");
-
         req->WriteHeader("Content-Type", "application/json");
-        req->WriteReply(HTTP_OK, reply.write() + "\n");
+        req->WriteReply(status, reply.write() + "\n");
     } catch (UniValue& e) {
         JSONErrorReply(req, std::move(e), jreq);
         return false;

@@ -11,6 +11,8 @@ class MiningPageTests : public QObject
 
 private Q_SLOTS:
     void hashrateBaselineAndFormula();
+    void fractionalShareWork();
+    void sv2SettingsValidateAndMaskCredentials();
     void hashrateWindowAndResets();
     void hashrateVisibilityAndHistory();
     void networkHashrateAndChance();

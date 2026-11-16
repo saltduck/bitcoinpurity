@@ -12,7 +12,7 @@
 
 class ClientModel;
 class PairingPage;
-#ifdef ENABLE_DATUM
+#if defined(ENABLE_DATUM) || defined(ENABLE_SV2)
 class MiningPage;
 #endif
 class PlatformStyle;
@@ -70,7 +70,7 @@ private:
     QMap<WalletModel*, WalletView*> mapWalletViews;
 
     PairingPage *m_page_pairing;
-#ifdef ENABLE_DATUM
+#if defined(ENABLE_DATUM) || defined(ENABLE_SV2)
     MiningPage *m_page_mining;
 #endif
 
@@ -98,7 +98,7 @@ public Q_SLOTS:
     void gotoSendCoinsPage(QString addr = "");
     /** Switch to the embedded address book page */
     void gotoAddressBookPage();
-#ifdef ENABLE_DATUM
+#if defined(ENABLE_DATUM) || defined(ENABLE_SV2)
     /** Switch to the DATUM mining dashboard */
     void gotoMiningPage();
 #endif

@@ -1,29 +1,51 @@
-# TASK-032: Signed chain decisions for parked splits (proposed)
+# TASK-032: Rust protocol gateway and lifecycle
 
-Status: requirements only; implementation not started. Numbered 032 because
-TASK-030/031 are used by the catch-up parking branch.
+Implement pinned SRI integration, authenticated Full-Template declaration, V1 conversion, bounded state and same-pool retry through C ABI.
 
-Implement the [requirements](../../input/requirements.md) section "Signed chain
-decisions for parked splits" per the [architecture](../architecture/chain-decisions.md)
-and [contract](../api/chain-decisions.md).
+See [requirements](../../input/requirements.md), [architecture](../architecture/embedded-sv2.md) and [contract](../api/sv2.md).
 
-## Before implementation
+## Status
 
-Settle the open decisions: threshold and key holders, default mode (and any
-`apply` default for miners), rewind limit, and whether HTTPS fetch ships with
-the manual phase.
+Implemented and exercised by independent local pool/JDS acceptance on macOS and Linux. Platform gates remain in TASK-049.
 
-## Acceptance (phase 1)
+## Authenticated transport checkpoint
 
-- Valid threshold decisions resolve a parked split: the chosen chain becomes
-  active, conflicting branches are parked and the warning clears.
-- Rejected: wrong domain/network, below threshold, duplicate signer keys,
-  replayed or lower sequence, expired, unknown or duplicate JSON keys.
-- An invalid chosen block is never accepted; the decision is rejected with a
-  warning. Targets at or below activation height and rewinds above the limit
-  are not applied automatically.
-- Missing blocks leave the decision pending until fetched and validated.
-- `confirm` mode only warns until `applychaindecision`; `off` ignores.
-- A newer decision reverses an earlier one. The last applied sequence survives
-  restart.
-- Tests are written first and fail on the current sources.
+Pinned SRI commit d1d30f3e755b0a5108633e1be7012034a8caaecd and Rust 1.96.0,
+with a committed Cargo lockfile. Added cancellation-safe framed Noise transport,
+bounded connection/write timeouts, and support for borrowed/owned SRI messages.
+The independent client/server test verifies encrypted messages and rejection of
+a different authority key. It first failed against the missing wire module.
+
+## Gateway runtime checkpoint
+
+Implemented a node-owned Rust runtime, bounded C ABI, Full-Template JDS flow,
+exact missing-transaction response, custom-job acknowledgement gate, SRI channel
+share validation, V1 translation and miner authorization/version rolling.
+Share acknowledgement maps are bounded and connection-local. Remote failures
+close miners and retry the original authenticated pool; no alternate mining
+mode exists. The unavailable-pool regression first failed against the missing
+runtime, then verified no downstream work and prompt joined shutdown.
+
+The local C++/Rust gateway has passed actual V1 share and block PoW against an
+independent SRI-server fixture, including block propagation to a second node.
+Detailed fixture acceptance is tracked in TASK-033; platform/Qt checks remain.
+
+
+## Protocol boundary follow-up
+
+Production transport validates framing, extension and channel flags using the
+pinned SRI codec. Duplicate or excessive JDS transaction indices are rejected
+before materializing transaction bytes, preventing response amplification.
+An adversarial independent fixture first demonstrated a duplicate response,
+then verified that the connection closes without producing one.
+
+Local credential failures now return false while retaining the original
+authorization deadline; the earlier writer race closed the socket before the
+queued false result was sent. The external miner test first observed EOF and
+then verified the actual false response after the fix. Block result/hash/time
+and fractional target difficulty are included in the shared status snapshot.
+
+
+Negotiation includes the configured endpoint host and port (IPv6 brackets are
+removed from the host field). The independent fixture validates these metadata
+fields; it first rejected the former empty-host/zero-port messages.

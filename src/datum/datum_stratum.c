@@ -312,6 +312,14 @@ void *datum_stratum_v1_socket_server(void *arg) {
 		ram_allocated += app->max_clients_thread * sizeof(T_DATUM_CLIENT_DATA);
 		ram_allocated += app->max_clients_thread * sizeof(datum_pollfd);
 		ram_allocated += app->max_clients_thread * sizeof(int);
+		// Initialize each thread lock exactly once, before the listener thread
+		// starts and before global_stratum_app is published to RPC readers.
+		ret = pthread_mutex_init(&app->datum_threads[i].thread_data_lock, NULL);
+		if (ret) {
+			DLOG_FATAL("Could not init mutex for thread data: %s", strerror(ret));
+			panic_from_thread(__LINE__);
+			return NULL;
+		}
 	}
 	
 	// allocate memory for our per-thread data
@@ -427,10 +435,21 @@ void *datum_stratum_v1_socket_server(void *arg) {
 	}
 	pthread_join(pthread_datum_stratum_socket_server, NULL);
 	for (i = 0; i < app->max_threads; ++i) {
-		if (app->datum_threads[i].is_active) pthread_join(app->datum_threads[i].pthread, NULL);
+		// The listener thread was joined above, so pthread_started is stable here.
+		if (app->datum_threads[i].pthread_started) pthread_join(app->datum_threads[i].pthread, NULL);
 	}
 	pthread_mutex_lock(&stratum_app_lock);
 	global_stratum_app = NULL;
+	for (i = 0; i < app->max_threads; ++i) {
+		// Each pool thread allocates its duplicate-share table in its init function.
+		T_DATUM_STRATUM_THREADPOOL_DATA *sdata = app->datum_threads[i].app_thread_data;
+		T_DATUM_STRATUM_DUPES *dupes = sdata ? sdata->dupes : NULL;
+		if (dupes) {
+			free(dupes->ptr);
+			free(dupes);
+			sdata->dupes = NULL;
+		}
+	}
 	free(app->datum_threads[0].client_data[0].app_client_data);
 	free(app->datum_threads[0].app_thread_data);
 	for (i = 0; i < app->max_threads; ++i) {

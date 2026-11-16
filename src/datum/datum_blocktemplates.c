@@ -407,6 +407,12 @@ void *datum_gateway_template_thread(void *args) {
 	bool was_notified = false;
 	int wnc = 0;
 	uint64_t last_block_change = 0;
+	// Monotonic time the work-update period is measured from: when we last published a stratum job (or last
+	// failed to get a usable template). The wait below must be deadline-based rather than counting fixed-size
+	// sleeps, since the sleep granularity is coarse on some platforms (e.g. ~15.6ms on Windows, which turned a
+	// 30s refresh into ~3 minutes, letting jobs go stale and stratum proxies time out between notifies).
+	uint64_t work_period_start_ms = 0;
+	const uint64_t work_update_ms = (uint64_t)datum_config.bitcoind_work_update_seconds * 1000ULL;
 	pthread_t pthread_datum_gateway_fallback_notifier;
 	tcurl = curl_easy_init();
 	if (!tcurl) {
@@ -443,6 +449,7 @@ void *datum_gateway_template_thread(void *args) {
 		gbt = bitcoind_json_rpc_call(tcurl, &datum_config, gbt_req);
 		
 		if (!gbt) {
+			work_period_start_ms = monotonic_time_millis();
 			datum_blocktemplates_error = "Could not fetch new template!";
 			datum_embedded_record_template_result(false, datum_blocktemplates_error);
 			DLOG_ERROR("Could not fetch new template from %s!", datum_config.bitcoind_rpcurl);
@@ -451,14 +458,17 @@ void *datum_gateway_template_thread(void *args) {
 		} else {
 			res_val = json_object_get(gbt, "result");
 			if (!res_val) {
+				work_period_start_ms = monotonic_time_millis();
 				datum_blocktemplates_error = "Could not decode GBT result!";
 				datum_embedded_record_template_result(false, datum_blocktemplates_error);
 				DLOG_ERROR("%s", datum_blocktemplates_error);
 			} else {
 				DLOG_DEBUG("DEBUG: calling datum_gbt_parser (new=%d)", was_notified?1:0);
 				t = datum_gbt_parser(res_val);
-				
-				if (t) {
+
+				if (!t) {
+					work_period_start_ms = monotonic_time_millis();
+				} else {
 					datum_blocktemplates_error = NULL;
 					datum_embedded_record_template_result(true, NULL);
 					DLOG_DEBUG("height: %lu / value: %"PRIu64, (unsigned long)t->height, t->coinbasevalue);
@@ -485,7 +495,8 @@ void *datum_gateway_template_thread(void *args) {
 						
 						// wait for the empties to complete
 						DLOG_DEBUG("Waiting on empty work send completion...");
-						for(j=0;j<4000;j++) {
+						const uint64_t empty_wait_start_ms = monotonic_time_millis();
+						while ((monotonic_time_millis() - empty_wait_start_ms) < 4000) {
 							if (stratum_latest_empty_check_ready_for_full()) break;
 							usleep(1001);
 						}
@@ -496,6 +507,7 @@ void *datum_gateway_template_thread(void *args) {
 						i = datum_stratum_v1_global_subscriber_count();
 						DLOG_INFO("Updating priority stratum job for block %lu: %.8f BTC, %lu txns, %lu bytes (Sent to %llu stratum client%s)", (unsigned long)t->height, (double)t->coinbasevalue / (double)100000000.0, (unsigned long)t->txn_count, (unsigned long)t->txn_total_size, (unsigned long long)i, (i!=1)?"s":"");
 						update_stratum_job(t,false,JOB_STATE_FULL_PRIORITY_WAIT_COINBASER);
+						work_period_start_ms = monotonic_time_millis();
 					} else {
 						if (was_notified) {
 							// we got a notification of a new block, but there doesn't seem to actually be a new block.
@@ -551,6 +563,7 @@ void *datum_gateway_template_thread(void *args) {
 									DLOG_DEBUG("t->curtime = %llu", (unsigned long long)t->curtime);
 									
 									update_stratum_job(t,true,JOB_STATE_FULL_PRIORITY_WAIT_COINBASER);
+									work_period_start_ms = monotonic_time_millis();
 									new_notify_blockhash[0] = 0;
 									was_notified = false;
 								}
@@ -559,7 +572,10 @@ void *datum_gateway_template_thread(void *args) {
 						} else {
 							i = datum_stratum_v1_global_subscriber_count();
 							DLOG_INFO("Updating standard stratum job for block %lu: %.8f BTC, %lu txns, %lu bytes (Sent to %llu stratum client%s)", (unsigned long)t->height, (double)t->coinbasevalue / (double)100000000.0, (unsigned long)t->txn_count, (unsigned long)t->txn_total_size, (unsigned long long)i, (i!=1)?"s":"");
+							// Periodic refresh: publish a new job every work update period even if the template is unchanged,
+							// so miners always hold fresh work (well inside the stale-share window) and proxies see regular notifies.
 							update_stratum_job(t,false,JOB_STATE_FULL_NORMAL_WAIT_COINBASER);
+							work_period_start_ms = monotonic_time_millis();
 						}
 					}
 				}
@@ -569,7 +585,8 @@ void *datum_gateway_template_thread(void *args) {
 		gbt = NULL;
 		
 		if ((!was_notified) || (new_notify || new_notify_threadsafe)) {
-			for(i=0;i<(((uint64_t)datum_config.bitcoind_work_update_seconds*(uint64_t)1000000)/(uint64_t)2500) && !datum_embedded_should_stop();i++) {
+			// Wait until the work update deadline (measured from the last published job) or a block notification.
+			while (!datum_embedded_should_stop() && (monotonic_time_millis() - work_period_start_ms) < work_update_ms) {
 				usleep(2500);
 				if (new_notify || new_notify_threadsafe) {
 					new_notify = 0;

@@ -46,6 +46,10 @@ static const unsigned int MAX_HEADERS_RESULTS = 2000;
 static constexpr int MAX_STALE_OUTBOUND_CONNECTIONS{MAX_OUTBOUND_FULL_RELAY_CONNECTIONS + MAX_BLOCK_RELAY_ONLY_CONNECTIONS};
 /** -maxstaleoutbound default */
 static constexpr int DEFAULT_MAXSTALEOUTBOUND{8};
+/** Default for -parkcatchuppeers: qualifying peers that must report our tip
+ *  before newly connected blocks become deep-reorg parking protected. */
+static constexpr int DEFAULT_PARK_CATCHUP_PEERS{3};
+static constexpr int MAX_PARK_CATCHUP_PEERS{64};
 
 struct CNodeStateStats {
     int nSyncHeight = -1;
@@ -94,6 +98,7 @@ public:
         //! a test-only option).
         uint32_t max_headers_result{MAX_HEADERS_RESULTS};
         unsigned int maxstaleoutbound{DEFAULT_MAXSTALEOUTBOUND};
+        int park_catchup_peers{DEFAULT_PARK_CATCHUP_PEERS};
     };
 
     static std::unique_ptr<PeerManager> make(CConnman& connman, AddrMan& addrman,

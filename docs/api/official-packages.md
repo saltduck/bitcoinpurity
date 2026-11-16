@@ -25,3 +25,37 @@ That entry contains the four metadata fields, `download_uri`, `archive_sha256`,
 argument, performs no signing and requires no OpenSSL installation. This tool
 does not merge catalogs or upload files. Exit code 0 means an unsigned file was written; errors
 return nonzero and go to stderr. See the contrib README for examples.
+
+## Software release manifest generator
+
+`python3 contrib/official-packages/generate-releases-manifest.py` requires
+`--version` (with or without `v`). Optional arguments are `--artifacts-dir`
+(default `./guix-build-<version>/output` relative to the current working directory,
+using `--version` without the leading `v`),
+`--repo` (default `saltduck/bitcoinpurity`), `--released-at` (default
+current UTC), `--urgency` (`optional`, `recommended`, `required`; default
+`optional`) and `--output` (default `releases.json`).
+
+Accepted names use `bitcoinpurity-VERSION-HOST` or legacy
+`bitcoin-purity-VERSION-HOST` (case insensitive):
+
+| Host | Platform | Selected artifact |
+| --- | --- | --- |
+| `x86_64-linux-gnu` | `linux-x86_64` | `.tar.gz` |
+| `aarch64-linux-gnu` | `linux-arm64` | `.tar.gz` |
+| `arm64-apple-darwin` | `macos-arm64` | `.zip`, or `-unsigned.zip` |
+| `x86_64-apple-darwin` | `macos-x86_64` | `.zip`, or `-unsigned.zip` |
+| `win64`, `x86_64-w64-mingw32` | `windows-x86_64` | `.zip`, or `-pgpverifiable.zip` |
+
+Only the requested version is considered. Unsuffixed final ZIPs take priority
+over presigning ZIPs. Equally preferred copies in different subdirectories
+are merged if filenames, byte sizes and SHA256 digests match; the first sorted
+path is selected. Conflicting contents or different asset names still fail.
+Other files (including EXE installers, macOS CLI
+tarballs, source/debug/codesigning archives) are excluded. Empty input or no
+matching artifacts fails without writing a manifest.
+
+Output remains unsigned schema 1: `latest` contains version, UTC release time,
+urgency, release notes URL and artifacts with platform, GitHub download URI,
+SHA256 and byte size. Generation overwrites `--output` as before. Sign the final
+manifest separately with `sign-manifest.py`.

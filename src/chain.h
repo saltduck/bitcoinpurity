@@ -138,6 +138,10 @@ enum BlockStatus : uint32_t {
     BLOCK_PARKED             =   512,
     BLOCK_PARKED_CHILD       =  1024,
     BLOCK_PARKED_MASK        =   BLOCK_PARKED | BLOCK_PARKED_CHILD,
+
+    //! Local policy: connected to the active chain after this run's park
+    //! catch-up ended. Only protected blocks count toward the parking depth.
+    BLOCK_PARK_PROTECTED     =  2048,
 };
 
 /** The block chain is a tree shaped structure starting with the
