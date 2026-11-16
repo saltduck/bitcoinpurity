@@ -8,7 +8,10 @@
 #include <headerssync.h>
 #include <pow.h>
 #include <test/util/setup_common.h>
+#include <util/time.h>
 #include <validation.h>
+
+#include <deque>
 #include <vector>
 
 #include <boost/test/unit_test.hpp>
@@ -176,6 +179,132 @@ BOOST_AUTO_TEST_CASE(headers_sync_state)
     // Nevertheless, no validation errors should have been detected with the
     // chain:
     BOOST_CHECK(result.success);
+}
+
+namespace {
+// Synthetic mainnet block index around the ASERT anchor. Presync does not check
+// proof of work, so headers only need correct links, times and nBits.
+struct AsertIndexChain {
+    const Consensus::Params& params;
+    std::deque<uint256> hashes;
+    std::deque<CBlockIndex> index;
+
+    explicit AsertIndexChain(const Consensus::Params& consensus) : params{consensus} {}
+
+    const CBlockIndex& Tip() const { return index.back(); }
+    const CBlockIndex& At(int height) const { return index.at(height - index.front().nHeight); }
+
+    // Header following `prev` at `time`, with nBits as full validation requires.
+    CBlockHeader Next(const CBlockIndex& prev, int64_t time) const
+    {
+        CBlockHeader header;
+        header.nVersion = 0x20000000;
+        header.hashPrevBlock = prev.GetBlockHash();
+        header.nTime = time;
+        header.nBits = prev.nHeight + 1 >= params.nPurityActivationHeight ? GetNextWorkRequired(&prev, &header, params) : prev.nBits;
+        return header;
+    }
+
+    void Append(const CBlockHeader& header)
+    {
+        hashes.push_back(header.GetHash());
+        CBlockIndex& entry = index.emplace_back(header);
+        entry.phashBlock = &hashes.back();
+        entry.pprev = index.size() > 1 ? &index[index.size() - 2] : nullptr;
+        entry.nHeight = entry.pprev ? entry.pprev->nHeight + 1 : Consensus::MAINNET_ASERT_ANCHOR_HEIGHT - 2;
+        entry.nChainWork = (entry.pprev ? entry.pprev->nChainWork : arith_uint256{1} << 80) + GetBlockProof(entry);
+    }
+};
+
+std::vector<CBlockHeader> HeadersAfter(const AsertIndexChain& chain, int height)
+{
+    std::vector<CBlockHeader> headers;
+    for (int h = height + 1; h <= chain.Tip().nHeight; ++h) headers.push_back(chain.At(h).GetBlockHeader());
+    return headers;
+}
+
+bool Presync(const Consensus::Params& params, const CBlockIndex& start, const std::vector<CBlockHeader>& headers)
+{
+    HeadersSyncState sync{0, params, &start, arith_uint256{1} << 255};
+    return sync.ProcessNextHeaders(headers, true).success;
+}
+} // namespace
+
+BOOST_AUTO_TEST_CASE(presync_requires_exact_asert_bits)
+{
+    const auto main_params{CreateChainParams(*m_node.args, ChainType::MAIN)};
+    const Consensus::Params& params{main_params->GetConsensus()};
+    AsertIndexChain chain{params};
+    const int64_t now{GetTime()};
+    int64_t time{now - 10 * 24 * 60 * 60};
+    CBlockHeader first;
+    first.nVersion = 0x20000000;
+    first.nTime = time;
+    first.nBits = 0x1702c4e4;
+    chain.Append(first);
+    while (chain.Tip().nHeight < params.nPurityActivationHeight + 8) {
+        time += 600;
+        chain.Append(chain.Next(chain.Tip(), time));
+    }
+    const uint32_t pow_limit_bits{UintToArith256(params.powLimit).GetCompact()};
+    const int activation{params.nPurityActivationHeight};
+
+    for (const int start_height : {params.nAsertAnchorHeight - 2, activation + 3}) {
+        const CBlockIndex& start{chain.At(start_height)};
+        auto headers{HeadersAfter(chain, start_height)};
+        BOOST_CHECK(Presync(params, start, headers));
+
+        auto cheap{headers};
+        cheap.back().nBits = pow_limit_bits;
+        BOOST_CHECK(!Presync(params, start, cheap));
+    }
+
+    // A minimum-difficulty header right after the start is rejected as well.
+    CBlockHeader cheap_next{chain.Next(chain.Tip(), time + 600)};
+    cheap_next.nBits = pow_limit_bits;
+    BOOST_CHECK(Presync(params, chain.Tip(), {chain.Next(chain.Tip(), time + 600)}));
+    BOOST_CHECK(!Presync(params, chain.Tip(), {cheap_next}));
+
+    // Future timestamps would lower ASERT difficulty; they are rejected.
+    BOOST_CHECK(!Presync(params, chain.Tip(), {chain.Next(chain.Tip(), now + MAX_FUTURE_BLOCK_TIME + 600)}));
+    BOOST_CHECK(Presync(params, chain.Tip(), {chain.Next(chain.Tip(), now + MAX_FUTURE_BLOCK_TIME - 600)}));
+
+    // The activation block may be harder than required, as in full validation.
+    const CBlockIndex& before_activation{chain.At(activation - 1)};
+    CBlockHeader harder{chain.At(activation).GetBlockHeader()};
+    arith_uint256 target;
+    target.SetCompact(harder.nBits);
+    target >>= 1;
+    harder.nBits = target.GetCompact();
+    BOOST_CHECK(Presync(params, before_activation, {harder}));
+    harder.nBits = pow_limit_bits;
+    BOOST_CHECK(!Presync(params, before_activation, {harder}));
+}
+
+BOOST_AUTO_TEST_CASE(redownload_requires_exact_asert_bits)
+{
+    const auto main_params{CreateChainParams(*m_node.args, ChainType::MAIN)};
+    const Consensus::Params& params{main_params->GetConsensus()};
+    AsertIndexChain chain{params};
+    int64_t time{GetTime() - 10 * 24 * 60 * 60};
+    CBlockHeader first;
+    first.nVersion = 0x20000000;
+    first.nTime = time;
+    first.nBits = 0x1702c4e4;
+    chain.Append(first);
+    while (chain.Tip().nHeight < params.nPurityActivationHeight + 3) {
+        time += 600;
+        chain.Append(chain.Next(chain.Tip(), time));
+    }
+    const CBlockIndex& start{chain.Tip()};
+    const CBlockHeader next{chain.Next(start, time + 600)};
+    HeadersSyncState sync{0, params, &start, start.nChainWork + GetBlockProof(CBlockIndex{next})};
+    BOOST_REQUIRE(sync.ProcessNextHeaders({next}, true).success);
+    BOOST_REQUIRE(sync.GetState() == HeadersSyncState::State::REDOWNLOAD);
+
+    CBlockHeader cheap{next};
+    cheap.nBits = UintToArith256(params.powLimit).GetCompact();
+    BOOST_CHECK(!sync.ProcessNextHeaders({cheap}, true).success);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

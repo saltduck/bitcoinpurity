@@ -2,7 +2,12 @@
 // Distributed under the MIT software license.
 #include <qt/miningpage.h>
 
+#include <bitcoin-build-config.h> // IWYU pragma: keep
 #include <mining/datum_bridge.h>
+#ifdef ENABLE_SV2
+#include <mining/sv2_bridge.h>
+#include <univalue.h>
+#endif
 
 #include <QAbstractItemView>
 #include <QDateTime>
@@ -254,7 +259,7 @@ void MiningHashrateTracker::pause(uint64_t now_ms)
     resetWindow();
 }
 
-MiningHashrateResult MiningHashrateTracker::update(uint64_t now_ms, bool enabled, bool running, uint64_t session_started_ms, uint32_t authorized_miners, uint64_t accepted_difficulty)
+MiningHashrateResult MiningHashrateTracker::update(uint64_t now_ms, bool enabled, bool running, uint64_t session_started_ms, uint32_t authorized_miners, long double accepted_difficulty)
 {
     if (!m_active) return m_result;
 
@@ -296,7 +301,7 @@ MiningHashrateResult MiningHashrateTracker::update(uint64_t now_ms, bool enabled
     const WorkCheckpoint& first{m_checkpoints.front()};
     const WorkCheckpoint& last{m_checkpoints.back()};
     const uint64_t elapsed_ms{last.timestamp_ms - first.timestamp_ms};
-    const uint64_t accepted_delta{last.accepted_difficulty - first.accepted_difficulty};
+    const long double accepted_delta{last.accepted_difficulty - first.accepted_difficulty};
     if (elapsed_ms < SAMPLE_INTERVAL_MS) {
         m_result.state = MiningHashrateState::CollectingBaseline;
         m_result.hashrate_ths.reset();
@@ -559,7 +564,7 @@ MiningPage::MiningPage(QWidget* parent) : QWidget(parent), m_timer(new QTimer(th
     cards->addWidget(MetricCard(tr("Estimated Miner Hashrate"), m_dashboard_hashrate, QString(), &m_dashboard_hashrate_detail), 0, 0);
     m_chance_graph = new ChanceGraphWidget;
     cards->addWidget(MetricCard(tr("Chance per Block"), m_dashboard_chance, QString(), &m_dashboard_chance_detail, m_chance_graph), 0, 1);
-    cards->addWidget(MetricCard(tr("Current Block Number"), m_dashboard_height, tr("Current DATUM job height")), 1, 0);
+    cards->addWidget(MetricCard(tr("Current Block Number"), m_dashboard_height, tr("Current mining job height")), 1, 0);
     m_dashboard_hashrate->setObjectName(QStringLiteral("miningDashboardHashrate"));
     m_dashboard_hashrate_detail->setObjectName(QStringLiteral("miningDashboardHashrateDetail"));
     m_dashboard_chance->setObjectName(QStringLiteral("miningDashboardChance"));
@@ -605,7 +610,7 @@ MiningPage::MiningPage(QWidget* parent) : QWidget(parent), m_timer(new QTimer(th
     auto* runtime_group = new QGroupBox(tr("Runtime and Network"));
     auto* runtime = new QFormLayout(runtime_group);
     AddRow(runtime, tr("Status"), m_status);
-    AddRow(runtime, tr("DATUM uptime"), m_uptime);
+    AddRow(runtime, tr("Mining uptime"), m_uptime);
     AddRow(runtime, tr("Stratum listener"), m_listen);
     AddRow(runtime, tr("Authentication"), m_auth);
     AddRow(runtime, tr("Port mapping"), m_mapping);
@@ -688,10 +693,56 @@ void MiningPage::hideEvent(QHideEvent* event)
 
 void MiningPage::refresh()
 {
-    const mining::DatumStatusSnapshot status{mining::GetDatumStatusSnapshot()};
+    mining::DatumStatusSnapshot status;
+    long double accepted_work{0};
+#ifdef ENABLE_DATUM
+    status = mining::GetDatumStatusSnapshot();
+    accepted_work = status.session_accepted_difficulty;
+#endif
+#ifdef ENABLE_SV2
+    const UniValue sv2{mining::GetSv2Info()};
+    const bool sv2_active{sv2["enabled"].isBool() && sv2["enabled"].get_bool()};
+    const auto number = [&](const char* key) -> uint64_t { return sv2[key].isNum() ? sv2[key].getInt<uint64_t>() : 0; };
+    double sv2_best{0};
+    uint64_t sv2_pending{0};
+    if (sv2_active) {
+        status = {};
+        const auto text = [&](const char* key) { return sv2[key].isStr() ? sv2[key].get_str() : std::string{}; };
+        status.enabled = true;
+        status.running = sv2["running"].isBool() && sv2["running"].get_bool();
+        status.status = "SV2: " + text("status");
+        if (!text("stage").empty()) status.status += " · " + text("stage");
+        if (!text("error").empty()) status.status += " · " + text("error");
+        status.listen = text("listen"); status.port = number("port");
+        status.auth_required = sv2["auth_required"].isBool() && sv2["auth_required"].get_bool();
+        status.clients = number("clients"); status.subscribed_clients = number("subscribed_clients");
+        status.authorized_clients = number("authorized_clients");
+        status.session_started_ms = 1000 * number("session_started");
+        status.last_share_time_ms = 1000 * number("last_share_time");
+        status.session_accepted_shares = number("accepted_shares");
+        status.session_rejected_shares = number("rejected_shares");
+        accepted_work = sv2["accepted_difficulty"].isNum() ? sv2["accepted_difficulty"].get_real() : 0;
+        sv2_best = sv2["best_share_difficulty"].isNum() ? sv2["best_share_difficulty"].get_real() : 0;
+        sv2_pending = number("pending_shares");
+        status.current_height = number("current_height"); status.job_id = text("job_id");
+        status.job_created_ms = 1000 * number("job_created"); status.previous_block_hash = text("previous_block_hash");
+        status.nbits = number("nbits");
+        status.network_difficulty = sv2["network_difficulty"].isNum() ? sv2["network_difficulty"].get_real() : 0;
+        status.transaction_count = number("transactions") + 1;
+        status.template_size = number("template_size"); status.template_weight = number("template_weight");
+        status.coinbase_value = number("coinbase_value");
+        status.last_template_success = status.running; status.last_template_update_ms = status.job_created_ms;
+        status.block_candidates = number("block_candidates");
+        status.block_submissions_accepted = number("blocks_accepted");
+        status.block_submissions_rejected = number("blocks_rejected");
+        status.last_block_time_ms = 1000 * number("last_block_time");
+        status.last_block_hash = text("last_block_hash");
+        status.last_block_result = text("last_block_result");
+    }
+#endif
     const uint64_t now = QDateTime::currentMSecsSinceEpoch();
     const bool collecting{status.running && status.status != "Stopping"};
-    const MiningHashrateResult hashrate{m_hashrate_tracker.update(now, status.enabled, collecting, status.session_started_ms, status.authorized_clients, status.session_accepted_difficulty)};
+    const MiningHashrateResult hashrate{m_hashrate_tracker.update(now, status.enabled, collecting, status.session_started_ms, status.authorized_clients, accepted_work)};
     m_dashboard_status->setText(MiningHashrateStateText(hashrate.state));
     m_dashboard_hashrate->setText(hashrate.hashrate_ths ? MiningHashrateText(*hashrate.hashrate_ths) : QStringLiteral("—"));
     m_dashboard_hashrate_detail->setText(MiningHashrateStateText(hashrate.state));
@@ -742,6 +793,16 @@ void MiningPage::refresh()
     const uint64_t total = status.session_accepted_shares + status.session_rejected_shares;
     const double reject_rate = total ? 100.0 * status.session_rejected_shares / total : 0.0;
     m_shares->setText(tr("%1 accepted · %2 rejected · %3% rejected").arg(status.session_accepted_shares).arg(status.session_rejected_shares).arg(reject_rate, 0, 'f', 2));
+#ifdef ENABLE_SV2
+    if (sv2_active) {
+        m_difficulty->setText(valid_job ? QString::number(sv2["share_difficulty"].get_real(), 'g', 12) : QStringLiteral("—"));
+        SetSummaryRow(m_summary, 2, tr("Locally valid shares"), QString::number(number("local_valid_shares")), tr("Passed local validation; pool acknowledgement is tracked separately"));
+        SetSummaryRow(m_summary, 3, tr("Pending / abandoned shares"), tr("%1 / %2").arg(sv2_pending).arg(number("abandoned_shares")), tr("Pending upstream acknowledgement / disconnected before acknowledgement"));
+        m_miners->hide();
+        m_shares->setText(tr("%1 · %2 pending").arg(m_shares->text(), QString::number(sv2_pending)));
+        SetSummaryRow(m_summary, 4, MiningSummaryMetricText(4), QString::number(sv2_best, 'g', 12), tr("Highest achieved difficulty among pool-acknowledged shares"));
+    }
+#endif
     m_last_share->setText(status.last_share_time_ms ? TimeText(status.last_share_time_ms) + QStringLiteral(" · ") + AgeText(status.last_share_time_ms, now) : QStringLiteral("—"));
 
     m_height->setText(valid_job ? QString::number(status.current_height) : QStringLiteral("—"));

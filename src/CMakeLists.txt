@@ -108,6 +108,9 @@ add_dependencies(bitcoin_clientversion generate_build_info)
 
 add_subdirectory(crypto)
 add_subdirectory(util)
+if(BUILD_SV2)
+  add_subdirectory(sv2)
+endif()
 if(BUILD_DATUM)
   add_subdirectory(datum)
 endif()
@@ -267,6 +270,9 @@ add_library(bitcoin_node STATIC EXCLUDE_FROM_ALL
   kernel/disconnected_transactions.cpp
   kernel/mempool_removal_reason.cpp
   mapport.cpp
+  mining/sv2_template.cpp
+  $<$<BOOL:${BUILD_SV2}>:mining/sv2_bridge.cpp>
+  $<$<BOOL:${BUILD_SV2}>:rpc/sv2.cpp>
   net.cpp
   net_processing.cpp
   netgroup.cpp
@@ -345,6 +351,7 @@ target_link_libraries(bitcoin_node
     core_interface
     bitcoin_common
     bitcoin_util
+    $<TARGET_NAME_IF_EXISTS:sv2_rust>
     $<TARGET_NAME_IF_EXISTS:bitcoin_zmq>
     leveldb
     univalue

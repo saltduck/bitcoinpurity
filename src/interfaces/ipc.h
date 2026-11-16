@@ -78,6 +78,9 @@ public:
         addCleanup(typeid(Interface), &iface, std::move(cleanup));
     }
 
+    //! Disconnect external incoming clients so they cannot block node shutdown.
+    virtual void disconnectIncoming() = 0;
+
     //! IPC context struct accessor (see struct definition for more description).
     virtual ipc::Context& context() = 0;
 

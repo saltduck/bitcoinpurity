@@ -1,27 +1,42 @@
-# TASK-033: DATUM public exposure and payout script hardening (M-3, M-4)
+# TASK-033: Independent pool and V1 end-to-end acceptance
 
-- Status: Implemented
-- Depends on: TASK-003, TASK-007, TASK-009
+Test-only independent pool/JDS, actual V1 PoW, acknowledged shares and block propagation to a second regtest node.
 
-Implements the DATUM security criteria in [requirements](../../input/requirements.md)
-added for audit findings M-3 and M-4. Numbered 033 because TASK-030/031/032 are
-used on master or other branches.
+See [requirements](../../input/requirements.md), [architecture](../architecture/embedded-sv2.md) and [contract](../api/sv2.md).
 
-## Contract
+## Status
 
-- `datumupnp=1` requires `datumauth=1` (startup error; Qt Settings refuses to save).
-- With `datumauth=0`, Stratum accepts only loopback, private and link-local
-  sources, including IPv4-mapped IPv6 forms.
-- The authentication limiter keys IPv6 by /64, holds 1024 sources, never evicts
-  a source in active cooldown, and refuses new sources while full of cooldowns.
-- `datumaddress` and the Qt hot-reload path reject `WitnessUnknown`
-  destinations and output scripts longer than 34 bytes.
+Implemented; local macOS and Linux end-to-end scenarios pass. Native Windows gates are tracked in TASK-049.
 
-## Verification
+## Independent regtest acceptance
 
-`feature_datum.py` covers UPnP without authentication, a 42-byte witness v2
-address and a short witness v2 address, written before the implementation and
-failing on the previous sources. Source-address filtering is verified manually
-with a non-private address assigned to the loopback interface; the limiter
-eviction policy is reviewed in code because exercising it needs more than 1024
-failing sources.
+Implemented a feature-gated test pool/JDS binary using SRI server-side channel
+validation, separate from the gateway's client-side channel. JDS requests and
+verifies full witness transactions by wtxid before approving tokens. The pool
+independently validates share PoW and reconstructs complete block candidates.
+
+feature_sv2.py computes actual V1 PoW outside the node and verifies accepted
+non-block shares, duplicate rejection, a network-target block, local acceptance,
+P2P propagation and identical reconstruction by the pool. It also verifies
+pending shares are never prematurely credited, upstream loss closes miners,
+same-pool recovery, declaration rejection, wrong authority and bounded shutdown.
+The complete scenario passed repeatedly on macOS arm64. An initial fixture
+target mismatch was caught by independent server share validation and corrected.
+The fixture is test-only and does not implement production pool operation.
+
+
+## Reorg and rolling-version acceptance
+
+The external miner negotiates the BIP310 mask and solves a network-target block
+with a rolled version. Node and independent pool reconstruct the same header.
+A longer competing branch replaces the tip; new work references that local
+parent and old V1 job IDs cannot earn credit. The RPC regression first exposed
+missing fractional share-difficulty metadata; it now comes from the same
+acknowledged job as the miner's target.
+
+
+Additional fault acceptance covers wrong local credentials, unique miner
+extranonces, a pool target that rejects locally computed high hashes, protocol
+version/feature mismatch, silent JDS timeout and duplicate missing-transaction
+indices with two real mempool transactions. Last local block hash/result/time
+are checked against the actual accepted block.

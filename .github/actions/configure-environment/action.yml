@@ -49,9 +49,16 @@ runs:
         # (e.g. in their CMake config files), and ccache only hits when paths
         # match, so the caches need the same root directory in every run. Use
         # one root per container: the container name is unique per job
-        # configuration. This assumes a host runs one job of a given
-        # configuration at a time, which the fixed container name already
-        # requires.
+        # configuration. Two jobs of the same configuration on one host (e.g.
+        # of two builds on different agents) would then share the root and
+        # the container name, and the second would remove the first one's
+        # running container and empty its root, so wait for the lock of this
+        # configuration before touching either. The cleanup step at the end of
+        # the job releases it.
+        lock_state="$RUNNER_TEMP/config-lock"
+        "$GITHUB_WORKSPACE/.github/actions/configure-environment/config-lock.sh" \
+          acquire "$CACHE_ROOT/locks/$CONTAINER_NAME.lock" "$lock_state"
+        echo "CI_CONFIG_LOCK_STATE=$lock_state" >> "$GITHUB_ENV"
         root="$CACHE_ROOT/work/$CONTAINER_NAME"
         mkdir -p "$root/depends" "$CACHE_ROOT/depends-sources"
         # The build directory stays per job in runner.temp, as on a hosted
