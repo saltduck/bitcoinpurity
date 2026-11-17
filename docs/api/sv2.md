@@ -18,6 +18,15 @@ and sanitized errors. Exclude worker names, miner addresses, credentials and
 upstream identity. Qt consumes the same runtime snapshot. Accepted means upstream
 acknowledgement. The gateway RPC retains its contract. Mining IPC migrates to Core v32.1 under TASK-038; older IPC clients must update.
 
+## RPC binding
+
+No option, RPC or log format changes. With default RPC settings a `::1`
+endpoint whose address family the host does not support is skipped with
+`Binding RPC on address ::1 port <port> failed, error ignored because interface
+was unavailable.` and the node serves RPC on `127.0.0.1` only. With
+`-rpcallowip` and `-rpcbind` both given, an endpoint that cannot be bound stops
+startup with `Unable to start HTTP server. See debug log for details.`
+
 ## Daemon options
 
 | Option | Default / meaning |

@@ -90,7 +90,11 @@ def get_bind_addrs(pid):
     '''
     inodes = get_socket_inodes(pid)
     bind_addrs = []
-    for conn in netstat('tcp') + netstat('tcp6'):
+    conns = netstat('tcp')
+    # /proc/net/tcp6 does not exist if the kernel has no IPv6 support
+    if os.path.exists('/proc/net/tcp6'):
+        conns += netstat('tcp6')
+    for conn in conns:
         if conn[3] == STATE_LISTEN and conn[4] in inodes:
             bind_addrs.append(conn[1])
     return bind_addrs
