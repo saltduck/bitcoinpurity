@@ -20,6 +20,16 @@
 - Selection rules and incident reports are published; key holders verify
   independently before signing.
 
+## Default RPC binding without IPv6
+
+With default RPC settings (`-rpcbind` and `-rpcallowip` not both given) the
+node binds `::1` and `127.0.0.1`. A default endpoint whose address family the
+host does not support, such as `::1` on a kernel without IPv6, is skipped and
+logged as ignored, like a default endpoint whose address is unavailable, and
+the node starts on the remaining endpoint. Hosts with IPv6 loopback bind both.
+An explicitly configured `-rpcbind` endpoint that cannot be bound fails
+startup. See [TASK-20261116-0125-01](../tasks/TASK-20261116-0125-01.md).
+
 ## Catch-up-aware deep-reorg parking
 
 - A block is protected (`BLOCK_PARK_PROTECTED`, persisted) when connected to

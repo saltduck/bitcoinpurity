@@ -406,6 +406,8 @@ my_bind_socket_with_handle(struct evhttp *http, const char *address, ev_uint16_t
 
         fd = socket(aitop->ai_family, SOCK_STREAM, 0);
         if (fd == -1) {
+            // For example, a numeric IPv6 address on a host without IPv6 support.
+            ignorable_error = EVUTIL_SOCKET_ERROR() == WSAEAFNOSUPPORT;
             evutil_freeaddrinfo(aitop);
             return nullptr;
         }

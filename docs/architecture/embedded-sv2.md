@@ -11,6 +11,17 @@ Use unmodified SRI stratum commit d1d30f3e755b0a5108633e1be7012034a8caaecd.
 Implement application policy locally: upstream applications automatically fall
 back to Solo, violating this feature's required failure behavior.
 
+## RPC bind address resolution
+
+Node-wide HTTP server behavior changed with this work, independent of sv2=1.
+`my_bind_socket_with_handle` resolves numeric bind addresses with
+AI_NUMERICHOST instead of AI_ADDRCONFIG, so `::1` resolves on hosts without
+another IPv6 address. Where the kernel has no IPv6 address family, resolution
+succeeds and `socket()` fails with EAFNOSUPPORT (WSAEAFNOSUPPORT on Windows).
+The helper reports that as an ignorable error, as it does for the address
+family errors of `getaddrinfo`, and `HTTPBindAddresses` skips such an endpoint
+only when it is one of the two default loopback endpoints.
+
 ## Core backport assessment
 
 | PR | Application |

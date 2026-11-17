@@ -119,6 +119,8 @@ class RPCBindTest(BitcoinTestFramework):
             self._run_loopback_tests()
             if self.options.run_ipv4:
                 self.run_invalid_bind_test(['127.0.0.1'], ['127.0.0.1:notaport', '127.0.0.1:-18443', '127.0.0.1:0', '127.0.0.1:65536'])
+                if not have_ipv6:
+                    self._run_no_ipv6_tests()
             if self.options.run_ipv6:
                 self.run_invalid_bind_test(['[::1]'], ['[::1]:notaport', '[::1]:-18443', '[::1]:0', '[::1]:65536'])
                 self.run_invalid_allowip_test()
@@ -152,6 +154,17 @@ class RPCBindTest(BitcoinTestFramework):
             # check both IPv4 and IPv6 localhost (explicit)
             self.run_bind_test(['127.0.0.1'], '127.0.0.1', ['127.0.0.1', '[::1]'],
                 [('127.0.0.1', self.defaultport), ('::1', self.defaultport)])
+
+    def _run_no_ipv6_tests(self):
+        # the default IPv6 localhost endpoint is skipped
+        with self.nodes[0].assert_debug_log([f'Binding RPC on address ::1 port {self.defaultport} failed, error ignored because interface was unavailable.']):
+            self.run_bind_test(None, '127.0.0.1', [],
+                [('127.0.0.1', self.defaultport)])
+        # an explicitly configured IPv6 localhost endpoint is not
+        self.log.info("Unavailable bind test for ['[::1]']")
+        self.nodes[0].assert_start_raises_init_error(
+            ['-disablewallet', '-nolisten', '-rpcallowip=[::1]', '-rpcbind=[::1]'],
+            'Error: Unable to start HTTP server. See debug log for details.')
 
     def _run_nonloopback_tests(self):
         self.log.info("Using interface %s for testing" % self.non_loopback_ip)

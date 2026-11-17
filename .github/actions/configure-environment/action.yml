@@ -126,3 +126,19 @@ runs:
           "$GITHUB_WORKSPACE/.github/actions/configure-environment/remove-dirs.sh" "$dir"
         done
         df -h "$(dirname "$own_temp")"
+
+    # depends never removes built packages of outdated recipes, and every job
+    # configuration keeps its own depends and ccache here, so the host's disk
+    # fills over time and jobs fail at a random step with "No space left on
+    # device". Make room now, without touching configurations that jobs on
+    # other agents of this host are using, and fail early with a clear message
+    # if that isn't enough.
+    - name: Ensure free disk space
+      if: ${{ env.CI_PERSISTENT_CACHE == 'true' }}
+      shell: bash
+      env:
+        CACHE_ROOT: ${{ vars.CI_PERSISTENT_CACHE_DIR }}
+        CI_MIN_FREE_GB: ${{ vars.CI_MIN_FREE_GB || '20' }}
+        CI_HARD_MIN_FREE_GB: ${{ vars.CI_HARD_MIN_FREE_GB || '8' }}
+      run: |
+        "$GITHUB_WORKSPACE/.github/actions/configure-environment/ensure-free-space.sh" "$CACHE_ROOT"

@@ -81,6 +81,8 @@ numbers.
 
 - [TASK-036: Verified-only Purity peer preference](TASK-036.md)
 
+- [TASK-20261116-0125-01: Default RPC binding without IPv6](TASK-20261116-0125-01.md)
+
 - [TASK-20261104-0551-01: Signed chain decisions for parked splits (proposed)](TASK-20261104-0551-01.md)
 
 ## Purity Signet
