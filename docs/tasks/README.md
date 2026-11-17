@@ -75,6 +75,8 @@ numbers.
 
 - [TASK-034: Headers presync ASERT difficulty check](TASK-034.md)
 
+- [TASK-20261104-0605-01: DATUM public exposure and payout script hardening](TASK-20261104-0605-01.md)
+
 - [TASK-035: Catch-up-aware deep-reorg parking](TASK-035.md)
 
 - [TASK-036: Verified-only Purity peer preference](TASK-036.md)

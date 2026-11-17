@@ -74,7 +74,18 @@ to PCP/NAT-PMP when the router does not advertise an IGD. It maps only the
 configured DATUM Stratum TCP port, renews the mapping, retries operational
 failures, and removes the UPnP mapping during clean shutdown (PCP/NAT-PMP
 leases expire naturally). This mapping is independent of the node's P2P
-`-upnp` worker and is rejected for loopback or IPv6-only DATUM listeners.
+`-upnp` worker and is rejected for loopback or IPv6-only DATUM listeners, and
+unless Stratum authentication is enabled.
+
+The Stratum accept path checks the peer address before assigning a worker
+thread: with authentication disabled, only loopback, private and link-local
+sources are accepted. The authentication limiter keys IPv4 sources by address
+and IPv6 sources by /64, keeps 1024 entries, evicts the least recently seen
+entry that is not in cooldown, and treats a new source as cooling down when no
+entry can be evicted. Submit rate limiting then relies on the per-client bucket
+alone. The C++ bridge rejects payout destinations whose script exceeds
+`MAX_OUTPUT_SCRIPT_SIZE` or that are `WitnessUnknown`, at startup and on hot
+reload.
 The bridge records requested versus active mapping state, protocol, external
 endpoint, lease lifetime, update time, and a sanitized error. miniupnpc queries
 the external address after mapping; PCP/NAT-PMP use the returned mapping.
