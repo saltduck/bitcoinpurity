@@ -75,6 +75,8 @@ numbers.
   (includes the default `./guix-build-<version>/output` artifact directory and
   identical upload-staging copies).
 
+- [TASK-20261104-0605-01: DATUM public exposure and payout script hardening](TASK-20261104-0605-01.md)
+
 - [TASK-035: Catch-up-aware deep-reorg parking](TASK-035.md)
 
 - [TASK-036: Verified-only Purity peer preference](TASK-036.md)
