@@ -740,6 +740,19 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python test/functional/feature_datum.py --configfile="$PWD/build/test/config.ini" --cachedir="$env:RUNNER_TEMP/datum-cache" --portseed=741
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      # build-off installs a second copy of the vcpkg packages (including Qt),
+      # which does not fit next to the first build on the Windows runner. The
+      # first build is no longer needed once its tests have passed. Keep the
+      # vcpkg binary archives: build-off restores its packages from them.
+      - name: Free disk space for the second build
+        shell: pwsh
+        run: |
+          function Show-Free { Get-PSDrive -PSProvider FileSystem | Where-Object { $_.Used -ne $null } | ForEach-Object { Write-Host ("{0}: {1:N1} GB free" -f $_.Name, ($_.Free / 1GB)) } }
+          Show-Free
+          foreach ($dir in "build", "C:/vcpkg/buildtrees", "C:/vcpkg/packages") {
+            if (Test-Path $dir) { Remove-Item -Recurse -Force $dir -ErrorAction SilentlyContinue }
+          }
+          Show-Free
       - name: Build without Rust or DATUM
         shell: pwsh
         run: |
