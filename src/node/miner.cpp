@@ -16,6 +16,7 @@
 #include <consensus/validation.h>
 #include <deploymentstatus.h>
 #include <logging.h>
+#include <node/block_validation_state_catcher.h>
 #include <node/context.h>
 #include <policy/feerate.h>
 #include <policy/policy.h>
@@ -31,31 +32,11 @@
 
 namespace node {
 
-namespace {
-class SubmitBlockStateCatcher final : public CValidationInterface
-{
-public:
-    explicit SubmitBlockStateCatcher(const uint256& hash) : m_hash{hash} {}
-    const uint256 m_hash;
-    bool m_found{false};
-    BlockValidationState m_state;
-
-protected:
-    void BlockChecked(const CBlock& block, const BlockValidationState& state) override
-    {
-        if (block.GetHash() != m_hash) return;
-        // BlockChecked is synchronous; ProcessNewBlock completes before these fields are read.
-        m_found = true;
-        m_state = state;
-    }
-};
-} // namespace
-
 bool SubmitBlock(ChainstateManager& chainman, const std::shared_ptr<const CBlock>& block, std::string& reason, std::string& debug)
 {
     reason.clear();
     debug.clear();
-    auto catcher = std::make_shared<SubmitBlockStateCatcher>(block->GetHash());
+    auto catcher = std::make_shared<BlockValidationStateCatcher>(block->GetHash());
     auto& signals = *CHECK_NONFATAL(chainman.m_options.signals);
     signals.RegisterSharedValidationInterface(catcher);
     bool new_block{false};
@@ -64,13 +45,13 @@ bool SubmitBlock(ChainstateManager& chainman, const std::shared_ptr<const CBlock
 
     if (!new_block && accepted) {
         reason = "duplicate";
-    } else if (!accepted && (!catcher->m_found || catcher->m_state.IsValid())) {
+    } else if (!accepted && (!catcher->m_state || catcher->m_state->IsValid())) {
         reason = "inconclusive";
-    } else if (!catcher->m_found) {
+    } else if (!catcher->m_state) {
         reason = "inconclusive";
-    } else if (!catcher->m_state.IsValid()) {
-        reason = catcher->m_state.GetRejectReason();
-        debug = catcher->m_state.GetDebugMessage();
+    } else if (!catcher->m_state->IsValid()) {
+        reason = catcher->m_state->GetRejectReason();
+        debug = catcher->m_state->GetDebugMessage();
     }
     return accepted && new_block && reason.empty();
 }
