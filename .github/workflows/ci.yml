@@ -622,6 +622,13 @@ jobs:
           sudo apt-get install -y ninja-build pkg-config libboost-dev libevent-dev libsqlite3-dev libcurl4-openssl-dev libjansson-dev qtbase5-dev qttools5-dev-tools libqrencode-dev librsvg2-bin imagemagick libcapnp-dev capnproto
       - name: Install macOS dependencies
         if: runner.os == 'macOS'
+        env:
+          HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK: 1
+          # Same as macos-native-arm64: macOS 14 is a Homebrew Tier 3 platform,
+          # so refreshing formulae or upgrading preinstalled packages forces
+          # source builds (dotnet, z3, llvm, rust) that fail or time out.
+          HOMEBREW_NO_AUTO_UPDATE: 1
+          HOMEBREW_NO_INSTALL_UPGRADE: 1
         run: |
           brew install ninja pkgconf boost libevent sqlite curl jansson qt@5 qrencode librsvg imagemagick libicns capnp
           echo "CMAKE_PREFIX_PATH=$(brew --prefix qt@5)" >> "$GITHUB_ENV"
@@ -711,9 +718,11 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
           key: sv2-windows-static-${{ hashFiles('vcpkg.json', 'depends/vcpkg-triplets/*.cmake', 'src/sv2/Cargo.lock') }}
+      # --clean-after-build drops each port's buildtrees and packages once it
+      # is installed, so building Qt from source fits on the runner's disk.
       - name: Configure native static CRT build
         shell: pwsh
-        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=cl -DCMAKE_CXX_COMPILER=cl -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake -DVCPKG_TARGET_TRIPLET=x64-windows-static "-DVCPKG_OVERLAY_TRIPLETS=$PWD/depends/vcpkg-triplets" -DVCPKG_MANIFEST_NO_DEFAULT_FEATURES=ON "-DVCPKG_MANIFEST_FEATURES=qt5;sqlite;tests" -DBUILD_SV2=ON -DBUILD_DATUM=ON -DBUILD_GUI=ON -DBUILD_TESTS=ON -DWITH_BDB=OFF -DWITH_ZMQ=OFF -DWITH_USDT=OFF -DWERROR=OFF
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=cl -DCMAKE_CXX_COMPILER=cl -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake -DVCPKG_TARGET_TRIPLET=x64-windows-static "-DVCPKG_OVERLAY_TRIPLETS=$PWD/depends/vcpkg-triplets" -DVCPKG_INSTALL_OPTIONS="--clean-after-build" -DVCPKG_MANIFEST_NO_DEFAULT_FEATURES=ON "-DVCPKG_MANIFEST_FEATURES=qt5;sqlite;tests" -DBUILD_SV2=ON -DBUILD_DATUM=ON -DBUILD_GUI=ON -DBUILD_TESTS=ON -DWITH_BDB=OFF -DWITH_ZMQ=OFF -DWITH_USDT=OFF -DWERROR=OFF
       - name: Build daemon, Qt and independent pool
         run: cmake --build build --target bitcoind bitcoin-cli bitcoin-qt test_bitcoin test_bitcoin-qt sv2_test_pool -j 3
       - name: Native unit, GUI and real PoW tests
@@ -734,7 +743,7 @@ jobs:
       - name: Build without Rust or DATUM
         shell: pwsh
         run: |
-          cmake -S . -B build-off -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=cl -DCMAKE_CXX_COMPILER=cl -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake -DVCPKG_TARGET_TRIPLET=x64-windows-static "-DVCPKG_OVERLAY_TRIPLETS=$PWD/depends/vcpkg-triplets" -DVCPKG_MANIFEST_NO_DEFAULT_FEATURES=ON "-DVCPKG_MANIFEST_FEATURES=qt5;sqlite" -DBUILD_SV2=OFF -DBUILD_DATUM=OFF -DBUILD_GUI=ON -DBUILD_TESTS=OFF -DWITH_BDB=OFF -DWITH_ZMQ=OFF -DWITH_USDT=OFF -DWERROR=OFF -DSV2_CARGO=C:/nonexistent/cargo.exe -DSV2_RUSTC=C:/nonexistent/rustc.exe
+          cmake -S . -B build-off -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=cl -DCMAKE_CXX_COMPILER=cl -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake -DVCPKG_TARGET_TRIPLET=x64-windows-static "-DVCPKG_OVERLAY_TRIPLETS=$PWD/depends/vcpkg-triplets" -DVCPKG_INSTALL_OPTIONS="--clean-after-build" -DVCPKG_MANIFEST_NO_DEFAULT_FEATURES=ON "-DVCPKG_MANIFEST_FEATURES=qt5;sqlite" -DBUILD_SV2=OFF -DBUILD_DATUM=OFF -DBUILD_GUI=ON -DBUILD_TESTS=OFF -DWITH_BDB=OFF -DWITH_ZMQ=OFF -DWITH_USDT=OFF -DWERROR=OFF -DSV2_CARGO=C:/nonexistent/cargo.exe -DSV2_RUSTC=C:/nonexistent/rustc.exe
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cmake --build build-off --target bitcoind bitcoin-qt -j 3
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
