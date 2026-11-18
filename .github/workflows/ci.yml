@@ -8,8 +8,10 @@ on:
 
   # See: https://docs.github.com/en/actions/writing-workflows/choosing-when-your-workflow-runs/events-that-trigger-workflows#pull_request.
   pull_request:
-    # `labeled` lets adding the full-ci label start the heavy jobs.
-    types: [opened, synchronize, reopened, labeled]
+    # `labeled` lets adding the full-ci label start the heavy jobs. Draft pull
+    # requests skip every job, and `ready_for_review` runs them once the pull
+    # request is marked ready.
+    types: [opened, synchronize, reopened, labeled, ready_for_review]
   # See: https://docs.github.com/en/actions/writing-workflows/choosing-when-your-workflow-runs/events-that-trigger-workflows#push.
   push:
     branches:
@@ -25,6 +27,7 @@ env:
 
 jobs:
   datum-stage1:
+    if: ${{ !github.event.pull_request.draft }}
     name: 'DATUM ON/OFF build and functional test'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
@@ -50,7 +53,7 @@ jobs:
   test-each-commit:
     name: 'test each commit'
     runs-on: ubuntu-latest-heavy
-    if: github.event_name == 'pull_request' && github.event.pull_request.commits != 1 && contains(github.event.pull_request.labels.*.name, 'full-ci')
+    if: ${{ !github.event.pull_request.draft && (github.event_name == 'pull_request' && github.event.pull_request.commits != 1 && contains(github.event.pull_request.labels.*.name, 'full-ci')) }}
     timeout-minutes: 240  # Use maximum time, see https://docs.github.com/en/actions/writing-workflows/workflow-syntax-for-github-actions#jobsjob_idtimeout-minutes. Assuming a worst case time of 1 hour per commit, this leads to a --max-count=6 below.
     env:
       MAX_COUNT: 6
@@ -98,6 +101,7 @@ jobs:
           git rebase --exec "echo Running test-one-commit on \$( git log -1 ) && CC=clang CXX=clang++ cmake -B build -DWERROR=ON -DBUILD_SV2=OFF -DWITH_ZMQ=ON -DBUILD_GUI=ON -DBUILD_BENCH=ON -DBUILD_FUZZ_BINARY=ON -DWITH_BDB=ON -DWARN_INCOMPATIBLE_BDB=OFF -DWITH_MINIUPNPC=ON -DWITH_USDT=ON -DCMAKE_CXX_FLAGS='-Wno-error=unused-member-function' -D RDTS_CONSENT=RUNTIME_CHECK && cmake --build build -j $(nproc) && ctest --output-on-failure --stop-on-failure --test-dir build -j $(nproc) && ./build/test/functional/test_runner.py -j $(( $(nproc) * 2 )) --combinedlogslen=99999999" ${{ env.TEST_BASE }}
 
   macos-native-arm64:
+    if: ${{ !github.event.pull_request.draft }}
     name: ${{ matrix.job-name }}
     # Use any image to support the xcode-select below, but hardcode version to avoid silent upgrades (and breaks).
     # See: https://github.com/actions/runner-images#available-images.
@@ -181,7 +185,7 @@ jobs:
   macos-native-arm64-fuzz:
     name: ${{ matrix.job-name }}
     runs-on: macos-14
-    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref_name == 'master') || contains(github.event.pull_request.labels.*.name, 'full-ci') }}
+    if: ${{ !github.event.pull_request.draft && (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref_name == 'master') || contains(github.event.pull_request.labels.*.name, 'full-ci')) }}
     timeout-minutes: 120
     strategy:
       fail-fast: false
@@ -195,6 +199,7 @@ jobs:
     steps: *macos-native-steps
 
   win64-native:
+    if: ${{ !github.event.pull_request.draft }}
     name: ${{ matrix.job-name }}
     # Use latest image, but hardcode version to avoid silent upgrades (and breaks).
     # See: https://github.com/actions/runner-images#available-images.
@@ -368,7 +373,7 @@ jobs:
   win64-native-fuzz:
     name: ${{ matrix.job-name }}
     runs-on: windows-2022
-    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref_name == 'master') || contains(github.event.pull_request.labels.*.name, 'full-ci') }}
+    if: ${{ !github.event.pull_request.draft && (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref_name == 'master') || contains(github.event.pull_request.labels.*.name, 'full-ci')) }}
     env: *win64-native-env
     strategy:
       fail-fast: false
@@ -381,6 +386,7 @@ jobs:
     steps: *win64-native-steps
 
   ci-matrix:
+    if: ${{ !github.event.pull_request.draft }}
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.fallback-runner }}
     timeout-minutes: 240
@@ -512,7 +518,7 @@ jobs:
   ci-matrix-heavy:
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.fallback-runner }}
-    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref_name == 'master') || contains(github.event.pull_request.labels.*.name, 'full-ci') }}
+    if: ${{ !github.event.pull_request.draft && (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref_name == 'master') || contains(github.event.pull_request.labels.*.name, 'full-ci')) }}
     timeout-minutes: 240
 
     env: *ci-matrix-env
@@ -554,6 +560,7 @@ jobs:
     steps: *ci-matrix-steps
 
   lint:
+    if: ${{ !github.event.pull_request.draft }}
     name: 'lint'
     runs-on: ubuntu-latest
     timeout-minutes: 20

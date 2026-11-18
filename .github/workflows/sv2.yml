@@ -2,6 +2,8 @@ name: Embedded Stratum V2
 
 on:
   pull_request:
+    # Draft pull requests skip every job; run them once it is marked ready.
+    types: [opened, synchronize, reopened, ready_for_review]
   push:
     branches: [master, 'codex/**']
   workflow_dispatch:
@@ -11,6 +13,7 @@ permissions:
 
 jobs:
   unix:
+    if: ${{ !github.event.pull_request.draft }}
     strategy:
       fail-fast: false
       matrix:
@@ -78,6 +81,7 @@ jobs:
             build-off/CMakeFiles/CMakeConfigureLog.yaml
 
   windows:
+    if: ${{ !github.event.pull_request.draft }}
     runs-on: windows-2022
     timeout-minutes: 180
     env:
@@ -138,6 +142,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
   fuzz:
+    if: ${{ !github.event.pull_request.draft }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
