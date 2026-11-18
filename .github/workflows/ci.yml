@@ -619,7 +619,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build pkg-config libboost-dev libevent-dev libsqlite3-dev libcurl4-openssl-dev libjansson-dev libsodium-dev qtbase5-dev qttools5-dev-tools libqrencode-dev librsvg2-bin imagemagick libcapnp-dev capnproto
+          sudo apt-get install -y ninja-build pkg-config libboost-dev libevent-dev libsqlite3-dev libcurl4-openssl-dev libjansson-dev libsodium-dev qtbase5-dev qttools5-dev qttools5-dev-tools libqrencode-dev librsvg2-bin imagemagick libcapnp-dev capnproto
       - name: Install macOS dependencies
         if: runner.os == 'macOS'
         env:
