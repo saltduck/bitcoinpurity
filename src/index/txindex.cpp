@@ -9,7 +9,12 @@
 #include <index/disktxpos.h>
 #include <logging.h>
 #include <node/blockstorage.h>
+#include <tinyformat.h>
+#include <util/string.h>
 #include <validation.h>
+
+#include <stdexcept>
+#include <string>
 
 constexpr uint8_t DB_TXINDEX{'t'};
 
@@ -72,17 +77,26 @@ bool TxIndex::CustomAppend(const interfaces::BlockInfo& block)
 
 BaseIndex::DB& TxIndex::GetDB() const { return *m_db; }
 
+template <typename... Args>
+[[noreturn]] static void WarnAndThrowErr(util::ConstevalFormatString<sizeof...(Args)> fmt, const Args&... args)
+{
+    const std::string err{tfm::format(fmt, args...)};
+    LogWarning("%s", err);
+    throw std::runtime_error{err};
+}
+
 bool TxIndex::FindTx(const uint256& tx_hash, uint256& block_hash, CTransactionRef& tx) const
 {
     CDiskTxPos postx;
+    // ReadTxPos may throw dbwrapper_error.
     if (!m_db->ReadTxPos(tx_hash, postx)) {
         return false;
     }
 
     AutoFile file{m_chainstate->m_blockman.OpenBlockFile(postx, true)};
     if (file.IsNull()) {
-        LogError("%s: OpenBlockFile failed\n", __func__);
-        return false;
+        WarnAndThrowErr("%s: Failed to open block file for txid %s at %s",
+                        GetName(), tx_hash.ToString(), postx.ToString());
     }
     CBlockHeader header;
     try {
@@ -90,12 +104,12 @@ bool TxIndex::FindTx(const uint256& tx_hash, uint256& block_hash, CTransactionRe
         file.seek(postx.nTxOffset, SEEK_CUR);
         file >> TX_WITH_WITNESS(tx);
     } catch (const std::exception& e) {
-        LogError("%s: Deserialize or I/O error - %s\n", __func__, e.what());
-        return false;
+        WarnAndThrowErr("%s: Deserialize or I/O error (%s). txid %s at %s",
+                        GetName(), e.what(), tx_hash.ToString(), postx.ToString());
     }
     if (tx->GetHash() != tx_hash) {
-        LogError("%s: txid mismatch\n", __func__);
-        return false;
+        WarnAndThrowErr("%s: txid mismatch. txid %s at %s",
+                        GetName(), tx_hash.ToString(), postx.ToString());
     }
     block_hash = header.GetHash();
     return true;
