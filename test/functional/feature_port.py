@@ -13,6 +13,7 @@ from test_framework.test_framework import (
 )
 from test_framework.util import (
     p2p_port,
+    assert_equal,
     assert_raises,
 )
 
@@ -50,9 +51,17 @@ class PortTest(BitcoinTestFramework):
             competing_listener.bind(("0.0.0.0", port1))
             with node.assert_debug_log(expected_msgs=[f'Unable to bind to 0.0.0.0:{port1} on this computer.'], unexpected_msgs=[f'Bound to 0.0.0.0:{port1}']):
                 self.start_node(0, extra_args=["-listen", f"-port={port1}"])
-            self.stop_node(0, expected_stderr=(
-                f"Error: Unable to bind to 0.0.0.0:{port1} on this computer. Bitcoin Purity is probably already running.\n"
-                f": Listen on port {port1} failed."))
+            node.stop_node(wait_until_stopped=False)
+            self.wait_until(lambda: node.process.poll() is not None)
+            # Compare stderr line by line, as Windows writes "\r\r\n" line endings.
+            node.stderr.seek(0)
+            assert_equal(node.stderr.read().decode('utf-8').replace('\r', '').splitlines(), [
+                f"Error: Unable to bind to 0.0.0.0:{port1} on this computer. Bitcoin Purity is probably already running.",
+                f": Listen on port {port1} failed.",
+            ])
+            node.stderr.seek(0)
+            node.stderr.truncate()
+            node.wait_until_stopped()
 
         self.log.info("When specifying -port multiple times, only the last one is taken")
         with node.assert_debug_log(expected_msgs=[f'Bound to 0.0.0.0:{port2}', f'Bound to 127.0.0.1:{port2 + 1}'], unexpected_msgs=[f'Bound to 0.0.0.0:{port1}']):
