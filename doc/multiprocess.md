@@ -53,8 +53,11 @@ versions/checksums from depends/packages and verifies downloaded archives.
 
 The IPC wire contract follows Bitcoin Core v32.1, pinned to commit
 `f0de87f040621468b956f01f526a43a010310501`. The dependency helper builds the
-unmodified libmultiprocess snapshot from that Core archive and Cap'n Proto 1.2.0.
-It does not patch dependency sources. Older Purity/Knots IPC bindings are
+unmodified libmultiprocess snapshot from that Core archive and Cap'n Proto 1.5.0.
+It does not patch libmultiprocess. Cap'n Proto carries the patches listed in
+`depends/packages/capnp.mk`, currently only the upstream 1.x backport that keeps
+IPC listeners on macOS alive when `accept()` returns an already-closed
+connection (Bitcoin Core #35796). Older Purity/Knots IPC bindings are
 incompatible and must be regenerated; there is no parallel legacy endpoint.
 The embedded SV2 gateway remains in-process in these executables.
 

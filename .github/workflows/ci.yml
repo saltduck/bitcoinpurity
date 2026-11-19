@@ -648,7 +648,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
           key: sv2-cargo-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('src/sv2/Cargo.lock') }}
-      - name: Build pinned IPC dependencies without source patches
+      - name: Build pinned IPC dependencies
         run: sh contrib/devtools/build-ipc-deps.sh "$RUNNER_TEMP/ipc-deps" "$RUNNER_TEMP/ipc-prefix" 3
       - name: Configure SV2 and Qt
         run: cmake -S . -B build -G Ninja "-DCMAKE_PREFIX_PATH=$RUNNER_TEMP/ipc-prefix;$CMAKE_PREFIX_PATH" -DWITH_MULTIPROCESS=ON -DCMAKE_BUILD_TYPE=Release -DBUILD_SV2=ON -DBUILD_DATUM=ON -DBUILD_GUI=ON -DBUILD_TESTS=ON -DWITH_BDB=OFF -DWITH_ZMQ=OFF -DWITH_USDT=OFF -DWERROR=OFF
