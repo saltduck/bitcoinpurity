@@ -96,7 +96,7 @@ struct SignetBlockFactory {
                 } while (signature[3] != 33 || signature[38] != 32);
                 uint256 low_s;
                 std::reverse_copy(signature.begin() + 39, signature.end(), low_s.begin());
-                const uint256 order{"fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141"};
+                constexpr uint256 order{"fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141"};
                 const auto high_s = ArithToUint256(UintToArith256(order) - UintToArith256(low_s));
                 signature.resize(38);
                 signature.push_back(33);

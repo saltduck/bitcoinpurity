@@ -79,7 +79,7 @@ BOOST_AUTO_TEST_CASE(purity_activation_block_hash_pinned)
     const auto chainParams = CreateChainParams(args, ChainType::MAIN);
     const auto& consensus = chainParams->GetConsensus();
 
-    const uint256 expected{"0000000000000000003ea74f4dafdda7ed4e02c4c1ccb9768e0ca4f9e1a35159"};
+    constexpr uint256 expected{"0000000000000000003ea74f4dafdda7ed4e02c4c1ccb9768e0ca4f9e1a35159"};
     BOOST_CHECK_EQUAL(consensus.hashPurityActivationBlock, expected);
 
     // The pin is a consensus rule evaluated from Consensus::Params alone; it
@@ -88,7 +88,7 @@ BOOST_AUTO_TEST_CASE(purity_activation_block_hash_pinned)
     BOOST_CHECK(Consensus::PurityActivationBlockPermitted(activation, expected, consensus));
 
     // A real conflicting mainnet block at the same height must be rejected.
-    const uint256 conflicting{"0000000000000000000121f7aa4329b9d040bde9eac2d49b5219e57742ccbc9d"};
+    constexpr uint256 conflicting{"0000000000000000000121f7aa4329b9d040bde9eac2d49b5219e57742ccbc9d"};
     BOOST_CHECK(!Consensus::PurityActivationBlockPermitted(activation, conflicting, consensus));
     BOOST_CHECK(!Consensus::PurityActivationBlockPermitted(activation, uint256{}, consensus));
 
