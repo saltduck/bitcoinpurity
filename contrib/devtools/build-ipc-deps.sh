@@ -31,7 +31,8 @@ capnp_source="capnproto-c++-$capnp_version"
 if [ ! -f "$capnp_source/.ipc-deps-patched" ]; then
     rm -rf "$capnp_source"
     tar xf capnp.tar.gz
-    for capnp_patch in $(awk -F= '/^[^ ]*_patches[ +]*=/ {print $2}' "$ipc_root/depends/packages/capnp.mk"); do
+    awk -F= '/^[^ ]*_patches[ +]*=/ {n = split($2, p, " "); for (i = 1; i <= n; i++) print p[i]}' \
+        "$ipc_root/depends/packages/capnp.mk" | while read -r capnp_patch; do
         patch -d "$capnp_source" -p2 < "$ipc_root/depends/patches/capnp/$capnp_patch"
     done
     touch "$capnp_source/.ipc-deps-patched"
