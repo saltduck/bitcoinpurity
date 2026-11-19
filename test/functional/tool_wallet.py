@@ -41,14 +41,14 @@ class ToolWalletTest(BitcoinTestFramework):
         self.skip_if_no_wallet()
         self.skip_if_no_wallet_tool()
 
-    def bitcoin_wallet_process(self, *args):
+    def bitcoin_wallet_process(self, *args, **kwargs):
         default_args = ['-datadir={}'.format(self.nodes[0].datadir_path), '-chain=%s' % self.chain]
         if not self.options.descriptors and 'create' in args:
             default_args.append('-legacy')
         if "dump" in args and self.options.bdbro:
             default_args.append("-withinternalbdb")
 
-        return subprocess.Popen([self.options.bitcoinwallet] + default_args + list(args), stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        return subprocess.Popen([self.options.bitcoinwallet] + default_args + list(args), stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, **kwargs)
 
     def assert_raises_tool_error(self, error, *args):
         p = self.bitcoin_wallet_process(*args)
@@ -357,6 +357,23 @@ class ToolWalletTest(BitcoinTestFramework):
             expected_warnings_dump = "dump: WARNING: BDB-backed wallets have a wallet id that is not currently dumped.\n"
             expected_warnings_restore = "Warning: BDB-backed wallets have a wallet id that is not currently restored.\n"
         self.assert_raises_tool_error(f'{expected_warnings_dump}File {wallet_dump} already exists. If you are sure this is what you want, move it out of the way first.',  '-wallet=todump2', '-dumpfile={}'.format(wallet_dump), 'dump')
+
+        if os.name == 'posix':
+            self.log.info('Checking that incomplete dumps fail and are removed')
+
+            def limit_dump_size():
+                import resource
+                import signal
+                signal.signal(signal.SIGXFSZ, signal.SIG_IGN)
+                resource.setrlimit(resource.RLIMIT_FSIZE, (512, 512))
+
+            limited_dump = self.nodes[0].datadir_path / "wallet-limited.dump"
+            p = self.bitcoin_wallet_process('-wallet=todump', '-dumpfile={}'.format(limited_dump), 'dump', preexec_fn=limit_dump_size)
+            stdout, stderr = p.communicate()
+            assert_equal(stdout, '')
+            assert_equal(p.poll(), 1)
+            assert "Unable to write complete dump file {}.".format(limited_dump) in stderr.strip()
+            assert not limited_dump.exists()
 
         self.log.info('Checking createfromdump arguments')
         self.assert_raises_tool_error('No dump file provided. To use createfromdump, -dumpfile=<filename> must be provided.', '-wallet=todump', 'createfromdump')
