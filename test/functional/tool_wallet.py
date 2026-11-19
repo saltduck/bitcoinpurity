@@ -358,7 +358,8 @@ class ToolWalletTest(BitcoinTestFramework):
             expected_warnings_restore = "Warning: BDB-backed wallets have a wallet id that is not currently restored.\n"
         self.assert_raises_tool_error(f'{expected_warnings_dump}File {wallet_dump} already exists. If you are sure this is what you want, move it out of the way first.',  '-wallet=todump2', '-dumpfile={}'.format(wallet_dump), 'dump')
 
-        if os.name == 'posix':
+        # The file size limit would also stop BDB from opening its database environment
+        if os.name == 'posix' and self.options.descriptors:
             self.log.info('Checking that incomplete dumps fail and are removed')
 
             def limit_dump_size():
