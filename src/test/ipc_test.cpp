@@ -183,9 +183,15 @@ void IpcSocketPairTest(node::NodeContext* node)
     std::unique_ptr<interfaces::Init> init{std::make_unique<TestInit>(node)};
     std::unique_ptr<ipc::Protocol> protocol{ipc::capnp::MakeCapnpProtocol()};
     std::promise<void> promise;
-    std::jthread thread([&]() {
+    std::thread thread([&]() {
         protocol->serve(fds[0], "test-serve", *init, [&] { promise.set_value(); });
     });
+    // Join on early exit (e.g. a failed BOOST_REQUIRE throws). std::jthread
+    // would do this, but Apple Clang's libc++ before Xcode 16 lacks it.
+    struct JoinGuard {
+        std::thread& t;
+        ~JoinGuard() { if (t.joinable()) t.join(); }
+    } join_guard{thread};
     promise.get_future().wait();
     std::unique_ptr<interfaces::Init> remote_init{protocol->connect(fds[1], "test-connect")};
     std::unique_ptr<interfaces::Echo> remote_echo{remote_init->makeEcho()};

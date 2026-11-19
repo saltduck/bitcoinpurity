@@ -328,8 +328,8 @@ set_property(SOURCE packagedownloader.cpp softwareupdater.cpp
   APPEND PROPERTY COMPILE_OPTIONS $<$<CXX_COMPILER_ID:Clang,AppleClang>:-Wno-unused-member-function>
 )
 set_property(SOURCE quirc/decode.c quirc/identify.c quirc/quirc.c quirc/version_db.c
-  # Vendored third-party quirc sources.
-  APPEND PROPERTY COMPILE_OPTIONS -Wno-sign-compare
+  # Vendored third-party quirc sources. MSVC rejects GCC-style -W options.
+  APPEND PROPERTY COMPILE_OPTIONS $<$<NOT:$<C_COMPILER_ID:MSVC>>:-Wno-sign-compare>
 )
 target_link_libraries(bitcoinqt
   PUBLIC
