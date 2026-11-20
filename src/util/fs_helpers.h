@@ -58,7 +58,7 @@ inline int64_t FileTell64(FILE* file)
 }
 
 int RaiseFileDescriptorLimit(int nMinFD);
-void AllocateFileRange(FILE* file, uint64_t offset, unsigned int length);
+void AllocateFileRange(FILE* file, uint64_t offset, uint64_t length);
 
 /**
  * Rename src to dest.

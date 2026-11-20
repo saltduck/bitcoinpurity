@@ -209,16 +209,15 @@ int RaiseFileDescriptorLimit(int nMinFD)
  * this function tries to make a particular range of a file allocated (corresponding to disk space)
  * it is advisory, and the range specified in the arguments will never contain live data
  */
-void AllocateFileRange(FILE* file, uint64_t offset, unsigned int length)
+void AllocateFileRange(FILE* file, uint64_t offset, uint64_t length)
 {
 #if defined(WIN32)
     // Windows-specific version
     HANDLE hFile = (HANDLE)_get_osfhandle(_fileno(file));
     LARGE_INTEGER nFileSize;
-    int64_t nEndPos = (int64_t)offset + length;
-    if (GetFileSizeEx(hFile, &nFileSize) && (int64_t{nFileSize.u.HighPart} << 32 | nFileSize.u.LowPart) <= nEndPos) {
-        nFileSize.u.LowPart = nEndPos & 0xFFFFFFFF;
-        nFileSize.u.HighPart = nEndPos >> 32;
+    const int64_t nEndPos{int64_t(offset + length)};
+    if (GetFileSizeEx(hFile, &nFileSize) && nFileSize.QuadPart <= nEndPos) {
+        nFileSize.QuadPart = nEndPos;
         if (SetFilePointerEx(hFile, nFileSize, 0, FILE_BEGIN)) {
             SetEndOfFile(hFile);
         }
