@@ -100,7 +100,10 @@ class SyncCoinsTipAfterChainSyncTest(BitcoinTestFramework):
         )
         headers_message.headers = [CBlockHeader(blocks[1])]
         peer.send_message(headers_message)
-        peer.sync_with_ping()
+        # The node requests the block with getdata and the peer only replies
+        # after receiving it, so the block may be processed after the pong.
+        # Wait for it to be connected before checking that IBD has ended.
+        self.wait_until(lambda: node.getbestblockhash() == blocks[1].hash)
         assert_equal(node.getblockchaininfo()["initialblockdownload"], False)
         with node.assert_debug_log(
             [
