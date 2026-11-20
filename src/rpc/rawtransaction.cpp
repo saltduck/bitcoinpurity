@@ -44,6 +44,7 @@
 #include <validationinterface.h>
 
 #include <numeric>
+#include <stdexcept>
 #include <stdint.h>
 
 #include <univalue.h>
@@ -219,14 +220,10 @@ PartiallySignedTransaction ProcessPSBT(const std::string& psbt_string, const std
                 throw JSONRPCError(RPC_DESERIALIZATION_ERROR, strprintf("Previous tx has too few outputs for PSBT input %s", tx->GetHash().GetHex()));
             }
         }
-        // Then look in the txindex
-        if (!tx && g_txindex) {
-            uint256 block_hash;
-            g_txindex->FindTx(tx_in.prevout.hash, block_hash, tx);
-        }
-        // If we still don't have it look in the mempool
+        // Then look in the mempool and the txindex
         if (!tx) {
-            tx = node.mempool->get(tx_in.prevout.hash);
+            uint256 block_hash;
+            tx = GetTransaction(/*block_index=*/nullptr, node.mempool.get(), tx_in.prevout.hash, block_hash, EnsureChainman(node).m_blockman);
         }
         if (tx) {
             psbt_input.non_witness_utxo = tx;
@@ -374,14 +371,16 @@ static RPCHelpMan getrawtransaction()
     }
 
     uint256 hash_block;
-    const CTransactionRef tx = GetTransaction(blockindex, node.mempool.get(), hash, hash_block, chainman.m_blockman);
+    CTransactionRef tx;
+    try {
+        tx = GetTransaction(blockindex, node.mempool.get(), hash, hash_block, chainman.m_blockman);
+    } catch (const std::runtime_error&) {
+        if (blockindex) WITH_LOCK(::cs_main, CheckBlockDataAvailability(chainman.m_blockman, *blockindex, /*check_for_undo=*/false));
+        throw;
+    }
     if (!tx) {
         std::string errmsg;
         if (blockindex) {
-            const bool block_has_data = WITH_LOCK(::cs_main, return blockindex->nStatus & BLOCK_HAVE_DATA);
-            if (!block_has_data) {
-                throw JSONRPCError(RPC_MISC_ERROR, "Block not available");
-            }
             errmsg = "No such transaction found in the provided block";
         } else if (!g_txindex) {
             errmsg = "No such mempool transaction. Use -txindex or provide a block hash to enable blockchain transaction queries";

@@ -134,7 +134,6 @@ private:
     std::string m_current_tor_control_center;
     TorControlConnection conn;
     std::string private_key;
-    std::string service_id;
     bool m_try_exec{true};
     bool reconnect;
     struct event *reconnect_ev = nullptr;

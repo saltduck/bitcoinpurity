@@ -42,7 +42,8 @@ public:
     /// @param[in]   tx_hash  The hash of the transaction to be returned.
     /// @param[out]  block_hash  The hash of the block the transaction is found in.
     /// @param[out]  tx  The transaction itself.
-    /// @return  true if transaction is found, false otherwise
+    /// @return  true if transaction is found, false if it is not indexed
+    /// @throws  std::runtime_error on I/O errors or index corruption
     bool FindTx(const uint256& tx_hash, uint256& block_hash, CTransactionRef& tx) const;
 };
 

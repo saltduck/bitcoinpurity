@@ -25,7 +25,18 @@ if [ ! -f "multiprocess-$mp_version.tar.gz" ]; then
     curl -fL --retry 3 "https://codeload.github.com/bitcoin/bitcoin/tar.gz/$mp_version" -o "multiprocess-$mp_version.tar.gz"
 fi
 printf '%s  %s\n' "$capnp_sha" capnp.tar.gz "$mp_sha" "multiprocess-$mp_version.tar.gz" | shasum -a 256 -c -
-if [ ! -d "capnproto-c++-$capnp_version" ]; then tar xf capnp.tar.gz; fi
+# Apply the same Cap'n Proto patches as depends/packages/capnp.mk. The marker
+# file keeps a tree that was extracted but not fully patched from being reused.
+capnp_source="capnproto-c++-$capnp_version"
+if [ ! -f "$capnp_source/.ipc-deps-patched" ]; then
+    rm -rf "$capnp_source"
+    tar xf capnp.tar.gz
+    awk -F= '/^[^ ]*_patches[ +]*=/ {n = split($2, p, " "); for (i = 1; i <= n; i++) print p[i]}' \
+        "$ipc_root/depends/packages/capnp.mk" | while read -r capnp_patch; do
+        patch -d "$capnp_source" -p2 < "$ipc_root/depends/patches/capnp/$capnp_patch"
+    done
+    touch "$capnp_source/.ipc-deps-patched"
+fi
 if [ ! -d "$mp_source" ]; then tar xf "multiprocess-$mp_version.tar.gz"; fi
 cmake -S "capnproto-c++-$capnp_version" -B capnp-build -G Ninja \
     -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$ipc_prefix" \
