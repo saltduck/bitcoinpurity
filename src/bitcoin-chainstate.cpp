@@ -21,6 +21,7 @@
 #include <core_io.h>
 #include <kernel/caches.h>
 #include <logging.h>
+#include <node/block_validation_state_catcher.h>
 #include <node/blockstorage.h>
 #include <node/chainstate.h>
 #include <node/dbcache.h>
@@ -190,28 +191,8 @@ int main(int argc, char* argv[])
             }
         }
 
-        // Adapted from rpc/mining.cpp
-        class submitblock_StateCatcher final : public CValidationInterface
-        {
-        public:
-            uint256 hash;
-            bool found;
-            BlockValidationState state;
-
-            explicit submitblock_StateCatcher(const uint256& hashIn) : hash(hashIn), found(false), state() {}
-
-        protected:
-            void BlockChecked(const CBlock& block, const BlockValidationState& stateIn) override
-            {
-                if (block.GetHash() != hash)
-                    return;
-                found = true;
-                state = stateIn;
-            }
-        };
-
         bool new_block;
-        auto sc = std::make_shared<submitblock_StateCatcher>(block.GetHash());
+        auto sc = std::make_shared<node::BlockValidationStateCatcher>(block.GetHash());
         validation_signals.RegisterSharedValidationInterface(sc);
         bool accepted = chainman.ProcessNewBlock(blockptr, /*force_processing=*/true, /*min_pow_checked=*/true, /*new_block=*/&new_block);
         validation_signals.UnregisterSharedValidationInterface(sc);
@@ -219,12 +200,12 @@ int main(int argc, char* argv[])
             std::cerr << "duplicate" << std::endl;
             break;
         }
-        if (!sc->found) {
+        if (!sc->m_state) {
             std::cerr << "inconclusive" << std::endl;
             break;
         }
-        std::cout << sc->state.ToString() << std::endl;
-        switch (sc->state.GetResult()) {
+        std::cout << sc->m_state->ToString() << std::endl;
+        switch (sc->m_state->GetResult()) {
         case BlockValidationResult::BLOCK_RESULT_UNSET:
             std::cerr << "initial value. Block has not yet been rejected" << std::endl;
             break;
