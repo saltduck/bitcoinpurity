@@ -96,6 +96,9 @@ class InvalidateTest(BitcoinTestFramework):
         self.nodes[0].invalidateblock(blockhash_4)
         assert_equal(self.nodes[0].getbestblockhash(), blockhash_3)
         assert_equal(self.nodes[0].getblockchaininfo()["headers"], 3)
+        # Disconnect node0 so that the blocks node1 mines below cannot reach it
+        # and change its chain before the reconsiderblock checks further down.
+        self.disconnect_nodes(0, 1)
 
         self.log.info("Verify that we reconsider all ancestors as well")
         blocks = self.generatetodescriptor(self.nodes[1], 10, ADDRESS_BCRT1_UNSPENDABLE_DESCRIPTOR, sync_fun=self.no_op)
@@ -133,7 +136,6 @@ class InvalidateTest(BitcoinTestFramework):
             self.nodes[0].reconsiderblock(block.hash)
             assert_equal(self.nodes[0].getblockchaininfo(), chain_info)
             assert_equal(self.nodes[0].getchaintips(), chain_tips)
-        self.disconnect_nodes(0, 1)
         self.restart_node(0)
         assert_equal(self.nodes[0].getbestblockhash(), blockhash_6)
         assert_equal(self.nodes[0].getblockchaininfo()["headers"], 7)
