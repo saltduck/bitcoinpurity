@@ -456,7 +456,8 @@ No native downstream SV2, backup pool or Signet signer integration is included.
 
 Restore WITH_MULTIPROCESS as a default-OFF option. Reproduce enabled compiler
 failures and fix only this project's integration. Use the unmodified libmultiprocess snapshot from Core v32.1 and
-Cap'n Proto 1.2.0. Align IPC with Core v32.1 while preserving Purity
+Cap'n Proto 1.5.0 with only the patches listed in `depends/packages/capnp.mk`
+(originally 1.2.0, unpatched). Align IPC with Core v32.1 while preserving Purity
 consensus, single-process binaries and embedded SV2 behavior. Reference Core
 v32.1 where useful. Validate enabled daemon/Qt, actual IPC/mining calls, disabled
 build and SV2 compatibility. Track concrete failures and evidence in TASK-050.

@@ -527,6 +527,9 @@ verified Linux/macOS builds and runtime paths; existing ordinals remain unchange
 Restore a default-OFF build option and fix project-owned integration, retaining
 unmodified libmultiprocess v5.0 and Cap'n Proto 1.2.0 dependencies. No database or
 consensus migration. Concrete failures and acceptance are recorded in TASK-050.
+Cap'n Proto was later raised to 1.5.0 with the upstream macOS `accept()` backport
+listed in `depends/packages/capnp.mk`; the libmultiprocess pin and the IPC wire
+contract are unchanged.
 
 IPC restoration builds bitcoin-node and bitcoin-gui on Linux/macOS. Local C++
 template getters return owned snapshots; consumers of the old const/reference
