@@ -88,7 +88,9 @@ class SyncCoinsTipAfterChainSyncTest(BitcoinTestFramework):
         headers_message = msg_headers()
         headers_message.headers = [CBlockHeader(blocks[0])]
         peer.send_message(headers_message)
-        peer.sync_with_ping()
+        # The peer sends the block only when the node asks for it, so it can
+        # arrive after the pong of sync_with_ping(). Wait until it's connected.
+        self.wait_until(lambda: node.getbestblockhash() == blocks[0].hash)
         assert_equal(node.getblockchaininfo()["initialblockdownload"], True)
         with node.assert_debug_log(
             ["Node is still in IBD, rescheduling post-IBD chainstate disk sync..."]
@@ -100,9 +102,6 @@ class SyncCoinsTipAfterChainSyncTest(BitcoinTestFramework):
         )
         headers_message.headers = [CBlockHeader(blocks[1])]
         peer.send_message(headers_message)
-        # The node requests the block with getdata and the peer only replies
-        # after receiving it, so the block may be processed after the pong.
-        # Wait for it to be connected before checking that IBD has ended.
         self.wait_until(lambda: node.getbestblockhash() == blocks[1].hash)
         assert_equal(node.getblockchaininfo()["initialblockdownload"], False)
         with node.assert_debug_log(
