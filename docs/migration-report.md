@@ -1,5 +1,33 @@
 # Embedded DATUM Migration Report
 
+## PSBT version 2 backport (Core #21283)
+
+Backport Bitcoin Core #21283 (BIP 370 PSBTv2, merge d7ed2840ac) with the
+follow-ups #35797 (output metadata updates on a version 2 PSBT that has
+outputs but no inputs no longer abort the node), #36539 (the GUI creates
+version 0 PSBTs, external signers receive version 2), #36163 and #36224
+(tests), plus #34725 (fuzz roundtrip check). This tree has no MuSig2 PSBT
+fields (#31247), no PSBT fill options struct (#32876), no #31622 and no
+transaction `version` RPC argument (#32896); those parts are adapted, not
+imported. The legacy wallet's PSBT filler, which upstream has removed, is
+converted the same way as the descriptor wallet's.
+
+`createpsbt`, `converttopsbt`, `walletcreatefundedpsbt` and `psbtbumpfee`
+now create version 2 PSBTs by default and accept `psbt_version` (0 or 2).
+Because this tree lacks #32896, `psbt_version` is positional argument 5 of
+`walletcreatefundedpsbt` and 4 of `createpsbt`, not 6 and 5 as upstream;
+named arguments work the same. `decodepsbt` omits `tx` for version 2 PSBTs.
+Scripts that read `decodepsbt(...)["tx"]` or pass PSBTs to software without
+BIP 370 support must pass `psbt_version=0`. `joinpsbts` rejects version 2
+PSBTs. External signers need BIP 370 support (HWI 2.1.0 or newer).
+
+Version 0 PSBTs, including the implicit version 0 PSBTs of the Purity Signet
+miner, keep their exact serialization. No wallet or chain database change,
+rescan or reindex is needed; rebuild and restart.
+
+Not included: #35665, #36025, #36076, #36113, #36168, #36012, #36329,
+#36261, #36591, #35516 and #36384.
+
 ## Default RPC binding without IPv6 (TASK-20261116-0125-01)
 
 Since #44 a node on a host without the IPv6 address family does not start with
