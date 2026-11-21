@@ -3,6 +3,9 @@
 Since Bitcoin Core 0.17, an RPC interface exists for Partially Signed Bitcoin
 Transactions (PSBTs, as specified in
 [BIP 174](https://github.com/bitcoin/bips/blob/master/bip-0174.mediawiki)).
+Version 2 PSBTs, as specified in
+[BIP 370](https://github.com/bitcoin/bips/blob/master/bip-0370.mediawiki), are
+also supported.
 
 This document describes the overall workflow for producing signed transactions
 through the use of PSBT, and the specific RPC commands used in typical
@@ -90,6 +93,24 @@ hardware implementations will typically implement multiple roles simultaneously.
   current status of its inputs, the next step in the workflow if known, and if
   possible, computes the fee of the resulting transaction and estimates the
   final weight and feerate.
+
+### PSBT versions
+
+All of the RPCs above accept both version 0 (BIP 174) and version 2 (BIP 370)
+PSBTs, and keep the version of the PSBT they are given.
+
+- `createpsbt`, `converttopsbt`, `walletcreatefundedpsbt` and `psbtbumpfee`
+  create version 2 PSBTs by default. Pass `psbt_version=0` to create a
+  version 0 PSBT for software that does not support BIP 370.
+- A version 2 PSBT has no global unsigned transaction. `decodepsbt` omits the
+  `tx` field for it and instead reports `tx_version`, `fallback_locktime`,
+  `input_count` and `output_count`, plus `previous_txid`, `previous_vout` and
+  `sequence` for each input and `amount` and `script` for each output.
+- `joinpsbts` only accepts version 0 PSBTs.
+- The GUI creates version 0 PSBTs when saving or copying an unsigned
+  transaction. Wallets using an external signer (`-signer`) send version 2
+  PSBTs to it, so the signer software must support BIP 370 (for HWI, version
+  2.1.0 or newer).
 
 
 ### Workflows
