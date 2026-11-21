@@ -2605,6 +2605,16 @@ util::Result<void> CWallet::RemoveTxs(WalletBatch& batch, std::vector<uint256>& 
     return {};
 }
 
+void CWallet::ClearInMemoryTxStateForTest()
+{
+    AssertLockHeld(cs_wallet);
+    mapWallet.clear();
+    wtxOrdered.clear();
+    mapTxSpends.clear();
+    setLockedCoins.clear();
+    nOrderPosNext = 0;
+}
+
 bool CWallet::SetAddressBookWithDB(WalletBatch& batch, const CTxDestination& address, const std::string& strName, const std::optional<AddressPurpose>& new_purpose)
 {
     bool fUpdated = false;

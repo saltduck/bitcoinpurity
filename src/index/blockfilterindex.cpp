@@ -35,9 +35,9 @@ constexpr uint8_t DB_BLOCK_HASH{'s'};
 constexpr uint8_t DB_BLOCK_HEIGHT{'t'};
 constexpr uint8_t DB_FILTER_POS{'P'};
 
-constexpr unsigned int MAX_FLTR_FILE_SIZE = 0x1000000; // 16 MiB
+constexpr uint64_t MAX_FLTR_FILE_SIZE = 0x1000000; // 16 MiB
 /** The pre-allocation chunk size for fltr?????.dat files */
-constexpr unsigned int FLTR_FILE_CHUNK_SIZE = 0x100000; // 1 MiB
+constexpr uint64_t FLTR_FILE_CHUNK_SIZE = 0x100000; // 1 MiB
 /** Maximum size of the cfheaders cache
  *  We have a limit to prevent a bug in filling this cache
  *  potentially turning into an OOM. At 2000 entries, this cache
@@ -197,7 +197,7 @@ bool BlockFilterIndex::ReadFilterFromDisk(const FlatFilePos& pos, const uint256&
     return true;
 }
 
-size_t BlockFilterIndex::WriteFilterToDisk(FlatFilePos& pos, const BlockFilter& filter)
+uint64_t BlockFilterIndex::WriteFilterToDisk(FlatFilePos& pos, const BlockFilter& filter)
 {
     assert(filter.GetFilterType() == GetFilterType());
 
@@ -293,7 +293,7 @@ bool BlockFilterIndex::CustomAppend(const interfaces::BlockInfo& block)
 
 bool BlockFilterIndex::Write(const BlockFilter& filter, uint32_t block_height, const uint256& filter_header)
 {
-    size_t bytes_written = WriteFilterToDisk(m_next_filter_pos, filter);
+    uint64_t bytes_written{WriteFilterToDisk(m_next_filter_pos, filter)};
     if (bytes_written == 0) return false;
 
     std::pair<uint256, DBVal> value;
