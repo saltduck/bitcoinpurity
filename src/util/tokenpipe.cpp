@@ -82,7 +82,7 @@ void TokenPipeEnd::Close()
 std::optional<TokenPipe> TokenPipe::Make()
 {
     int fds[2] = {-1, -1};
-#if HAVE_O_CLOEXEC && HAVE_DECL_PIPE2
+#if HAVE_PIPE2
     if (pipe2(fds, O_CLOEXEC) != 0) {
         return std::nullopt;
     }

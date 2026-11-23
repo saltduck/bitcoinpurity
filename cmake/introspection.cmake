@@ -15,8 +15,27 @@ check_include_file_cxx(vm/vm_param.h HAVE_VM_VM_PARAM_H)
 check_cxx_symbol_exists(O_CLOEXEC "fcntl.h" HAVE_O_CLOEXEC)
 check_cxx_symbol_exists(fdatasync "unistd.h" HAVE_FDATASYNC)
 check_cxx_symbol_exists(fork "unistd.h" HAVE_DECL_FORK)
-check_cxx_symbol_exists(pipe2 "unistd.h" HAVE_DECL_PIPE2)
 check_cxx_symbol_exists(setsid "unistd.h" HAVE_DECL_SETSID)
+
+# The macOS SDK can declare pipe2 even when the deployment target predates it.
+set(pipe2_cxxflags)
+if(APPLE AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  set(pipe2_cxxflags -Werror=unguarded-availability)
+endif()
+include(CheckSourceCompilesWithFlags)
+check_cxx_source_compiles_with_flags("
+  #include <fcntl.h>
+  #include <unistd.h>
+
+  int main()
+  {
+    int fds[2];
+    return pipe2(fds, O_CLOEXEC);
+  }
+  " HAVE_PIPE2
+  CXXFLAGS ${pipe2_cxxflags}
+)
+unset(pipe2_cxxflags)
 
 check_include_file_cxx(sys/types.h HAVE_SYS_TYPES_H)
 check_include_file_cxx(ifaddrs.h HAVE_IFADDRS_H)
