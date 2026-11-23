@@ -658,12 +658,30 @@ jobs:
           fi
       - name: Install pinned Rust
         run: rustup toolchain install 1.96.0 --profile minimal
+      - name: Select macOS Rust toolchain
+        if: runner.os == 'macOS'
+        run: |
+          rustc_path=$(rustup which --toolchain "$RUSTUP_TOOLCHAIN" rustc)
+          rust_bin=${rustc_path%/*}
+          "$rustc_path" --version
+          "$rust_bin/cargo" --version
+          printf '%s\n' "$rust_bin" >> "$GITHUB_PATH"
+          printf 'CARGO_HOME=%s/.ci-cargo\n' "$GITHUB_WORKSPACE" >> "$GITHUB_ENV"
       - uses: actions/cache@v5
+        if: runner.os == 'Linux'
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
           key: sv2-cargo-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('src/sv2/Cargo.lock') }}
+      - name: Cache macOS Cargo dependencies
+        if: runner.os == 'macOS'
+        uses: actions/cache@v5
+        with:
+          path: |
+            .ci-cargo/registry
+            .ci-cargo/git
+          key: sv2-cargo-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('src/sv2/Cargo.lock') }}
       - name: Build pinned IPC dependencies
         run: sh contrib/devtools/build-ipc-deps.sh "$RUNNER_TEMP/ipc-deps" "$RUNNER_TEMP/ipc-prefix" 3
       - name: Configure SV2 and Qt
