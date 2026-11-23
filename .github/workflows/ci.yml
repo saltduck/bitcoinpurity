@@ -182,7 +182,11 @@ jobs:
           restore-keys: ${{ github.job }}-${{ matrix.job-type }}-ccache-
 
       - name: CI script
-        run: ./ci/test_run_all.sh
+        run: |
+          # Keep the default Bitcoin data directory away from the agent account's home.
+          ci_home=$(mktemp -d "${RUNNER_TEMP}/bitcoin-ci-home.XXXXXXXX")
+          mkdir -p "$ci_home/Library/Application Support"
+          HOME="$ci_home" ./ci/test_run_all.sh
         env:
           FILE_ENV: ${{ matrix.file-env }}
 
