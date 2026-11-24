@@ -36,6 +36,7 @@ runs:
       shell: bash
       env:
         CACHE_ROOT: ${{ vars.CI_PERSISTENT_CACHE_DIR }}
+        CI_PERSISTENT_CCACHE_MAXSIZE: ${{ vars.CI_PERSISTENT_CCACHE_MAXSIZE || '4G' }}
       run: |
         set -euo pipefail
         # Only a host that opted in by creating the directory uses it; other
@@ -93,6 +94,12 @@ runs:
         {
           echo "BASE_ROOT_DIR=$root"
           echo "CCACHE_DIR=$root/ccache_dir"
+          # The default of 500M (ci/test/00_setup_env.sh) fits what the cache
+          # actions upload on a hosted runner, but not the objects of one
+          # build of the larger configurations (e.g. a DEBUG build), so ccache
+          # evicts them while the build is still running and the next job
+          # misses on everything. The cache stays on this host, so allow more.
+          echo "CCACHE_MAXSIZE=$CI_PERSISTENT_CCACHE_MAXSIZE"
           echo "DEPENDS_DIR=$root/depends"
           echo "BASE_CACHE=$root/depends/built"
           echo "SOURCES_PATH=$root/depends/sources"
