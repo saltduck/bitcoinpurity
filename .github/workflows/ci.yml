@@ -710,7 +710,24 @@ jobs:
           choco install msys2 --yes --no-progress
           C:/tools/msys64/usr/bin/bash -lc "pacman -Sy --noconfirm mingw-w64-x86_64-librsvg"
           "C:\tools\msys64\mingw64\bin" | Out-File $env:GITHUB_PATH -Append -Encoding utf8
+      # A self-hosted runner that kept the vcpkg binary archives of an earlier
+      # job on its disk restores the packages from them, so the cache has
+      # nothing to add there. Its post step can also fail a job whose steps
+      # all passed: on the Buildkite Windows agent the upload of the 750 MB
+      # archive sent no bytes until the post action hit its deadline. Skip the
+      # cache on such a runner. Hosted agents start without the archives (some
+      # report themselves as self-hosted) and keep using the cache.
+      - name: Check for local vcpkg binary archives
+        id: local-vcpkg
+        if: ${{ runner.environment == 'self-hosted' }}
+        shell: pwsh
+        run: |
+          $dir = Join-Path $env:LOCALAPPDATA 'vcpkg/archives'
+          $found = (Test-Path $dir) -and [bool](Get-ChildItem $dir -Recurse -File -Filter *.zip -ErrorAction SilentlyContinue | Select-Object -First 1)
+          Write-Host "vcpkg binary archives in ${dir}: $found"
+          "archives=$($found.ToString().ToLower())" | Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
       - uses: actions/cache@v5
+        if: ${{ steps.local-vcpkg.outputs.archives != 'true' }}
         with:
           path: |
             C:/vcpkg/downloads
