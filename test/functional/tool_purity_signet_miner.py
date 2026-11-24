@@ -119,7 +119,8 @@ class PuritySignetMinerTest(PuritySignetTest):
             process = subprocess.Popen([sys.executable, str(miner), "--config", str(config_path)], stdout=stdout, stderr=stderr)
             try:
                 self.wait_until(lambda: "RPC walletprocesspsbt failed" in stderr_path.read_text(), timeout=720 if self.options.real_cadence else 60)
-                assert "retrying in 1s" in stderr_path.read_text()
+                # The retry notice is a separate log record, written after the signing warning.
+                self.wait_until(lambda: "retrying in 1s" in stderr_path.read_text())
                 assert process.poll() is None
                 assert_equal(node.getblockcount(), 11)
                 self.start_node(2, extra_args=self.extra_args[2])
