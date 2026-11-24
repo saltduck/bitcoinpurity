@@ -492,7 +492,7 @@ jobs:
       - name: Set mmap_rnd_bits
         if: ${{ env.CONTAINER_NAME == 'ci_native_tsan' || env.CONTAINER_NAME == 'ci_native_msan' }}
         # Prevents crashes due to high ASLR entropy
-        run: sudo sysctl -w vm.mmap_rnd_bits=28
+        run: sudo -n sysctl -w vm.mmap_rnd_bits=28
 
       - name: Enable 32-bit ARM emulation
         if: ${{ env.CONTAINER_NAME == 'ci_arm_linux' }}
