@@ -103,7 +103,7 @@ jobs:
   macos-native-arm64:
     if: ${{ !github.event.pull_request.draft }}
     name: ${{ matrix.job-name }}
-    # Use any image to support the xcode-select below, but hardcode version to avoid silent upgrades (and breaks).
+    # Pin the runner image to avoid silent upgrades.
     # See: https://github.com/actions/runner-images#available-images.
     runs-on: macos-14
 
@@ -132,18 +132,30 @@ jobs:
           # doc/release-notes-empty-template.md and providing at least the
           # minimum clang version denoted in doc/dependencies.md.
           # See: https://developer.apple.com/documentation/xcode-release-notes/xcode-15-release-notes
-          # Use Xcode 15 to stay close to the Xcode 15 SDK used by Guix release
-          # builds. Xcode 15.0 is not available on the Buildkite macOS 14
-          # agents, so pin Xcode 15.4.
+          # Pin Xcode 15.4 to stay close to the Xcode 15 SDK used by Guix release builds.
           xcode_app=/Applications/Xcode_15.4.app
+          # Buildkite's GitHub Actions runtime exposes the build UUID as GITHUB_RUN_ID.
+          buildkite_run_id_pattern='^[[:xdigit:]]{8}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{12}$'
+          if [ -d /Applications/Xcode.app ] && {
+            [ "${BUILDKITE:-}" = true ] ||
+              [[ "${RUNNER_ENVIRONMENT:-}" = self-hosted && "${GITHUB_RUN_ID:-}" =~ $buildkite_run_id_pattern ]]
+          }; then
+            xcode_app=/Applications/Xcode.app
+          fi
           if [ ! -d "$xcode_app" ]; then
             echo "::error title=Xcode::$xcode_app is not installed"
             ls -d /Applications/Xcode*.app || true
             exit 1
           fi
-          sudo xcode-select --switch "$xcode_app"
-          xcodebuild -version
-          clang --version
+          export DEVELOPER_DIR="$xcode_app/Contents/Developer"
+          xcode_version=$(xcodebuild -version)
+          printf '%s\n' "$xcode_version"
+          if [ "$xcode_app" = /Applications/Xcode_15.4.app ] && [ "${xcode_version%%$'\n'*}" != "Xcode 15.4" ]; then
+            echo "::error title=Xcode::expected Xcode 15.4 at $xcode_app"
+            exit 1
+          fi
+          xcrun clang --version
+          printf 'DEVELOPER_DIR=%s\n' "$DEVELOPER_DIR" >> "$GITHUB_ENV"
 
       - name: Install Homebrew packages
         env:
@@ -170,7 +182,11 @@ jobs:
           restore-keys: ${{ github.job }}-${{ matrix.job-type }}-ccache-
 
       - name: CI script
-        run: ./ci/test_run_all.sh
+        run: |
+          # Keep the default Bitcoin data directory away from the agent account's home.
+          ci_home=$(mktemp -d "${RUNNER_TEMP}/bitcoin-ci-home.XXXXXXXX")
+          mkdir -p "$ci_home/Library/Application Support"
+          HOME="$ci_home" ./ci/test_run_all.sh
         env:
           FILE_ENV: ${{ matrix.file-env }}
 
@@ -642,12 +658,30 @@ jobs:
           fi
       - name: Install pinned Rust
         run: rustup toolchain install 1.96.0 --profile minimal
+      - name: Select macOS Rust toolchain
+        if: runner.os == 'macOS'
+        run: |
+          rustc_path=$(rustup which --toolchain "$RUSTUP_TOOLCHAIN" rustc)
+          rust_bin=${rustc_path%/*}
+          "$rustc_path" --version
+          "$rust_bin/cargo" --version
+          printf '%s\n' "$rust_bin" >> "$GITHUB_PATH"
+          printf 'CARGO_HOME=%s/.ci-cargo\n' "$GITHUB_WORKSPACE" >> "$GITHUB_ENV"
       - uses: actions/cache@v5
+        if: runner.os == 'Linux'
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
           key: sv2-cargo-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('src/sv2/Cargo.lock') }}
+      - name: Cache macOS Cargo dependencies
+        if: runner.os == 'macOS'
+        uses: actions/cache@v5
+        with:
+          path: |
+            .ci-cargo/registry
+            .ci-cargo/git
+          key: sv2-cargo-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('src/sv2/Cargo.lock') }}
       - name: Build pinned IPC dependencies
         run: sh contrib/devtools/build-ipc-deps.sh "$RUNNER_TEMP/ipc-deps" "$RUNNER_TEMP/ipc-prefix" 3
       - name: Configure SV2 and Qt

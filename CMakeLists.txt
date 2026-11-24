@@ -286,10 +286,12 @@ if(BUILD_GUI)
   unset(qt_components)
 
   # Optional camera-based QR scanning (file-based scanning always available).
-  # Prefer the component packages so missing Multimedia does not fail configure.
   if("${WITH_QT_VERSION}" STREQUAL "5")
-    find_package(Qt5Multimedia QUIET)
-    find_package(Qt5MultimediaWidgets QUIET)
+    foreach(qt_component IN ITEMS Qt5Multimedia Qt5MultimediaWidgets)
+      # Select components from the same Qt5 installation, even when reconfiguring.
+      set(${qt_component}_DIR "${Qt5_DIR}/../${qt_component}")
+      find_package(${qt_component} QUIET CONFIG PATHS "${Qt5_DIR}/.." NO_DEFAULT_PATH)
+    endforeach()
     if(Qt5Multimedia_FOUND AND Qt5MultimediaWidgets_FOUND)
       set(ENABLE_QRSCAN_CAMERA TRUE)
     endif()
