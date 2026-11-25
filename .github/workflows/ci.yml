@@ -741,7 +741,11 @@ jobs:
         shell: pwsh
         run: |
           rustup toolchain install 1.96.0 --profile minimal
-          choco install msys2 --yes --no-progress
+          # Pinned: with msys2 20261120.0.0 the first run no longer creates the
+          # pacman keyring, so every pacman call fails to verify the package
+          # databases ("keyring is not writable", "invalid or corrupted
+          # database (PGP signature)").
+          choco install msys2 --version 20260927.0.0 --yes --no-progress
           C:/tools/msys64/usr/bin/bash -lc "pacman -Sy --noconfirm mingw-w64-x86_64-librsvg"
           "C:\tools\msys64\mingw64\bin" | Out-File $env:GITHUB_PATH -Append -Encoding utf8
       # A self-hosted runner that kept the vcpkg binary archives of an earlier
