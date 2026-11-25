@@ -116,6 +116,13 @@ runs:
     # next job instead. Only touch directories that haven't changed for longer
     # than any job may run (timeout-minutes is at most 240), so directories of
     # jobs still running on other agents of the same host are kept.
+    #
+    # Jobs starting on other agents of the host run this step at the same time
+    # and remove the same directories. The runner starts the script with
+    # `bash -e -o pipefail`, so a find that fails because a directory
+    # disappeared while it ran would fail the job: skip such directories
+    # instead. Other errors get a warning, but don't fail the job either, as
+    # the next step checks that there is enough free space.
     - name: Remove directories of earlier jobs
       if: ${{ env.CI_PERSISTENT_CACHE == 'true' }}
       shell: bash
@@ -123,10 +130,27 @@ runs:
         set -uo pipefail
         own_temp="$(realpath "$RUNNER_TEMP")"
         own_workspace="$(realpath "$GITHUB_WORKSPACE")"
+        find_errors="$own_temp/find-stale-dirs.err"
         for parent in "$(dirname "$own_temp")" "$(dirname "$own_workspace")"; do
-          find "$parent" -mindepth 1 -maxdepth 1 -type d -name 'buildkite-gha-*' -mmin +360 -print0
+          find_status=0
+          LC_ALL=C find "$parent" -mindepth 1 -maxdepth 1 -type d -name 'buildkite-gha-*' -mmin +360 -print0 2> "$find_errors" || find_status=$?
+          cat "$find_errors" >&2
+          if [ "$find_status" -ne 0 ]; then
+            # find reports a directory that was removed after it read its name
+            # ("No such file or directory") and exits with status 1.
+            if [ -s "$find_errors" ] && ! grep -qv ': No such file or directory$' "$find_errors"; then
+              echo "Another job removed directories in $parent while find ran; skipping them" >&2
+            else
+              echo "::warning title=Cleanup::find exited with status $find_status in $parent; removing the directories it found" >&2
+            fi
+          fi
         done | sort -zu | while IFS= read -r -d '' dir; do
-          dir="$(realpath "$dir")"
+          [ -d "$dir" ] || continue
+          if ! resolved="$(realpath "$dir")"; then
+            [ -d "$dir" ] && echo "::warning title=Cleanup::Could not resolve $dir; skipping it" >&2
+            continue
+          fi
+          dir="$resolved"
           if [ "$dir" = "$own_temp" ] || [ "$dir" = "$own_workspace" ]; then
             continue
           fi
