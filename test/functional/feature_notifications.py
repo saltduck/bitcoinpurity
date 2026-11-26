@@ -172,8 +172,18 @@ class NotificationsTest(BitcoinTestFramework):
         # Give bitcoind 10 seconds to write the alert notification
         self.wait_until(lambda: len(os.listdir(self.alertnotify_dir)), timeout=10)
 
-        for notify_file in os.listdir(self.alertnotify_dir):
-            os.remove(os.path.join(self.alertnotify_dir, notify_file))
+        # The file shows up as soon as the shell running the -alertnotify
+        # command creates it, which is before the shell closes it. Windows
+        # refuses to delete a file that is still open, so retry until the
+        # removal succeeds.
+        def remove_alert_files():
+            try:
+                for notify_file in os.listdir(self.alertnotify_dir):
+                    os.remove(os.path.join(self.alertnotify_dir, notify_file))
+            except PermissionError:
+                return False
+            return True
+        self.wait_until(remove_alert_files, timeout=10)
 
         # Mine more up-version blocks, should not get more alerts:
         self.generatetoaddress(self.nodes[1], 2, ADDRESS_BCRT1_UNSPENDABLE)
