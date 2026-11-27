@@ -112,6 +112,7 @@ class RawTransactionsTest(BitcoinTestFramework):
         assert_raises_rpc_error(-1, "Block not available (not fully downloaded)", node.getrawtransaction, txid="a" * 64, blockhash=block.hash)
 
         self.log.info("Test getrawtransaction when block data cannot be read")
+        sync_txindex(self, node)
         blk_dat = node.blocks_path / "blk00000.dat"
         blk_dat_moved = node.blocks_path / "blk00000.dat.moved"
         blk_dat.rename(blk_dat_moved)
