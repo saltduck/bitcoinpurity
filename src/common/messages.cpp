@@ -116,6 +116,8 @@ bilingual_str PSBTErrorString(PSBTError err)
             return Untranslated("External signer failed to sign");
         case PSBTError::UNSUPPORTED:
             return Untranslated("Signer does not support PSBT");
+        case PSBTError::INVALID_TX:
+            return Untranslated("The transaction cannot be valid");
         // no default case, so the compiler can warn about missing cases
     }
     assert(false);
