@@ -70,10 +70,10 @@ numbers.
 - [TASK-029: Core #36665, #36667 and #36669 security backports](TASK-029.md)
 
 - [TASK-030: Guix release manifest artifacts](TASK-030.md)
-
-- [TASK-034: Headers presync ASERT difficulty check](TASK-034.md)
   (includes the default `./guix-build-<version>/output` artifact directory and
   identical upload-staging copies).
+
+- [TASK-034: Headers presync ASERT difficulty check](TASK-034.md)
 
 - [TASK-20261104-0605-01: DATUM public exposure and payout script hardening](TASK-20261104-0605-01.md)
 
@@ -82,6 +82,8 @@ numbers.
 - [TASK-036: Verified-only Purity peer preference](TASK-036.md)
 
 - [TASK-20261116-0125-01: Default RPC binding without IPv6](TASK-20261116-0125-01.md)
+
+- [TASK-20261104-0551-01: Signed chain decisions for parked splits (proposed)](TASK-20261104-0551-01.md)
 
 ## Purity Signet
 
