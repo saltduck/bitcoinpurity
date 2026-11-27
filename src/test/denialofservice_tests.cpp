@@ -916,6 +916,51 @@ BOOST_AUTO_TEST_CASE(peer_discouragement)
     connman->ClearTestNodes();
 }
 
+BOOST_AUTO_TEST_CASE(peer_discouragement_disconnects_only_misbehaving_peer)
+{
+    LOCK(NetEventsInterface::g_msgproc_mutex);
+
+    auto banman = std::make_unique<BanMan>(m_args.GetDataDirBase() / "banlist", nullptr, DEFAULT_MISBEHAVING_BANTIME);
+    auto connman = std::make_unique<ConnmanTestMsg>(0x1337, 0x1337, *m_node.addrman, *m_node.netgroupman, Params());
+    auto peerLogic = PeerManager::make(*connman, *m_node.addrman, banman.get(), *m_node.chainman, *m_node.mempool, *m_node.warnings, {});
+
+    // Two inbound peers sharing one IP, e.g. clearnet peers behind the same Tor exit node.
+    const CAddress addr{ip(0xa0b0c001), NODE_NONE};
+
+    std::array<CNode*, 2> nodes;
+    banman->ClearBanned();
+    NodeId id{0};
+    for (CNode*& node : nodes) {
+        node = new CNode{id,
+                         /*sock=*/nullptr,
+                         addr,
+                         /*nKeyedNetGroupIn=*/static_cast<uint64_t>(id),
+                         /*nLocalHostNonceIn=*/static_cast<uint64_t>(id),
+                         CAddress(),
+                         /*addrNameIn=*/"",
+                         ConnectionType::INBOUND,
+                         /*inbound_onion=*/false,
+                         /*network_key=*/1};
+        ++id;
+        node->SetCommonVersion(PROTOCOL_VERSION);
+        peerLogic->InitializeNode(*node, NODE_NETWORK);
+        node->fSuccessfullyConnected = true;
+        connman->AddTestNode(*node);
+    }
+
+    peerLogic->UnitTestMisbehaving(nodes[0]->GetId());
+    BOOST_CHECK(peerLogic->SendMessages(nodes[0]));
+
+    BOOST_CHECK(banman->IsDiscouraged(addr));
+    BOOST_CHECK(nodes[0]->fDisconnect);
+    BOOST_CHECK(!nodes[1]->fDisconnect);
+
+    for (CNode* node : nodes) {
+        peerLogic->FinalizeNode(*node);
+    }
+    connman->ClearTestNodes();
+}
+
 BOOST_AUTO_TEST_CASE(DoS_bantime)
 {
     LOCK(NetEventsInterface::g_msgproc_mutex);
