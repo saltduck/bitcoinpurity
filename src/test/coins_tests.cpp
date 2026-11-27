@@ -6,6 +6,7 @@
 #include <clientversion.h>
 #include <coins.h>
 #include <streams.h>
+#include <test/util/logging.h>
 #include <test/util/poolresourcetester.h>
 #include <test/util/random.h>
 #include <test/util/setup_common.h>
@@ -1067,7 +1068,11 @@ BOOST_FIXTURE_TEST_CASE(coins_db_leveldb_layout, FlushTest)
     cache.Sync();
 
     BOOST_CHECK_EQUAL(level2_files(base), 0);
-    WITH_LOCK(::cs_main, return base.CompactFull()).wait();
+    {
+        ASSERT_DEBUG_LOG("Starting database compaction of " + fs::PathToString(m_args.GetDataDirBase() / "coins_db_leveldb_layout"));
+        ASSERT_DEBUG_LOG("Finished database compaction of " + fs::PathToString(m_args.GetDataDirBase() / "coins_db_leveldb_layout"));
+        WITH_LOCK(::cs_main, return base.CompactFull()).wait();
+    }
     BOOST_CHECK_EQUAL(level2_files(base), 1);
 
     BOOST_CHECK(*Assert(base.GetCoin(outpoint)) == coin);
