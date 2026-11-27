@@ -295,11 +295,7 @@ CDBWrapper::CDBWrapper(const DBParams& params)
     HandleError(status);
     LogPrintf("Opened LevelDB successfully\n");
 
-    if (params.options.force_compact) {
-        LogPrintf("Starting database compaction of %s\n", fs::PathToString(params.path));
-        CompactFull();
-        LogPrintf("Finished database compaction of %s\n", fs::PathToString(params.path));
-    }
+    if (params.options.force_compact) CompactFull();
 
     assert(!obfuscate_key); // Needed for unobfuscated Read()/Write() below
 
@@ -356,7 +352,12 @@ std::optional<std::string> CDBWrapper::GetProperty(const std::string& property) 
     return std::nullopt;
 }
 
-void CDBWrapper::CompactFull() { DBContext().pdb->CompactRange(nullptr, nullptr); }
+void CDBWrapper::CompactFull()
+{
+    LogInfo("Starting database compaction of %s", fs::PathToString(m_path));
+    DBContext().pdb->CompactRange(nullptr, nullptr);
+    LogInfo("Finished database compaction of %s", fs::PathToString(m_path));
+}
 
 size_t CDBWrapper::DynamicMemoryUsage() const
 {

@@ -185,9 +185,7 @@ std::shared_future<void> CCoinsViewDB::CompactFull()
             util::ThreadRename("utxocompact");
             LOCK(m_db_mutex);
 
-            LogDebug(BCLog::COINDB, "Starting chainstate compaction of %s", fs::PathToString(m_db_params.path));
             m_db->CompactFull();
-            LogDebug(BCLog::COINDB, "Finished chainstate compaction of %s", fs::PathToString(m_db_params.path));
         } catch (const std::exception& e) {
             LogWarning("Failed chainstate compaction (%s)", e.what());
         }
