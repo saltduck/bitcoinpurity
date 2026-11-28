@@ -145,7 +145,7 @@ BOOST_FIXTURE_TEST_CASE(discourage_fee_sniping_backdating_bounds, TestChain100Se
 
     CMutableTransaction mtx;
     mtx.vin.emplace_back(COutPoint{Txid::FromUint256(uint256::ONE), 0},
-                         CScript(), CTxIn::MAX_SEQUENCE_NONFINAL);
+                         CScript(), uint32_t{CTxIn::MAX_SEQUENCE_NONFINAL});
 
     // Backdating is constrained to [block_height - 99, block_height].
     bool backdated{false};
@@ -201,7 +201,7 @@ BOOST_FIXTURE_TEST_CASE(discourage_fee_sniping_stale_tip, TestChain100Setup)
 
     CMutableTransaction mtx;
     mtx.vin.emplace_back(COutPoint{Txid::FromUint256(uint256::ONE), 0},
-                         CScript(), CTxIn::MAX_SEQUENCE_NONFINAL);
+                         CScript(), uint32_t{CTxIn::MAX_SEQUENCE_NONFINAL});
 
     // Make the tip stale by moving the time 9 hours forward, so that it is
     // older than the 8 hours IsCurrentForAntiFeeSniping allows
