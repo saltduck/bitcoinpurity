@@ -115,6 +115,8 @@ public:
     FlatSigningProvider m_external_provider;
     //! Locktime
     std::optional<uint32_t> m_locktime;
+    //! Minimum locktime for the transaction being created
+    std::optional<uint32_t> m_minimum_locktime;
     //! Version
     std::optional<uint32_t> m_version;
     //! Caps weight of resulting tx
