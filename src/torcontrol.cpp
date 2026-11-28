@@ -51,7 +51,6 @@
 #include <event2/thread.h>
 #include <event2/util.h>
 
-using util::ReplaceAll;
 using util::SplitString;
 using util::ToString;
 
@@ -677,14 +676,14 @@ void TorController::protocolinfo_cb(TorControlConnection& _conn, const TorContro
         // Prefer NULL, otherwise SAFECOOKIE. If a password is provided, use HASHEDPASSWORD
         /* Authentication:
          *   cookie:   hex-encoded ~/.tor/control_auth_cookie
-         *   password: "password"
+         *   password: hex-encoded password
          */
         std::string torpassword = gArgs.GetArg("-torpassword", "");
         if (!torpassword.empty()) {
             if (methods.count("HASHEDPASSWORD")) {
                 LogDebug(BCLog::TOR, "Using HASHEDPASSWORD authentication\n");
-                ReplaceAll(torpassword, "\"", "\\\"");
-                _conn.Command("AUTHENTICATE \"" + torpassword + "\"", std::bind(&TorController::auth_cb, this, std::placeholders::_1, std::placeholders::_2));
+                // Send the password hex-encoded rather than as a QuotedString, so it never needs escaping.
+                _conn.Command("AUTHENTICATE " + HexStr(torpassword), std::bind(&TorController::auth_cb, this, std::placeholders::_1, std::placeholders::_2));
             } else {
                 LogWarning("tor: Password provided with -torpassword, but HASHEDPASSWORD authentication is not available");
             }
