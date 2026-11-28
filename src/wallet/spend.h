@@ -104,6 +104,15 @@ const CTxOut& FindNonChangeParentOutput(const CWallet& wallet, const COutPoint& 
  */
 std::map<CTxDestination, std::vector<COutput>> ListCoins(const CWallet& wallet) EXCLUSIVE_LOCKS_REQUIRED(wallet.cs_wallet);
 
+/**
+ * Set a height-based locktime for new transactions (uses the height of the
+ * current chain tip unless we are not synced with the current chain).
+ * The locktime is occasionally backdated, but never below minimum_height
+ * and at most 99 blocks below the best known tip.
+ * If minimum_height is above the local tip, locktime is 0.
+ */
+void DiscourageFeeSniping(CMutableTransaction& tx, FastRandomContext& rng_fast, interfaces::Chain& chain, const uint256& block_hash, int block_height, uint32_t minimum_height = 0);
+
 void MaybeDiscourageFeeSniping2(const CWallet &wallet,
                                CMutableTransaction& tx);
 

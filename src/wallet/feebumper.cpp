@@ -312,6 +312,9 @@ Result CreateRateBumpTransaction(CWallet& wallet, const uint256& txid, const CCo
 
     // We cannot source new unconfirmed inputs(bip125 rule 2)
     new_coin_control.m_min_depth = 1;
+    // Save the previous locktime as the minimum value for anti fee sniping
+    assert(!new_coin_control.m_locktime.has_value());
+    new_coin_control.m_minimum_locktime = wtx.tx->nLockTime;
 
     auto res = CreateTransaction(wallet, recipients, /*change_pos=*/std::nullopt, new_coin_control, false);
     if (!res) {
